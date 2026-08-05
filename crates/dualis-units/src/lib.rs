@@ -314,6 +314,16 @@ pub type SpecificHeat = Qty<2, 0, -2, 0, -1, 0, 0>;
 pub type Diffusivity = Qty<2, 0, -1, 0, 0, 0, 0>;
 /// K⁻¹ — the coefficient that turns absorbed light into a focus shift.
 pub type ThermalExpansion = Qty<0, 0, 0, 0, -1, 0, 0>;
+/// N·m⁻¹ — a spring's `k`, and the penalty stiffness a contact is modelled with.
+///
+/// This is what sets a mechanical solver's stability limit: a mass on a spring
+/// oscillates with period `2π√(m/k)`, and an explicit integrator has to resolve that
+/// period whether or not anyone cares about it. Stiff contact is expensive for
+/// exactly this reason.
+pub type Stiffness = Qty<0, 1, -2, 0, 0, 0, 0>;
+/// N·s·m⁻¹ — a dashpot's `c`. Force proportional to velocity, and the only place a
+/// mechanical simulation loses energy on purpose.
+pub type Damping = Qty<0, 1, -1, 0, 0, 0, 0>;
 pub type Charge = Qty<0, 0, 1, 1, 0, 0, 0>;
 pub type Voltage = Qty<2, 1, -3, -1, 0, 0, 0>;
 /// J·K⁻¹ — mass times specific heat. How much heat a thing can hide before it
@@ -384,6 +394,8 @@ product!(Irradiance, Area => Power);
 product!(Density, Volume => Mass);
 product!(Current, Time => Charge);
 product!(Voltage, Current => Power);
+product!(Stiffness, Length => Force);
+product!(Damping, Velocity => Force);
 product!(Mass, SpecificHeat => HeatCapacity);
 product!(HeatCapacity, Temperature => Energy);
 product!(Frequency, Time => Dimensionless);

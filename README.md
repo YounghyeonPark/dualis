@@ -16,21 +16,31 @@ its first consumer.
 | `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, multi-domain scheduling, deterministic sampling, closed-form rigid motion |
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
 | `dualis-thermal` | Heat: lumped masses, explicit conduction, radiative and convective loss |
-| `dualis` | A facade over the four, and where the cross-domain integration tests live |
+| `dualis-mechanics` | Motion under force: gravitational N-body, penalty contact |
+| `dualis` | A facade over the five, and where the cross-domain integration tests live |
 
 ```text
-dualis-units    no dependencies but glam and serde
-dualis-core     depends on units
-dualis-optics   depends on core        ─┐  these two do not know
-dualis-thermal  depends on core        ─┘  about each other
-dualis          depends on all of them
+dualis-units       no dependencies but glam and serde
+dualis-core        depends on units
+dualis-optics      depends on core     ─┐
+dualis-thermal     depends on core      ├─  none of these knows about
+dualis-mechanics   depends on core     ─┘   any of the others
+dualis             depends on all of them
 ```
 
 **The kernel must never depend on a domain.** If a new physics needs the kernel
-changed, the kernel was wrong — that rule is what makes "add contact, add sound" a
-matter of writing a crate rather than editing this one. Optics and thermal are the
-proof: neither names the other, neither contains a line about coupling, and they
-exchange energy anyway.
+changed, the kernel was wrong — that rule is what makes "add sound, add fluids" a
+matter of writing a crate rather than editing this one.
+
+Three domains are now the proof rather than an assertion. Optics publishes absorbed
+light as heat and thermal consumes it; mechanics publishes a dashpot's dissipation on
+the same channel and the same thermal domain consumes that too, with nothing changed
+on either side and nothing added to the kernel. None of the three names another.
+
+Mechanics also brings the kernel's audit a second conserved quantity. Momentum is
+conserved *exactly* — forces are accumulated once per pair and applied with opposite
+signs, so their sum is zero to the last bit — which is what says the ledger
+convention was not quietly built around energy.
 
 Storage is SI base units everywhere: metres, kilograms, seconds, kelvin. Millimetres
 and nanometres are entry and exit forms, and the unit-bearing constructors are the
@@ -146,9 +156,37 @@ optics crate, heat capacity and expansion from the kernel's `Substance`, depth o
 focus from diffraction; the dimensions are what let them compose, and the `Exchange`
 audit is what proves nothing leaked on the way.
 
+## What the audit tolerance is really measuring
+
+A conservation audit needs a tolerance, and the right one is a property of the
+*integrator*, not a concession to sloppiness. Three cases in this workspace, all
+different:
+
+- **Momentum under N-body gravity**: 1e-11 and could be tighter. Newton's third law
+  is structural here, so the only loss is turning each force into an acceleration and
+  back.
+- **Energy across an optics-to-thermal coupling**: 1e-9. Both sides are closed-form
+  evaluations, and nothing is being integrated.
+- **Energy through a penalty contact**: 2e-2. Semi-implicit Euler is symplectic, so
+  its energy error is meant to stay bounded — but that guarantee needs a smooth
+  potential, and a contact that switches on the moment two things touch is not one.
+  Each transition shifts the shadow Hamiltonian the method actually conserves, so the
+  true energy takes an `O(dt)` step at every bounce and those accumulate. Resolving
+  the contact more finely shrinks each step, which is why `ContactSystem` reports a
+  stability limit a hundred times smaller than bare stability needs, but no step size
+  recovers the bound.
+
+The third is the interesting one, because a tolerance chosen without knowing that
+would either fail on correct code or hide a real leak.
+
 ## What is not here
 
 No scene graph, no renderer.
+
+Mechanics is particles, not rigid bodies: there is no orientation, no inertia tensor,
+no rolling, no friction along a surface — only normal contact against a plane. And
+`NBody` is direct summation at `O(n²)`, with no tree or multipole acceleration, so it
+is a few thousand bodies rather than a few million.
 
 Wave optics is present but analytic only: Airy patterns, encircled energy, the ideal
 MTF, Rayleigh and Abbe limits, depth of focus, Strehl. There is no wavefront
