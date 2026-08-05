@@ -25,7 +25,7 @@ use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 use glam::DVec3;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{Force, Length, Mass, Qty, Time, Velocity};
+use crate::{Damping, Force, Length, Mass, Qty, Stiffness, Time, Velocity};
 
 /// Three components of one dimension, stored in SI base units.
 #[derive(Clone, Copy, PartialEq, Default)]
@@ -269,6 +269,10 @@ scaled_by!(AccelerationVec, Time => VelocityVec);
 scaled_by!(ForceVec, Time => MomentumVec);
 scaled_by!(VelocityVec, Mass => MomentumVec);
 scaled_by!(AccelerationVec, Mass => ForceVec);
+// Hooke's law and a dashpot, as vectors: the two forces a penalty contact is made
+// of, and the two that make its stability limit what it is.
+scaled_by!(LengthVec, Stiffness => ForceVec);
+scaled_by!(VelocityVec, Damping => ForceVec);
 
 impl LengthVec {
     pub fn mm(x: f64, y: f64, z: f64) -> LengthVec {

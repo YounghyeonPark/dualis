@@ -12,6 +12,10 @@ repository.workspace = true
 
 [dependencies]
 dualis-core = { workspace = true }
+dualis-mechanics = { workspace = true }
 dualis-optics = { workspace = true }
 dualis-thermal = { workspace = true }
 dualis-units = { workspace = true }
+
+[dev-dependencies]
+glam = { workspace = true }
