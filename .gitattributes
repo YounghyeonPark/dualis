@@ -1,0 +1,2 @@
+# Normalise text to LF in the repository, whatever the checkout looks like.
+* text=auto eol=lf
