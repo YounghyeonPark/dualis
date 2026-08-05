@@ -3,38 +3,50 @@
 //!
 //! Optics is spectral. A single number for "how reflective is this" is a
 //! convenience, not a description: a dichroic reflects 99% at 488 nm and 2% at
-//! 509 nm, and the whole point of it lives in that difference. Everything in
-//! this crate that used to be one number is a [`Spectrum`].
+//! 509 nm, and the whole point of it lives in that difference. Everything in this
+//! crate that used to be one number is a [`Spectrum`].
 //!
-//! Values are read with [`Spectrum::at`] and clamped, never extrapolated — a
-//! curve measured from 400 to 700 nm says nothing about 1200 nm, so it holds its
+//! Values are read with [`Spectrum::at`] and clamped, never extrapolated — a curve
+//! measured from 400 to 700 nm says nothing about 1200 nm, so it holds its
 //! endpoint rather than inventing a trend.
+//!
+//! # Nanometres in the data, [`Length`] in the API
+//!
+//! The enum's fields are nanometres as plain numbers, because they are the
+//! serialised form and `"center_nm": 488` is worth reading where `4.88e-7` is not.
+//! The methods take [`Length`], because that is where a wavelength meets the rest
+//! of the physics and where confusing it with a path length would matter. The
+//! conversion happens once, at the constructor and at [`Spectrum::at`].
 
+use dualis_units::Length;
 use serde::{Deserialize, Serialize};
 
-/// Wavelength range worth evaluating, nm — near-UV through near-IR, which is
-/// where silicon detectors and ordinary glass both work.
-pub const VISIBLE_RANGE_NM: (f64, f64) = (350.0, 1100.0);
+/// Wavelength range worth evaluating — near-UV through near-IR, which is where
+/// silicon detectors and ordinary glass both work.
+pub const VISIBLE_RANGE: (Length, Length) = (Length::from_si(350e-9), Length::from_si(1100e-9));
+
+/// The same range in nanometres, for the internal loops that work in nm.
+pub(crate) const VISIBLE_RANGE_NM: (f64, f64) = (350.0, 1100.0);
 
 /// A quantity that varies with wavelength.
 ///
-/// Four shapes, because four is what real data comes as: a flat number, a
-/// measured curve, a filter's pass bands, and a Gaussian band such as an LED's
-/// output or a fluorophore's absorption.
+/// Five shapes, because five is what real data comes as: a flat number, a measured
+/// curve, a filter's pass bands, a Gaussian band such as an LED's output or a
+/// fluorophore's absorption, and a hot body's Planck spectrum.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Spectrum {
-    /// The same value at every wavelength. Honest for a metal mirror over a
-    /// narrow band, and a useful way to isolate one effect from the others.
+    /// The same value at every wavelength. Honest for a metal mirror over a narrow
+    /// band, and a useful way to isolate one effect from the others.
     Constant { value: f64 },
-    /// A measured curve: `(nm, value)` pairs, linearly interpolated between
-    /// them and held flat outside them.
+    /// A measured curve: `(nm, value)` pairs, linearly interpolated between them
+    /// and held flat outside them.
     Curve { samples: Vec<(f64, f64)> },
-    /// Pass bands with real edges. `in_band` inside, `out_of_band` outside, and
-    /// a transition `edge_nm` wide between them.
+    /// Pass bands with real edges. `in_band` inside, `out_of_band` outside, and a
+    /// transition `edge_nm` wide between them.
     ///
-    /// A perfect brick wall does not exist: an interference filter rolls off
-    /// over a few nanometres, and it leaks — good blocking is OD 6, which is
+    /// A perfect brick wall does not exist: an interference filter rolls off over a
+    /// few nanometres, and it leaks — good blocking is OD 6, which is
     /// `out_of_band: 1e-6`, not zero. Both of those matter, because leaked
     /// excitation is the noise floor of a fluorescence image.
     Bands {
@@ -44,11 +56,17 @@ pub enum Spectrum {
         #[serde(default)]
         out_of_band: f64,
         /// Width of the transition, nm. 0 is a brick wall.
+        ///
+        /// A zero-width edge is exact only up to the wavelength's round trip
+        /// through metres, which is a femtometre — so whether a wavelength written
+        /// as exactly the band edge falls inside or outside is not something to
+        /// rely on. That is not much of a loss: no real filter has a brick wall,
+        /// and a physically meaningful edge has a width.
         #[serde(default)]
         edge_nm: f64,
     },
-    /// A Gaussian band: an LED's emission, a laser line, a dye's absorption
-    /// peak. `fwhm_nm` is the full width at half maximum, so a 20 nm LED is
+    /// A Gaussian band: an LED's emission, a laser line, a dye's absorption peak.
+    /// `fwhm_nm` is the full width at half maximum, so a 20 nm LED is
     /// `fwhm_nm: 20`.
     Gaussian {
         center_nm: f64,
@@ -60,11 +78,11 @@ pub enum Spectrum {
     },
     /// Planck's law: what a hot body actually emits.
     ///
-    /// This is the shape of a tungsten lamp (about 3200 K), of daylight
-    /// (5500 K) and of a star. It is not a convenience curve — it is why a
-    /// halogen lamp is orange and starves the blue end of a colour camera,
-    /// and why the same camera behaves differently under an LED. Scaled so its
-    /// peak is `peak`, since a ray tracer only needs relative weights.
+    /// This is the shape of a tungsten lamp (about 3200 K), of daylight (5500 K)
+    /// and of a star. It is not a convenience curve — it is why a halogen lamp is
+    /// orange and starves the blue end of a colour camera, and why the same camera
+    /// behaves differently under an LED. Scaled so its peak is `peak`, since a ray
+    /// tracer only needs relative weights.
     Blackbody {
         temperature_k: f64,
         #[serde(default = "one")]
@@ -88,7 +106,8 @@ impl Spectrum {
         Spectrum::Constant { value }
     }
 
-    /// A measured curve. Samples are sorted, so they may be given in any order.
+    /// A measured curve of `(nm, value)` pairs. Samples are sorted, so they may be
+    /// given in any order.
     pub fn curve(samples: Vec<(f64, f64)>) -> Spectrum {
         let mut samples = samples;
         samples.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -124,8 +143,28 @@ impl Spectrum {
         }
     }
 
-    /// The value at a wavelength, in nanometres.
-    pub fn at(&self, wavelength_nm: f64) -> f64 {
+    /// An emission or absorption band of the given centre and full width at half
+    /// maximum.
+    pub fn gaussian(center: Length, fwhm: Length, peak: f64) -> Spectrum {
+        Spectrum::Gaussian {
+            center_nm: center.in_nm(),
+            fwhm_nm: fwhm.in_nm(),
+            peak,
+            floor: 0.0,
+        }
+    }
+
+    /// The value at a wavelength.
+    pub fn at(&self, wavelength: Length) -> f64 {
+        self.at_nm(wavelength.in_nm())
+    }
+
+    /// The value at a wavelength given in nanometres.
+    ///
+    /// The dimensioned [`Spectrum::at`] is the one to reach for; this is what it
+    /// calls, and what the sampling loops in this crate use so that a tight loop is
+    /// not converting metres to nanometres and back on every step.
+    pub fn at_nm(&self, wavelength_nm: f64) -> f64 {
         match self {
             Spectrum::Constant { value } => *value,
             Spectrum::Curve { samples } => interpolate(samples, wavelength_nm),
@@ -135,11 +174,11 @@ impl Spectrum {
                 out_of_band,
                 edge_nm,
             } => {
-                // Combine bands by how far *inside* one the wavelength is, not
-                // by which gives the larger value. Bands may overlap and the
-                // light does not care which one caught it — and `in_band` is
-                // allowed to be the smaller of the two, which is exactly the
-                // case for a dichroic's reflectance.
+                // Combine bands by how far *inside* one the wavelength is, not by
+                // which gives the larger value. Bands may overlap and the light
+                // does not care which one caught it — and `in_band` is allowed to
+                // be the smaller of the two, which is exactly the case for a
+                // dichroic's reflectance.
                 let inside = bands
                     .iter()
                     .map(|[lo, hi]| band_weight(*lo, *hi, *edge_nm, wavelength_nm))
@@ -171,8 +210,8 @@ impl Spectrum {
                 if *temperature_k <= 0.0 || wavelength_nm <= 0.0 {
                     return 0.0;
                 }
-                // Normalised to the peak, so the constants in front of Planck's
-                // law cancel and only the shape survives.
+                // Normalised to the peak, so the constants in front of Planck's law
+                // cancel and only the shape survives.
                 let at = |w: f64| planck_shape(w, *temperature_k);
                 let peak_w = WIEN_NM_K / temperature_k;
                 let denom = at(peak_w);
@@ -186,22 +225,22 @@ impl Spectrum {
 
     /// Largest value anywhere in `range`, found by sampling. Used to check that
     /// reflectance and transmittance never sum past one.
-    pub fn max_over(&self, range: (f64, f64), steps: usize) -> f64 {
-        let (lo, hi) = range;
+    pub fn max_over(&self, range: (Length, Length), steps: usize) -> f64 {
+        let (lo, hi) = (range.0.in_nm(), range.1.in_nm());
         let steps = steps.max(2);
         (0..=steps)
-            .map(|i| self.at(lo + (hi - lo) * i as f64 / steps as f64))
+            .map(|i| self.at_nm(lo + (hi - lo) * i as f64 / steps as f64))
             .fold(f64::NEG_INFINITY, f64::max)
     }
 
     /// Wavelength of the peak and its value, sampled over `range`.
-    pub fn peak_over(&self, range: (f64, f64), steps: usize) -> (f64, f64) {
-        let (lo, hi) = range;
+    pub fn peak_over(&self, range: (Length, Length), steps: usize) -> (Length, f64) {
+        let (lo, hi) = (range.0.in_nm(), range.1.in_nm());
         let steps = steps.max(2);
-        (0..=steps)
+        let (nm, value) = (0..=steps)
             .map(|i| {
                 let w = lo + (hi - lo) * i as f64 / steps as f64;
-                (w, self.at(w))
+                (w, self.at_nm(w))
             })
             .fold(
                 (lo, f64::NEG_INFINITY),
@@ -212,25 +251,26 @@ impl Spectrum {
                         best
                     }
                 },
-            )
+            );
+        (Length::nm(nm), value)
     }
 
-    /// Evenly spaced `(nm, value)` samples across `range`, for plotting.
-    pub fn sample(&self, range: (f64, f64), steps: usize) -> Vec<(f64, f64)> {
-        let (lo, hi) = range;
+    /// Evenly spaced samples across `range`, for plotting.
+    pub fn sample(&self, range: (Length, Length), steps: usize) -> Vec<(Length, f64)> {
+        let (lo, hi) = (range.0.in_nm(), range.1.in_nm());
         let steps = steps.max(2);
         (0..=steps)
             .map(|i| {
                 let w = lo + (hi - lo) * i as f64 / steps as f64;
-                (w, self.at(w))
+                (Length::nm(w), self.at_nm(w))
             })
             .collect()
     }
 }
 
 /// Planck's law up to a constant: `1 / (l^5 (exp(c2 / (l T)) - 1))`, with the
-/// wavelength in metres. Only the shape matters here, so the leading constants
-/// are dropped and the result is normalised at the call site.
+/// wavelength in metres. Only the shape matters here, so the leading constants are
+/// dropped and the result is normalised at the call site.
 fn planck_shape(wavelength_nm: f64, temperature_k: f64) -> f64 {
     /// Second radiation constant hc/k, in metre-kelvin.
     const C2: f64 = 1.438_776_877e-2;
@@ -290,26 +330,42 @@ fn band_weight(lo: f64, hi: f64, edge_nm: f64, wavelength_nm: f64) -> f64 {
 mod tests {
     use super::*;
 
+    fn nm(v: f64) -> Length {
+        Length::nm(v)
+    }
+
     #[test]
     fn a_constant_spectrum_is_flat() {
         let s = Spectrum::constant(0.42);
         for w in [200.0, 550.0, 2000.0] {
-            assert_eq!(s.at(w), 0.42);
+            assert_eq!(s.at(nm(w)), 0.42);
         }
     }
 
     /// A curve interpolates between its samples and holds its endpoints, rather
     /// than extrapolating a trend it has no evidence for.
+    ///
+    /// The comparisons are approximate rather than exact, and for a reason worth
+    /// recording: a wavelength written as 450 nm is stored in metres and read back
+    /// in nanometres, and `450e-9 * 1e9` is 449.999999999999_94. That is a
+    /// femtometre, so it changes no physics, but it does mean an interpolated value
+    /// is no longer bit-exact. See the note on brick-wall edges in
+    /// [`Spectrum::Bands`].
     #[test]
     fn a_curve_interpolates_and_never_extrapolates() {
         let s = Spectrum::curve(vec![(500.0, 0.2), (600.0, 0.8), (400.0, 0.0)]);
-        assert_eq!(s.at(400.0), 0.0);
-        assert_eq!(s.at(450.0), 0.1);
-        assert_eq!(s.at(550.0), 0.5);
-        assert_eq!(s.at(600.0), 0.8);
-        // Outside the measured range it holds, in both directions.
-        assert_eq!(s.at(100.0), 0.0);
-        assert_eq!(s.at(2000.0), 0.8);
+        let close = |got: f64, want: f64| assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        close(s.at(nm(400.0)), 0.0);
+        close(s.at(nm(450.0)), 0.1);
+        close(s.at(nm(550.0)), 0.5);
+        close(s.at(nm(600.0)), 0.8);
+        // Outside the measured range it holds, in both directions — and out there
+        // the value is exact, because it is a stored endpoint rather than a
+        // computed one.
+        assert_eq!(s.at(nm(100.0)), 0.0);
+        assert_eq!(s.at(nm(2000.0)), 0.8);
+        // Reading in nanometres directly skips the round trip and is exact.
+        assert_eq!(s.at_nm(450.0), 0.1);
     }
 
     /// A brick-wall band is exact at its edges; a real one rolls off across
@@ -317,34 +373,37 @@ mod tests {
     #[test]
     fn bands_have_edges_and_leak() {
         let brick = Spectrum::bands(vec![[500.0, 560.0]], 0.95, 0.0);
-        assert_eq!(brick.at(499.9), 0.0);
-        assert_eq!(brick.at(500.0), 0.95);
-        assert_eq!(brick.at(560.0), 0.95);
-        assert_eq!(brick.at(560.1), 0.0);
+        assert_eq!(brick.at(nm(499.9)), 0.0);
+        assert_eq!(brick.at(nm(500.0)), 0.95);
+        assert_eq!(brick.at(nm(560.0)), 0.95);
+        assert_eq!(brick.at(nm(560.1)), 0.0);
 
         let real = Spectrum::interference_bands(vec![[500.0, 560.0]], 0.95, 10.0);
         // Half way up the shoulder at the nominal edge.
-        assert!((real.at(500.0) - (1e-6 + 0.95 / 2.0)).abs() < 1e-6);
-        assert!((real.at(530.0) - 0.95).abs() < 1e-9, "flat in the middle");
+        assert!((real.at(nm(500.0)) - (1e-6 + 0.95 / 2.0)).abs() < 1e-6);
+        assert!(
+            (real.at(nm(530.0)) - 0.95).abs() < 1e-9,
+            "flat in the middle"
+        );
         // Blocking is OD 6, not zero: a real filter leaks, and that leak is the
         // noise floor of a fluorescence image.
-        assert_eq!(real.at(400.0), 1e-6);
-        assert!(real.at(400.0) > 0.0);
+        assert_eq!(real.at(nm(400.0)), 1e-6);
+        assert!(real.at(nm(400.0)) > 0.0);
     }
 
-    /// Overlapping bands combine by how far inside one the wavelength is, since
-    /// the light does not care which band caught it.
+    /// Overlapping bands combine by how far inside one the wavelength is, since the
+    /// light does not care which band caught it.
     #[test]
     fn overlapping_bands_take_the_best() {
         let s = Spectrum::bands(vec![[400.0, 500.0], [450.0, 600.0]], 0.9, 0.01);
-        assert_eq!(s.at(475.0), 0.9);
-        assert_eq!(s.at(550.0), 0.9);
-        assert_eq!(s.at(650.0), 0.01);
+        assert_eq!(s.at(nm(475.0)), 0.9);
+        assert_eq!(s.at(nm(550.0)), 0.9);
+        assert_eq!(s.at(nm(650.0)), 0.01);
     }
 
     /// `in_band` may be *lower* than `out_of_band`, which is how a dichroic's
-    /// reflectance is written: high everywhere except where it transmits.
-    /// Combining by value rather than by insideness would break this.
+    /// reflectance is written: high everywhere except where it transmits. Combining
+    /// by value rather than by insideness would break this.
     #[test]
     fn a_band_may_invert() {
         let reflect = Spectrum::Bands {
@@ -354,33 +413,34 @@ mod tests {
             edge_nm: 10.0,
         };
         assert!(
-            (reflect.at(520.0) - 0.05).abs() < 1e-9,
+            (reflect.at(nm(520.0)) - 0.05).abs() < 1e-9,
             "got {}",
-            reflect.at(520.0)
+            reflect.at(nm(520.0))
         );
-        assert!((reflect.at(405.0) - 0.98).abs() < 1e-9);
-        assert!((reflect.at(610.0) - 0.98).abs() < 1e-9);
+        assert!((reflect.at(nm(405.0)) - 0.98).abs() < 1e-9);
+        assert!((reflect.at(nm(610.0)) - 0.98).abs() < 1e-9);
         // Halfway across the shoulder, halfway between the two levels.
-        assert!((reflect.at(495.0) - (0.98 + (0.05 - 0.98) / 2.0)).abs() < 1e-9);
+        assert!((reflect.at(nm(495.0)) - (0.98 + (0.05 - 0.98) / 2.0)).abs() < 1e-9);
     }
 
-    /// Planck's law, checked against Wien's displacement law: a blackbody peaks
-    /// at 2898/T micrometres, and nowhere else. That closed form is independent
-    /// of the implementation, which is what makes it worth testing against.
+    /// Planck's law, checked against Wien's displacement law: a blackbody peaks at
+    /// 2898/T micrometres, and nowhere else. That closed form is independent of the
+    /// implementation, which is what makes it worth testing against.
     #[test]
     fn a_blackbody_peaks_where_wien_says() {
         for temperature_k in [2000.0, 3200.0, 5500.0, 9000.0] {
             let s = Spectrum::blackbody(temperature_k);
             let expected = WIEN_NM_K / temperature_k;
             // Search a wide range so the peak is genuinely found, not assumed.
-            let (peak_nm, peak) = s.peak_over((100.0, 4000.0), 4000);
+            let (peak_nm, peak) = s.peak_over((nm(100.0), nm(4000.0)), 4000);
             assert!(
-                (peak_nm - expected).abs() < 3.0,
-                "{temperature_k} K should peak at {expected:.0} nm, found {peak_nm:.0} nm"
+                (peak_nm.in_nm() - expected).abs() < 3.0,
+                "{temperature_k} K should peak at {expected:.0} nm, found {:.0} nm",
+                peak_nm.in_nm()
             );
-            // Normalised, so the value *at* the peak is exactly one; the
-            // sampled maximum only lands within a grid step of it.
-            assert!((s.at(expected) - 1.0).abs() < 1e-12);
+            // Normalised, so the value *at* the peak is exactly one; the sampled
+            // maximum only lands within a grid step of it.
+            assert!((s.at(nm(expected)) - 1.0).abs() < 1e-12);
             assert!(
                 (peak - 1.0).abs() < 1e-4,
                 "peak {peak} at {temperature_k} K"
@@ -388,14 +448,14 @@ mod tests {
         }
     }
 
-    /// The consequences a lamp choice actually has: tungsten is starved in the
-    /// blue and dumps most of its output into the infrared, while daylight is
-    /// nearly flat across the visible. This is why a halogen lamp looks orange.
+    /// The consequences a lamp choice actually has: tungsten is starved in the blue
+    /// and dumps most of its output into the infrared, while daylight is nearly flat
+    /// across the visible. This is why a halogen lamp looks orange.
     #[test]
     fn tungsten_is_red_and_daylight_is_not() {
         let tungsten = Spectrum::blackbody(3200.0);
         let daylight = Spectrum::blackbody(5500.0);
-        let ratio = |s: &Spectrum| s.at(450.0) / s.at(650.0);
+        let ratio = |s: &Spectrum| s.at(nm(450.0)) / s.at(nm(650.0));
         assert!(
             ratio(&tungsten) < 0.45,
             "tungsten should be far weaker in the blue: ratio {}",
@@ -408,35 +468,44 @@ mod tests {
         );
         // And tungsten's peak is out in the infrared, which is where its power
         // goes: 906 nm, not anywhere you can see.
-        assert!(tungsten.peak_over((300.0, 3000.0), 3000).0 > 850.0);
+        assert!(tungsten.peak_over((nm(300.0), nm(3000.0)), 3000).0.in_nm() > 850.0);
         // Nothing is emitted at zero or negative wavelength.
-        assert_eq!(tungsten.at(0.0), 0.0);
-        assert_eq!(Spectrum::blackbody(-5.0).at(550.0), 0.0);
+        assert_eq!(tungsten.at(Length::ZERO), 0.0);
+        assert_eq!(Spectrum::blackbody(-5.0).at(nm(550.0)), 0.0);
         // A room-temperature body in the ultraviolet is not *zero* — Planck's law
         // has no cutoff — but it is unimaginably small, and the arithmetic must
         // reach that rather than overflowing on the way.
-        let cold = Spectrum::blackbody(300.0).at(200.0);
+        let cold = Spectrum::blackbody(300.0).at(nm(200.0));
         assert!(cold.is_finite() && cold < 1e-80, "got {cold}");
         // Far enough into the ultraviolet the exponent does overflow, and the
         // answer there is zero rather than an infinity.
-        assert_eq!(Spectrum::blackbody(300.0).at(50.0), 0.0);
+        assert_eq!(Spectrum::blackbody(300.0).at(nm(50.0)), 0.0);
     }
 
     /// A Gaussian is exactly half its peak at half its full width, which is what
     /// "full width at half maximum" means.
     #[test]
     fn a_gaussian_is_half_at_its_half_width() {
-        let s = Spectrum::Gaussian {
-            center_nm: 488.0,
-            fwhm_nm: 20.0,
-            peak: 1.0,
-            floor: 0.0,
-        };
-        assert!((s.at(488.0) - 1.0).abs() < 1e-12);
-        assert!((s.at(498.0) - 0.5).abs() < 1e-9, "got {}", s.at(498.0));
-        assert!((s.at(478.0) - 0.5).abs() < 1e-9);
-        assert!(s.at(588.0) < 1e-9);
-        let (peak_nm, peak) = s.peak_over(VISIBLE_RANGE_NM, 750);
-        assert!((peak_nm - 488.0).abs() < 2.0 && (peak - 1.0).abs() < 0.01);
+        let s = Spectrum::gaussian(nm(488.0), nm(20.0), 1.0);
+        assert!((s.at(nm(488.0)) - 1.0).abs() < 1e-12);
+        assert!(
+            (s.at(nm(498.0)) - 0.5).abs() < 1e-9,
+            "got {}",
+            s.at(nm(498.0))
+        );
+        assert!((s.at(nm(478.0)) - 0.5).abs() < 1e-9);
+        assert!(s.at(nm(588.0)) < 1e-9);
+        let (peak_nm, peak) = s.peak_over(VISIBLE_RANGE, 750);
+        assert!((peak_nm.in_nm() - 488.0).abs() < 2.0 && (peak - 1.0).abs() < 0.01);
+    }
+
+    /// The wavelength argument is a length, so a path length cannot be handed over
+    /// as a wavelength — and 550 nm written any of three ways is one wavelength.
+    #[test]
+    fn wavelengths_are_lengths() {
+        let s = Spectrum::gaussian(nm(550.0), nm(20.0), 1.0);
+        assert_eq!(s.at(Length::nm(550.0)), s.at(Length::um(0.55)));
+        assert_eq!(s.at(Length::nm(550.0)), s.at(Length::from_si(550e-9)));
+        assert_eq!(s.at_nm(550.0), s.at(Length::nm(550.0)));
     }
 }

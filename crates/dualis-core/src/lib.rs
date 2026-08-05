@@ -1,46 +1,67 @@
-//! dualis-core: the physics underneath a simulated world.
+//! dualis-core: the kernel a simulated world's physics is built on.
 //!
-//! This is the layer that does not know what it is being used to simulate. It
-//! knows that light has a wavelength, that a surface divides incident power
-//! three ways, that glass bends light by an amount its refractive index decides,
-//! that things move, and that a random choice has to be reproducible. What you
-//! build on top of that — a microscope, a camera, a room — is somebody else's
-//! problem.
+//! This crate knows nothing about any particular physics. It knows that a
+//! quantity can vary over space and time, that a process must answer for what it
+//! conserves, that a system with no closed form has to be rolled forward, that
+//! matter has properties several domains need at once, and that several domains
+//! sharing a clock is a scheduling problem with real failure modes. What any of
+//! that is *about* — light, heat, contact, sound — belongs to a domain crate.
 //!
-//! Units are **millimetres** for length, **nanometres** for wavelength and
-//! **seconds** for time, everywhere and without exception.
+//! That separation is the point. `dualis-optics` depends on this crate; this crate
+//! must never depend on it, or anything else that models a specific physics. If a
+//! new domain needs the kernel changed, the kernel was wrong.
 //!
-//! # The invariants
+//! # The two invariants
 //!
-//! Two rules hold throughout, and the tests exist to keep them holding:
+//! Both survive the generalisation, and both are now enforced rather than
+//! promised:
 //!
-//! - **Energy is conserved at every surface.** Reflectance and transmittance are
-//!   stored; absorptance is whatever is left. There is no way to write down a
-//!   surface that returns more light than reached it.
-//! - **Nothing is random.** Every stochastic choice comes from a seeded
-//!   generator with no global state, so two runs of the same scene agree to the
-//!   last bit, on every platform and in WebAssembly.
+//! - **Nothing is created or destroyed without being noticed.** A [`Ledger`] is
+//!   what a process claims to hold and [`audit`] is the check; energy crossing
+//!   between domains goes through [`Exchange`], which refuses to let a transfer
+//!   silently lose some. This generalises what `SurfaceOptics` did for one
+//!   quantity at one kind of boundary.
+//! - **Nothing is random.** [`Rng::for_index`] gives every piece of work its own
+//!   stateless stream, so a parallel simulation is still bit-reproducible — which
+//!   is when the guarantee starts to matter, and when a single shared generator
+//!   would have quietly lost it.
 //!
 //! # What is here
 //!
 //! | Module | |
 //! | --- | --- |
-//! | [`spectrum`] | Wavelength-dependent quantities: Planck's law, Gaussians, measured curves, filter bands |
-//! | [`optics`] | What a surface does to light — Fresnel, reflectance, transmittance, absorptance |
-//! | [`material`] | Refractive index against wavelength, and how much survives the glass |
-//! | [`motion`] | Rigid motion and time gating: drift, oscillation, spin, strobe |
-//! | [`geometry`] | Ray intersections, Snell's law, and the disc samplings that make ray bundles |
-//! | [`rng`] | A deterministic generator, and sampling built on it |
+//! | [`conserved`] | Conservation as an audit: ledgers, violations, tolerances |
+//! | [`integrator`] | Fixed-step time evolution, and why symplectic beats accurate |
+//! | [`sim`] | Several domains on one clock: quasi-static, multirate, iterative coupling |
+//! | [`field`] | Scalar and vector fields, with gradient, divergence, curl, Laplacian |
+//! | [`substance`] | Thermal, mechanical and acoustic properties of matter |
+//! | [`motion`] | Closed-form rigid motion and time gating |
+//! | [`rng`] | A deterministic generator, and the sampling built on it |
+//! | [`vector`] | Basis construction and reflection — the vector maths no domain owns |
+//!
+//! Units come from `dualis-units` and are re-exported below, so a domain crate
+//! needs one dependency rather than two.
 
-pub mod geometry;
-pub mod material;
+pub mod conserved;
+pub mod field;
+pub mod integrator;
 pub mod motion;
-pub mod optics;
 pub mod rng;
-pub mod spectrum;
+pub mod sim;
+pub mod substance;
+pub mod vector;
 
-pub use material::{Dispersion, Material};
+pub use conserved::{audit, Conserves, Ledger, Violation};
+pub use field::{ScalarField, VectorField};
+pub use integrator::{velocity_verlet, Dynamics, Integrator, Newtonian, State};
 pub use motion::{Motion, Strobe};
-pub use optics::{fresnel_reflectance, SurfaceFinish, SurfaceOptics};
 pub use rng::Rng;
-pub use spectrum::Spectrum;
+pub use sim::{Domain, Exchange, Kind, Schedule, Simulation};
+pub use substance::Substance;
+pub use vector::{basis_for, oriented_against, reflect};
+
+/// Everything from `dualis-units`, so that `use dualis_core::units::*` is enough
+/// to write dimensioned physics.
+pub mod units {
+    pub use dualis_units::*;
+}

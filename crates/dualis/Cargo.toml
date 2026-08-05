@@ -1,0 +1,17 @@
+[package]
+name = "dualis"
+description = "Physics for simulated worlds: units, kernel, optics and thermal in one dependency"
+keywords = ["physics", "simulation", "optics", "thermal", "multiphysics"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+dualis-core = { workspace = true }
+dualis-optics = { workspace = true }
+dualis-thermal = { workspace = true }
+dualis-units = { workspace = true }

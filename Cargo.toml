@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/dualis-core"]
+members = [
+    "crates/dualis-units",
+    "crates/dualis-core",
+    "crates/dualis-optics",
+    "crates/dualis-thermal",
+    "crates/dualis",
+]
 resolver = "2"
 
 [workspace.package]
@@ -10,8 +16,13 @@ authors = ["Younghyeon Park and dualis contributors"]
 repository = "https://github.com/YounghyeonPark/dualis-core"
 
 [workspace.dependencies]
+dualis-units = { path = "crates/dualis-units", version = "0.1.0" }
+dualis-core = { path = "crates/dualis-core", version = "0.1.0" }
+dualis-optics = { path = "crates/dualis-optics", version = "0.1.0" }
+dualis-thermal = { path = "crates/dualis-thermal", version = "0.1.0" }
 glam = { version = "0.29", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.release]
 opt-level = 3

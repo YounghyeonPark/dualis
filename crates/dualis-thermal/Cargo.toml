@@ -1,0 +1,16 @@
+[package]
+name = "dualis-thermal"
+description = "Heat as a simulation domain: lumped masses, explicit conduction, radiative and convective loss"
+keywords = ["thermal", "heat", "conduction", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+dualis-core = { workspace = true }
+dualis-units = { workspace = true }
+serde = { workspace = true }
