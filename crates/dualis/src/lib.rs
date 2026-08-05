@@ -1,0 +1,61 @@
+//! dualis: physics for simulated worlds, in one dependency.
+//!
+//! A facade over the workspace. Nothing is implemented here — the point is that a
+//! consumer writes `dualis = "0.1"` rather than naming four crates, and that the
+//! integration tests which need two domains at once have somewhere to live.
+//!
+//! ```
+//! use dualis::prelude::*;
+//!
+//! // A lamp, a filter, and the question that needs both.
+//! let lamp = SpectralPower::new(
+//!     Spectrum::blackbody(3200.0),
+//!     Power::w(1.0),
+//!     VISIBLE_RANGE,
+//! );
+//! let green = Spectrum::bands(vec![[500.0, 560.0]], 0.95, 0.0);
+//! let through = lamp.through(&green);
+//! assert!(through < lamp.total());
+//! ```
+//!
+//! # The dependency rule
+//!
+//! ```text
+//! dualis-units    no dependencies but glam and serde
+//! dualis-core     depends on units
+//! dualis-optics   depends on core
+//! dualis-thermal  depends on core
+//! dualis          depends on all of them
+//! ```
+//!
+//! `dualis-optics` and `dualis-thermal` do not know about each other. They meet on
+//! the kernel's [`Exchange`](dualis_core::Exchange), and adding a third domain does
+//! not touch either of them.
+
+pub use dualis_core as core;
+pub use dualis_optics as optics;
+pub use dualis_thermal as thermal;
+pub use dualis_units as units;
+
+/// Everything most simulations need, in one `use`.
+pub mod prelude {
+    pub use dualis_core::conserved::quantity;
+    pub use dualis_core::{
+        audit, basis_for, oriented_against, reflect, velocity_verlet, Domain, Dynamics, Exchange,
+        Integrator, Kind, Ledger, Motion, Newtonian, Rng, Schedule, Simulation, State, Strobe,
+        Substance, Violation,
+    };
+    pub use dualis_optics::diffraction::{
+        abbe_limit, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy, mtf_at,
+        rayleigh_limit, strehl_from_wavefront_error,
+    };
+    pub use dualis_optics::{
+        fresnel_reflectance, fresnel_split, Hit, Material, Ray, Scatter, SpectralPower, Spectrum,
+        SurfaceFinish, SurfaceOptics, VISIBLE_RANGE,
+    };
+    pub use dualis_thermal::{Bar1D, Environment, LumpedMass, HEAT};
+    pub use dualis_units::{
+        Area, Density, Energy, Force, Frequency, HeatCapacity, Irradiance, Length, LengthVec, Mass,
+        Power, Pressure, SpecificHeat, Temperature, Time, Velocity, VelocityVec, Volume,
+    };
+}

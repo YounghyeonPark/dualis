@@ -1,7 +1,7 @@
 [package]
-name = "dualis-core"
-description = "Kernel for physical simulation: conservation audits, fixed-step integrators, fields, multi-domain scheduling and deterministic sampling"
-keywords = ["physics", "simulation", "multiphysics", "integrator", "deterministic"]
+name = "dualis-optics"
+description = "Spectral radiometry, surface optics, dispersion and ray geometry for simulated worlds"
+keywords = ["optics", "raytracing", "spectrum", "fresnel", "simulation"]
 categories = ["science", "simulation"]
 readme = "../../README.md"
 version.workspace = true
@@ -11,9 +11,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+dualis-core = { workspace = true }
 dualis-units = { workspace = true }
 glam = { workspace = true }
 serde = { workspace = true }
-
-[dev-dependencies]
-serde_json = { workspace = true }

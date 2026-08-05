@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep the lockfile authoritative: a stale one should fail the build rather than
+  # being silently updated, so that CI compiles what a contributor compiled.
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+
+jobs:
+  # Formatting, lints and documentation. One platform is enough — none of these
+  # depend on the target.
+  #
+  # `-D warnings` is passed to clippy and rustdoc rather than set in RUSTFLAGS,
+  # because RUSTFLAGS also applies to dependencies and would make this build fail on
+  # a warning in somebody else's crate. Clippy runs the rustc lints too, so our own
+  # warnings are still errors here.
+  lint:
+    name: fmt, clippy, docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: cargo doc
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --workspace --no-deps
+
+  # The test suite on every platform we claim to work on.
+  #
+  # This is also how the determinism claim is enforced: `rng::tests::the_stream_is_pinned`
+  # asserts a hardcoded digest of ten thousand draws, so a platform whose floating
+  # point or integer arithmetic differed would fail here rather than quietly
+  # producing a different image. Running the matrix is the test.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --locked --workspace
+
+  # The same suite with optimisation and link-time optimisation on.
+  #
+  # An orthogonal axis to the platform matrix, so one platform suffices. Worth its
+  # own job because the physics tests compare against closed forms at tight
+  # tolerances and the pinned RNG digest is exact: if any of that depended on the
+  # optimisation level, the results would not be reproducible between a debug run
+  # and a release one, which is a weaker guarantee than the crate claims.
+  release:
+    name: test (release, LTO)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test --release
+        run: cargo test --locked --workspace --release
+
+  # WebAssembly builds at all. Catches an accidental dependency on something the
+  # target does not have — a thread, a clock, the filesystem.
+  wasm:
+    name: build (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build
+        run: cargo build --locked --workspace --target wasm32-unknown-unknown
+
+  # WebAssembly *runs*, and agrees with every other platform to the last bit.
+  #
+  # The job above proves the crates compile for wasm; this one proves the README's
+  # "in WebAssembly" claim, which is a claim about results and not about compiling.
+  # The pinned RNG digest and every closed-form physics comparison are executed
+  # under wasmtime, so a difference in how the target rounds would fail here.
+  wasm-determinism:
+    name: test (wasm32-wasip1, wasmtime)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - name: install wasmtime
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+      - name: cargo test --target wasm32-wasip1
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
+        run: cargo test --locked --workspace --target wasm32-wasip1
+
+  # The oldest toolchain the workspace is claimed to build on.
+  #
+  # 1.75 is a candidate rather than a measurement: the newest feature in the
+  # workspace is `let ... else`, which landed in 1.65, so the true floor is likely
+  # lower. This job is what establishes the number — when it passes, mirror it into
+  # `[workspace.package] rust-version`; when it fails, raise it here first and only
+  # then declare it. Declaring an MSRV that has never been compiled is worse than
+  # declaring none, because a consumer's toolchain check would then be enforcing a
+  # guess.
+  msrv:
+    name: build (Rust 1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build
+        run: cargo build --locked --workspace
