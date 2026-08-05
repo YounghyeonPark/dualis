@@ -29,7 +29,7 @@ jobs:
     name: fmt, clippy, docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -45,10 +45,11 @@ jobs:
 
   # The test suite on every platform we claim to work on.
   #
-  # This is also how the determinism claim is enforced: `rng::tests::the_stream_is_pinned`
-  # asserts a hardcoded digest of ten thousand draws, so a platform whose floating
-  # point or integer arithmetic differed would fail here rather than quietly
-  # producing a different image. Running the matrix is the test.
+  # This is also how the determinism claim is enforced:
+  # `rng::tests::the_stream_is_pinned` asserts a hardcoded digest of ten thousand
+  # draws, so a platform whose floating point or integer arithmetic differed would
+  # fail here rather than quietly producing a different image. Running the matrix is
+  # the test.
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -57,7 +58,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
@@ -74,7 +75,7 @@ jobs:
     name: test (release, LTO)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: cargo test --release
@@ -86,7 +87,7 @@ jobs:
     name: build (wasm32-unknown-unknown)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -104,7 +105,7 @@ jobs:
     name: test (wasm32-wasip1, wasmtime)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
@@ -120,19 +121,25 @@ jobs:
 
   # The oldest toolchain the workspace is claimed to build on.
   #
-  # 1.75 is a candidate rather than a measurement: the newest feature in the
-  # workspace is `let ... else`, which landed in 1.65, so the true floor is likely
-  # lower. This job is what establishes the number — when it passes, mirror it into
-  # `[workspace.package] rust-version`; when it fails, raise it here first and only
-  # then declare it. Declaring an MSRV that has never been compiled is worse than
-  # declaring none, because a consumer's toolchain check would then be enforcing a
-  # guess.
+  # 1.78, and the number comes from the lockfile rather than from the code. The first
+  # attempt pinned 1.75 and failed with `failed to parse lock file`: `Cargo.lock` is
+  # format version 4, which cargo could not read until 1.78, so that build never
+  # reached a line of Rust. The newest language feature in the workspace is
+  # `let ... else` from 1.65, so the *source* floor is lower and this job does not
+  # measure it.
+  #
+  # That distinction matters for who is asking. A consumer depending on
+  # `dualis-optics` never sees this lockfile, so their constraint is the source; CI
+  # builds `--locked` on purpose, so its constraint is the lockfile format. The
+  # declared `rust-version` follows this job, because it is the stronger of the two
+  # and a declared MSRV is a promise about what has been compiled rather than a
+  # theoretical minimum.
   msrv:
-    name: build (Rust 1.75)
+    name: build (Rust 1.78)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.75
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.78
       - uses: Swatinem/rust-cache@v2
       - name: cargo build
         run: cargo build --locked --workspace

@@ -232,11 +232,17 @@ silently updated, so CI compiles what a contributor compiled.
 `RUSTFLAGS` reaches dependencies too and would break the build on somebody else's
 warning. Clippy runs the rustc lints as well, so our own warnings are still errors.
 
-**There is no declared MSRV yet.** The newest language feature in the workspace is
-`let ... else`, which landed in 1.65, so the floor is likely lower than the 1.75 the
-CI job pins — but an MSRV that has never been compiled is worse than none, because a
-consumer's toolchain check would be enforcing a guess. When that job passes, the
-number moves into `[workspace.package] rust-version`.
+**The MSRV is set by the lockfile, not by the code.** CI builds on 1.78, and that
+number came out of a failure worth recording: the job was first pinned at 1.75 and
+died with `failed to parse lock file` before compiling anything, because `Cargo.lock`
+is format version 4 and cargo could not read that until 1.78. The newest language
+feature in the workspace is `let ... else` from 1.65, so the source would go lower.
+
+Which floor applies depends on who is asking. A consumer depending on `dualis-optics`
+never receives this lockfile, so their constraint is the source and its dependencies.
+CI passes `--locked` deliberately, so its constraint is the lockfile format. The
+declared `rust-version` follows CI, because it is the stronger of the two and a
+declared MSRV should be a promise about what has been compiled.
 
 ## Licence
 
