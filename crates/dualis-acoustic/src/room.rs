@@ -184,19 +184,37 @@ impl Room {
         if rc2 <= 0.0 {
             return Energy::from_si(0.0);
         }
+        // Every term carries the volume it actually occupies. A node on a wall owns half a
+        // cell, one in a corner a quarter, and a face between two boundary rows likewise —
+        // the same weights the update uses, which is what keeps the conservation exact
+        // rather than approximate.
+        let (nx, ny) = (self.nx, self.ny);
         let potential: f64 = self
             .pressure
             .iter()
             .zip(self.pressure_prev.iter())
-            .map(|(p, prev)| p * prev / (2.0 * rc2) * volume)
+            .enumerate()
+            .map(|(k, (p, prev))| {
+                let (i, j) = (k % nx, k / nx);
+                let share = 1.0 / (wall_weight(i, nx) * wall_weight(j, ny));
+                share * p * prev / (2.0 * rc2) * volume
+            })
             .sum();
-        let kinetic: f64 = self
+        // A vx face spans a whole cell in x and sits in row `j`, so it takes that row's
+        // share; a vy face is the other way round.
+        let kinetic_x: f64 = self
             .vx
             .iter()
-            .chain(self.vy.iter())
-            .map(|u| self.density * u * u / 2.0 * volume)
+            .enumerate()
+            .map(|(k, u)| self.density * u * u / 2.0 * volume / wall_weight(k / (nx - 1), ny))
             .sum();
-        Energy::from_si(potential + kinetic)
+        let kinetic_y: f64 = self
+            .vy
+            .iter()
+            .enumerate()
+            .map(|(k, u)| self.density * u * u / 2.0 * volume / wall_weight(k % nx, nx))
+            .sum();
+        Energy::from_si(potential + kinetic_x + kinetic_y)
     }
 
     /// Cross-sectional area of one cell, for reporting.
@@ -342,7 +360,12 @@ impl Domain for Room {
                 } else {
                     self.vy[j * nx + i]
                 };
-                self.pressure[j * nx + i] -= h * rc2 / self.dx * ((right - left) + (above - below));
+                // A wall node's control volume is only half a cell wide in the direction
+                // normal to that wall, so its divergence is divided by half the spacing.
+                // Getting this wrong makes the walls twice as heavy as they are and drops
+                // the whole scheme to first order — see `wall_weight`.
+                self.pressure[j * nx + i] -= h * rc2 / self.dx
+                    * (wall_weight(i, nx) * (right - left) + wall_weight(j, ny) * (above - below));
             }
         }
         Ok(())
@@ -532,7 +555,10 @@ impl ScalarField for Room {
         } else {
             self.vy[j * nx + i]
         };
-        -self.density * self.speed * self.speed / self.dx * ((right - left) + (above - below))
+        // The same wall weighting the update uses, or this would report a rate the scheme
+        // is not going to produce — and only at the boundary, where it is hardest to see.
+        -self.density * self.speed * self.speed / self.dx
+            * (wall_weight(i, nx) * (right - left) + wall_weight(j, ny) * (above - below))
     }
 }
 
@@ -548,6 +574,30 @@ impl Room {
             }
         };
         (round(v.x, self.nx), round(v.y, self.ny))
+    }
+}
+
+/// How much of a whole cell's spacing a node's control volume spans, inverted.
+///
+/// `1` inside, `2` on a wall — because a wall node owns half a cell in that direction, so
+/// its divergence is divided by `dx/2` rather than `dx`. The same number appears reciprocally
+/// in the energy, where that node holds half as much.
+///
+/// Leaving it out is what made every mode of this room read low. The interior scheme is
+/// second order and the boundary was first, so the whole thing converged at first order:
+/// 5.4% at 23 cells, 2.8% at 45, 1.4% at 89, halving rather than quartering. `room_modes`
+/// measures that convergence, and it is now second order.
+///
+/// A cross-check that the factor is the one the physics wants: with it, the acceleration the
+/// scheme produces at a wall node matches the mirrored five-point Laplacian,
+/// `(p₁ − 2p₀ + p₁)/dx² = 2(p₁ − p₀)/dx²`, which is the standard second-order treatment of a
+/// zero-gradient boundary. Without it the scheme produced exactly half of that, and disagreed
+/// with the Laplacian [`ScalarField::laplacian`] reports for the same field.
+fn wall_weight(k: usize, n: usize) -> f64 {
+    if k == 0 || k + 1 == n {
+        2.0
+    } else {
+        1.0
     }
 }
 
@@ -734,6 +784,60 @@ mod tests {
         assert!(
             (omega / expected - 1.0).abs() < 0.02,
             "omega squared {omega} against the closed form {expected}"
+        );
+    }
+
+    /// **What the wall weighting is, stated exactly.** One step from rest moves every
+    /// pressure by `h²c²∇²p`, walls included, where `∇²` is the mirrored five-point stencil
+    /// [`ScalarField::laplacian`] reports.
+    ///
+    /// From rest the velocities are `−h∇p/ρdx` after the first half of a step, so the
+    /// pressure change is `h²c²` times whatever Laplacian the scheme implies — which makes
+    /// this a direct read of that operator, boundary treatment and all. Without the wall
+    /// weighting a boundary node moves by exactly half as much, and the two would disagree
+    /// there and only there.
+    ///
+    /// Cheaper and sharper than measuring a frequency: it is exact, it needs one step, and it
+    /// names the wrong node rather than reporting that a number came out low.
+    #[test]
+    fn one_step_from_rest_is_the_laplacian_the_field_reports() {
+        let mut room = square(17).released_in_mode(2, 1, Pressure::from_si(1.0));
+        let h = room.max_stable_dt(Time::ZERO).to_si() * 0.7;
+        let before = room.pressure.clone();
+        // Read the operator *before* stepping: the step is what is being measured, so
+        // comparing it against the Laplacian of the field it produced would be circular and
+        // off by a few percent besides.
+        let (nx, ny) = room.cells();
+        let reported: Vec<f64> = (0..ny)
+            .flat_map(|j| (0..nx).map(move |i| (i, j)))
+            .map(|(i, j)| {
+                let p = LengthVec::from_si(DVec3::new(i as f64, j as f64, 0.0) * room.dx);
+                room.laplacian(p, Time::ZERO, Length::from_si(room.dx))
+            })
+            .collect();
+        room.step(Time::ZERO, Time::from_si(h), &mut Exchange::new())
+            .unwrap();
+
+        let mut walls_checked = 0;
+        let scale = before.iter().fold(0.0f64, |a, v| a.max(v.abs())) / (room.dx * room.dx);
+        for j in 0..ny {
+            for i in 0..nx {
+                let k = j * nx + i;
+                let implied = (room.pressure[k] - before[k]) / (h * h * room.speed * room.speed);
+                assert!(
+                    (implied - reported[k]).abs() < scale * 1e-12,
+                    "node ({i},{j}): the step implies {implied} but the field says {}",
+                    reported[k]
+                );
+                if i == 0 || j == 0 || i == nx - 1 || j == ny - 1 {
+                    walls_checked += 1;
+                }
+            }
+        }
+        assert_eq!(
+            walls_checked,
+            2 * (nx + ny) - 4,
+            "every wall node was covered"
         );
     }
 

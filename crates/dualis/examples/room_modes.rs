@@ -18,9 +18,14 @@
 //! dimensions, which is why a room's colouration is audible at the bottom of the spectrum
 //! and inaudible at the top.
 //!
-//! The closed form is exact. What is checked here is that the *integration* agrees with it:
-//! a mode is released, the pressure at a corner is watched, and the zero crossings are
-//! counted. Nothing in the solver knows the formula.
+//! The closed form is exact. What is checked here is that the *integration* agrees with it,
+//! and at the right **rate**: a mode is released, the corner's zero crossings are timed, and
+//! the error is measured on three grids. Refining should quarter it.
+//!
+//! For a while it halved instead, which is how a boundary defect in `Room` was found — the
+//! walls were twice as heavy as they are. A 1.4% error looks like discretisation and invites
+//! a loose tolerance; a 1.4% error converging at the wrong order is a wrong boundary
+//! condition and nothing else.
 
 use dualis::prelude::*;
 use dualis_acoustic::Room;
@@ -85,17 +90,21 @@ fn main() {
         "x",
     );
 
-    heading("The integration converges on it -- first order, which is a defect");
+    heading("The integration converges on it, and the rate is the interesting part");
     // Release mode (1,1), time the zero crossings at a corner, and compare. Nothing in the
     // solver knows the formula, so this is an independent measurement of the same number.
     //
-    // It comes out low, and refining the grid halves the error each time rather than
-    // quartering it. A scheme that is second order in the interior converging at first order
-    // means the *boundary* is first order, and here is why: a wall node's control volume is
-    // half a cell wide, but `Room` divides its divergence by the whole `dx`. The walls come
-    // out twice as heavy as they should be and every mode reads flat. It is a real defect in
-    // the domain rather than a property of the discretisation, and it is asserted here as
-    // what it is instead of being hidden behind a loose tolerance.
+    // Refining the grid should *quarter* the error, because the scheme is second order. This
+    // measurement is here because for a while it did not — it halved, and a second-order
+    // interior converging at first order means the boundary is first order. A wall node's
+    // control volume is half a cell wide in the direction normal to the wall, and `Room` was
+    // dividing its divergence by the whole `dx`: the walls came out twice as heavy as they
+    // are, and every mode read low by 1.4% on this grid.
+    //
+    // The order of convergence found that, where no single run could have. A 1.4% error looks
+    // like discretisation and invites a loose tolerance; a 1.4% error that halves instead of
+    // quartering is a wrong boundary condition and nothing else. So the assertion stays on the
+    // ratio rather than on any one number, and it is now 4.
     let measure = |cells: usize| -> (f64, f64, Vec<(f64, f64)>) {
         let reference = Room::of_air(
             "room",
@@ -151,32 +160,32 @@ fn main() {
         (177, fine, exact_fine),
     ] {
         println!(
-            "  {cells:>4} cells: {m:8.3} Hz against {e:8.3} Hz    {:+.2}%",
+            "  {cells:>4} cells: {m:9.5} Hz against {e:9.5} Hz    {:+.4}%",
             (m / e - 1.0) * 100.0
         );
     }
-    // Always low, never high: the walls only ever add weight.
+    // Still low rather than high — a discrete grid resolves a cosine slightly slowly — but
+    // now by a hundredth of a percent rather than by one and a half.
     assert!(coarse < exact_coarse && medium < exact_medium && fine < exact_fine);
-    // And the error halves rather than quartering, which is the diagnosis.
     check(
-        "error ratio, 45 to 89 cells  (2 = first order)",
+        "error ratio, 45 to 89 cells  (4 = second order)",
         error(coarse, exact_coarse) / error(medium, exact_medium),
-        2.0,
-        0.05,
+        4.0,
+        0.02,
         "x",
     );
     check(
         "error ratio, 89 to 177 cells",
         error(medium, exact_medium) / error(fine, exact_fine),
-        2.0,
-        0.05,
+        4.0,
+        0.02,
         "x",
     );
     check_between(
         "  so 89 cells is off by",
         error(medium, exact_medium) * 100.0,
-        1.0,
-        2.0,
+        0.0,
+        0.01,
         "%",
     );
 

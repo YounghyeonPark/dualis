@@ -282,6 +282,35 @@ different colour map from a positive one: a temperature climbs from a floor, a p
 about zero, and a ramp built for the first draws a room at rest as though half of it were
 cold.
 
+## A boundary defect, and the thing that found it
+
+Both `Tube` and `Room` put their pressure samples *on* the walls rather than half a cell
+inside, so a wall sample owns half a cell. Both divided its divergence by the whole `dx`. The
+walls came out twice as heavy as they are, and every mode read low: 1.4% on an 89-cell room,
+5.4% on a coarse one.
+
+A percent and a half looks like discretisation error and invites a loose tolerance. What
+showed it was not: refining the grid **halved** the error instead of quartering it. A scheme
+second order in the interior converging at first order overall means the boundary is first
+order, and that is a wrong condition rather than a coarse one. The order of convergence found
+it; no single run could have.
+
+Two independent confirmations that the factor of two was the right one. The mirrored
+five-point stencil — the standard second-order treatment of a zero-gradient boundary — gives
+`2(p₁ − p₀)/dx²` at a wall, and the scheme was producing exactly half of that; with the fix
+they agree, which is now asserted directly by stepping once from rest and comparing against
+`ScalarField::laplacian` at every node. And the conservation audit still holds at 1e-15,
+because the energy carries the same half weights the update does. Those two had to move
+together: changing the update alone breaks the audit, and changing the audit alone hides the
+bug.
+
+The fix cost something real, which is the interesting part. `Tube`'s absorbing ends had been
+built against the unweighted update, and at the full CFL limit the corrected boundary drains
+a half-width cell with a factor of exactly **−1** — it inverts the wave instead of swallowing
+it. Not a divergence: a perfectly stable run that quietly reflects. So `max_stable_dt` now
+reports the impedance's own limit as well as the wave's, `Z·dx/2ρc²`, which halves the step
+for a matched end and leaves a closed one alone.
+
 ## Watts, photons, and the chain that closes
 
 A spectrum is a shape until it is integrated against something. `SpectralPower`
@@ -360,14 +389,8 @@ different module.
 Acoustics is linear and up to two dimensions: a tube or a room, not a hall. No 3D grid,
 no scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
 
-`Room` also has a known defect, found by the `room_modes` example and left in deliberately
-rather than fixed in the same commit that found it. A wall node's control volume is half a
-cell wide, but the pressure update divides its divergence by the whole `dx`, so the walls come
-out twice as heavy as they should be. Every mode reads low — 1.4% on an 89-cell grid — and the
-whole scheme converges at *first* order despite being second order in the interior. The
-example measures the convergence rather than hiding it behind a tolerance. Fixing it means
-touching the energy functional too, which was carefully built to make the conservation audit
-tight, so it is its own piece of work.
+Both acoustic domains had a boundary defect until recently, and how it was found is worth
+more than the fix. See the section below.
 
 **There is no fluid domain, and that is deliberate.** Sound *is* the fluid domain here:
 it is what a fluid does when the variations are small enough to linearise, which is

@@ -247,11 +247,19 @@ impl Tube {
         if rc2 <= 0.0 {
             return Energy::from_si(0.0);
         }
+        // End cells hold half a cell's worth, matching the weighting their update uses —
+        // which is what keeps this conserved exactly rather than nearly. Every velocity face
+        // is between two cells, so none of them is a special case.
+        let last = self.pressure.len() - 1;
         let potential: f64 = self
             .pressure
             .iter()
             .zip(self.pressure_prev.iter())
-            .map(|(p, prev)| p * prev / (2.0 * rc2) * volume)
+            .enumerate()
+            .map(|(i, (p, prev))| {
+                let share = if i == 0 || i == last { 0.5 } else { 1.0 };
+                share * p * prev / (2.0 * rc2) * volume
+            })
             .sum();
         let kinetic: f64 = self
             .velocity
@@ -348,7 +356,11 @@ impl Tube {
             } else {
                 self.velocity[i]
             };
-            self.pressure[i] -= dt * rc2 / self.dx * (outflow - inflow);
+            // The two end cells own half a cell each, so their divergence is divided by
+            // half the spacing. See `Room`'s `wall_weight` for what leaving this out costs:
+            // a second-order interior converging at first order.
+            let share = if i == 0 || i == n - 1 { 2.0 } else { 1.0 };
+            self.pressure[i] -= dt * rc2 / self.dx * share * (outflow - inflow);
         }
 
         // Power leaving through each wall is the acoustic intensity `p u A`, which is
@@ -387,11 +399,36 @@ impl Domain for Tube {
     /// chosen for accuracy — at exactly `dx/c` the scheme is *non-dissipative*, and
     /// stepping shorter costs accuracy in the form of numerical dispersion rather than
     /// buying it.
+    /// `dx/c` for a closed tube, and **half that** if either end absorbs.
+    ///
+    /// The extra factor is the impedance boundary's own limit rather than the wave's. An end
+    /// with `u = p/Z` drains its cell exponentially, and because that cell owns only half a
+    /// spacing the rate is `2ρc²/(Z·dx)` — so a step needs `dt ≤ Z·dx/(2ρc²)` for the decay
+    /// to be monotone, which for a matched end is `dx/2c`.
+    ///
+    /// At the full `dx/c` the factor is exactly `−1`: the end inverts the wave instead of
+    /// swallowing it. Not a divergence, so nothing here would have caught it — it looks like
+    /// a perfectly stable run that reflects, and the only symptom is a duct that rings when
+    /// it was meant to be anechoic.
     fn max_stable_dt(&self, _now: Time) -> Time {
         if self.speed <= 0.0 {
             return Time::from_si(f64::INFINITY);
         }
-        Time::from_si(self.dx / self.speed)
+        let wave = self.dx / self.speed;
+        let rc2 = self.density * self.speed * self.speed;
+        let drain = |end: End| match end {
+            End::Closed => f64::INFINITY,
+            End::Open => self.dx * self.impedance().to_si() / (2.0 * rc2),
+            End::Matched(z) => {
+                let zz = if z.to_si() > 0.0 {
+                    z.to_si()
+                } else {
+                    self.impedance().to_si()
+                };
+                self.dx * zz / (2.0 * rc2)
+            }
+        };
+        Time::from_si(wave.min(drain(self.left)).min(drain(self.right)))
     }
 
     fn step(&mut self, _t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
@@ -440,6 +477,79 @@ mod tests {
 
     fn air_tube(cells: usize) -> Tube {
         Tube::of_air("tube", Length::m(1.0), cells, Area::from_si(1e-4))
+    }
+
+    /// **The end cells own half a cell, stated exactly.** One step from rest moves every
+    /// pressure by `h²c²∇²p` on the mirrored three-point stencil, the closed ends included.
+    ///
+    /// Same check as `room::tests::one_step_from_rest_is_the_laplacian_the_field_reports`,
+    /// and for the same reason: without the weighting an end cell moves by exactly half as
+    /// much, which reads as a frequency a percent low rather than as anything obviously
+    /// wrong. Here it is a mismatch at a named cell.
+    #[test]
+    fn one_step_from_rest_is_the_three_point_laplacian() {
+        let n = 33;
+        let mut tube = air_tube(n)
+            .released_from(|x| Pressure::from_si((std::f64::consts::PI * x.to_si() / 1.0).cos()));
+        let dx = tube.dx;
+        let c = tube.speed;
+        let h = tube.max_stable_dt(Time::ZERO).to_si() * 0.7;
+        let before = tube.pressure.clone();
+        tube.step(Time::ZERO, Time::from_si(h), &mut Exchange::new())
+            .unwrap();
+
+        let scale = before.iter().fold(0.0f64, |a, v| a.max(v.abs())) / (dx * dx);
+        for i in 0..n {
+            // Mirrored at the ends — the ghost outside a rigid wall is the *reflection* of
+            // the cell inside it, `p₋₁ = p₁`, not a copy of the wall cell. Clamping instead
+            // of reflecting halves the stencil there, which is exactly the bug being tested
+            // for, so getting it wrong here would have hidden it.
+            let left = if i == 0 { before[1] } else { before[i - 1] };
+            let right = if i + 1 == n {
+                before[n - 2]
+            } else {
+                before[i + 1]
+            };
+            let expected = (left - 2.0 * before[i] + right) / (dx * dx);
+            let implied = (tube.pressure[i] - before[i]) / (h * h * c * c);
+            assert!(
+                (implied - expected).abs() < scale * 1e-12,
+                "cell {i}: the step implies {implied} but the stencil says {expected}"
+            );
+        }
+    }
+
+    /// An absorbing end restricts the step beyond what the wave does, and by a factor the
+    /// impedance sets.
+    ///
+    /// A matched end drains its half-width cell at `2ρc²/(Z dx)`, so it needs `dt` under
+    /// `Z dx / 2ρc²` — half the CFL limit when `Z` is the tube's own. At the full limit the
+    /// factor is exactly `−1` and the end inverts the wave rather than absorbing it, which
+    /// is stable, silent, and wrong.
+    #[test]
+    fn an_absorbing_end_tightens_the_step_and_a_closed_one_does_not() {
+        let closed = air_tube(101);
+        let wave = closed.max_stable_dt(Time::ZERO).to_si();
+        assert!((wave - closed.dx / closed.speed).abs() < 1e-15);
+
+        let matched = air_tube(101).with_ends(End::Closed, End::Matched(closed.impedance()));
+        assert!(
+            (matched.max_stable_dt(Time::ZERO).to_si() / (wave / 2.0) - 1.0).abs() < 1e-12,
+            "a matched end should halve it, got {}",
+            matched.max_stable_dt(Time::ZERO).to_si()
+        );
+
+        // Twice the impedance absorbs half as fast, so it costs half as much: the limit goes
+        // back to the wave's own, and no further — the wave still has to be resolved.
+        let stiff = air_tube(101).with_ends(
+            End::Closed,
+            End::Matched(Impedance::from_si(closed.impedance().to_si() * 4.0)),
+        );
+        assert!((stiff.max_stable_dt(Time::ZERO).to_si() - wave).abs() < 1e-15);
+
+        // An open end is the same condition against the tube's own impedance.
+        let open = air_tube(101).with_ends(End::Open, End::Closed);
+        assert!((open.max_stable_dt(Time::ZERO).to_si() - wave / 2.0).abs() < 1e-15);
     }
 
     /// The impedances of the media everyone compares, against the published figures.
@@ -698,7 +808,7 @@ mod tests {
         let dt = tube.max_stable_dt(Time::ZERO);
         let mut bus = Exchange::new();
         let mut collected = 0.0;
-        for _ in 0..1500 {
+        for _ in 0..3000 {
             tube.step(Time::ZERO, dt, &mut bus).unwrap();
             collected += bus.take(quantity::ENERGY);
         }
