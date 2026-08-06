@@ -15,3 +15,6 @@ dualis-core = { workspace = true }
 dualis-units = { workspace = true }
 glam = { workspace = true }
 serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

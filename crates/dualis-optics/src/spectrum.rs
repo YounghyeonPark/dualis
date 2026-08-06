@@ -18,6 +18,8 @@
 //! of the physics and where confusing it with a path length would matter. The
 //! conversion happens once, at the constructor and at [`Spectrum::at`].
 
+use std::ops::{Add, Mul};
+
 use dualis_units::Length;
 use serde::{Deserialize, Serialize};
 
@@ -30,9 +32,13 @@ pub(crate) const VISIBLE_RANGE_NM: (f64, f64) = (350.0, 1100.0);
 
 /// A quantity that varies with wavelength.
 ///
-/// Five shapes, because five is what real data comes as: a flat number, a measured
+/// Five shapes because five is what real data comes as — a flat number, a measured
 /// curve, a filter's pass bands, a Gaussian band such as an LED's output or a
-/// fluorophore's absorption, and a hot body's Planck spectrum.
+/// fluorophore's absorption, and a hot body's Planck spectrum — and two more because
+/// data is not the only thing a spectrum comes from. A light path is a *product* of the
+/// things along it, and a sample with two dyes in it is a *sum*, so
+/// [`Product`](Spectrum::Product) and [`Sum`](Spectrum::Sum) let a whole chain be one
+/// value rather than a loop the caller has to write.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Spectrum {
@@ -88,6 +94,22 @@ pub enum Spectrum {
         #[serde(default = "one")]
         peak: f64,
     },
+    /// Several spectra multiplied together, wavelength by wavelength.
+    ///
+    /// A light path is a product. Following excitation through a fluorescence microscope
+    /// is the lamp, times the excitation filter, times the dichroic's transmission, times
+    /// the dye's absorption — and the emission side is four more. Without this the only
+    /// way to ask about the whole chain is to evaluate each part at each wavelength by
+    /// hand, and the composite cannot be handed to anything.
+    ///
+    /// An empty product is 1, which is the identity and lets a chain be built up from
+    /// nothing.
+    Product { factors: Vec<Spectrum> },
+    /// Several spectra added together.
+    ///
+    /// Two dyes in the same sample, two lamps in the same illuminator, a signal plus the
+    /// leak through a filter's blocking. An empty sum is 0.
+    Sum { terms: Vec<Spectrum> },
 }
 
 fn one() -> f64 {
@@ -152,6 +174,59 @@ impl Spectrum {
             peak,
             floor: 0.0,
         }
+    }
+
+    /// Several spectra multiplied together.
+    ///
+    /// Nested products are flattened, which is not only tidiness: floating-point
+    /// multiplication is commutative but *not* associative, so `(a·b)·c` and `a·(b·c)`
+    /// could otherwise differ in their last bits. Flattening makes both spell the same
+    /// left-to-right fold, so the operators are exactly associative and a chain built in
+    /// any order gives identical numbers.
+    pub fn product(factors: Vec<Spectrum>) -> Spectrum {
+        let mut flat = Vec::with_capacity(factors.len());
+        for factor in factors {
+            match factor {
+                Spectrum::Product { factors } => flat.extend(factors),
+                other => flat.push(other),
+            }
+        }
+        Spectrum::Product { factors: flat }
+    }
+
+    /// Several spectra added together. Nested sums are flattened, for the same reason.
+    pub fn sum(terms: Vec<Spectrum>) -> Spectrum {
+        let mut flat = Vec::with_capacity(terms.len());
+        for term in terms {
+            match term {
+                Spectrum::Sum { terms } => flat.extend(terms),
+                other => flat.push(other),
+            }
+        }
+        Spectrum::Sum { terms: flat }
+    }
+
+    /// The same spectrum scaled so its largest value over `range` is exactly 1.
+    pub fn normalized_peak(&self, range: (Length, Length), steps: usize) -> Spectrum {
+        let peak = self.max_over(range, steps);
+        if peak.abs() < f64::MIN_POSITIVE {
+            return self.clone();
+        }
+        self.clone() * (1.0 / peak)
+    }
+
+    /// The same spectrum scaled so its integral over `range` is exactly 1.
+    ///
+    /// How an emission spectrum is normally carried: normalise the shape, then multiply by
+    /// a total to get a distribution. Note that the result's values are per metre — the
+    /// integral being 1 means the values had to absorb the wavelength axis — which is a
+    /// real change of meaning and not just of scale.
+    pub fn normalized_area(&self, range: (Length, Length), steps: usize) -> Spectrum {
+        let area = self.integrate(range, steps);
+        if area.abs() < f64::MIN_POSITIVE {
+            return self.clone();
+        }
+        self.clone() * (1.0 / area)
     }
 
     /// The value at a wavelength.
@@ -220,6 +295,14 @@ impl Spectrum {
                 }
                 peak * (at(wavelength_nm) / denom)
             }
+            // Folded left to right in the stored order, so the answer is a function of
+            // the representation and not of how the expression was written.
+            Spectrum::Product { factors } => factors
+                .iter()
+                .fold(1.0, |acc, f| acc * f.at_nm(wavelength_nm)),
+            Spectrum::Sum { terms } => terms
+                .iter()
+                .fold(0.0, |acc, t| acc + t.at_nm(wavelength_nm)),
         }
     }
 
@@ -265,6 +348,41 @@ impl Spectrum {
                 (Length::nm(w), self.at_nm(w))
             })
             .collect()
+    }
+}
+
+impl Mul for Spectrum {
+    type Output = Spectrum;
+
+    /// A light path, written as one.
+    fn mul(self, rhs: Spectrum) -> Spectrum {
+        Spectrum::product(vec![self, rhs])
+    }
+}
+
+impl Mul<f64> for Spectrum {
+    type Output = Spectrum;
+
+    /// Scaling, as a product with a flat spectrum — so it flattens into a chain like any
+    /// other factor rather than needing a variant of its own.
+    fn mul(self, k: f64) -> Spectrum {
+        Spectrum::product(vec![self, Spectrum::constant(k)])
+    }
+}
+
+impl Mul<Spectrum> for f64 {
+    type Output = Spectrum;
+
+    fn mul(self, s: Spectrum) -> Spectrum {
+        s * self
+    }
+}
+
+impl Add for Spectrum {
+    type Output = Spectrum;
+
+    fn add(self, rhs: Spectrum) -> Spectrum {
+        Spectrum::sum(vec![self, rhs])
     }
 }
 
@@ -497,6 +615,260 @@ mod tests {
         assert!(s.at(nm(588.0)) < 1e-9);
         let (peak_nm, peak) = s.peak_over(VISIBLE_RANGE, 750);
         assert!((peak_nm.in_nm() - 488.0).abs() < 2.0 && (peak - 1.0).abs() < 0.01);
+    }
+
+    /// A product is the pointwise product, which is the definition and the thing every
+    /// other property here rests on.
+    #[test]
+    fn a_product_multiplies_wavelength_by_wavelength() {
+        let a = Spectrum::gaussian(nm(500.0), nm(40.0), 0.9);
+        let b = Spectrum::bands(vec![[480.0, 520.0]], 0.8, 0.01);
+        let both = a.clone() * b.clone();
+        for w in [400.0, 480.0, 500.0, 519.0, 560.0, 700.0] {
+            let expected = a.at_nm(w) * b.at_nm(w);
+            assert!(
+                (both.at_nm(w) - expected).abs() < 1e-15,
+                "at {w} nm: {} against {expected}",
+                both.at_nm(w)
+            );
+        }
+        // A sum likewise.
+        let either = a.clone() + b.clone();
+        for w in [450.0, 500.0, 600.0] {
+            assert!((either.at_nm(w) - (a.at_nm(w) + b.at_nm(w))).abs() < 1e-15);
+        }
+    }
+
+    /// Flattening makes the operators exactly associative, which they would not otherwise
+    /// be: floating-point multiplication is commutative but not associative, so a nested
+    /// representation would let `(a·b)·c` and `a·(b·c)` differ in their last bits.
+    ///
+    /// With both spelling the same left-to-right fold, a chain assembled in any order
+    /// gives numbers identical to the bit — which is what the rest of this workspace
+    /// promises about everything else.
+    #[test]
+    fn products_flatten_and_so_associate_exactly() {
+        let a = Spectrum::gaussian(nm(480.0), nm(30.0), 0.7);
+        let b = Spectrum::curve(vec![(400.0, 0.1), (600.0, 0.95)]);
+        let c = Spectrum::constant(0.6);
+
+        let left = (a.clone() * b.clone()) * c.clone();
+        let right = a.clone() * (b.clone() * c.clone());
+        assert_eq!(left, right, "the two spellings should be the same value");
+        for w in [420.0, 480.0, 550.0] {
+            assert_eq!(left.at_nm(w).to_bits(), right.at_nm(w).to_bits());
+        }
+        // And the representation is flat rather than nested three deep.
+        match &left {
+            Spectrum::Product { factors } => assert_eq!(factors.len(), 3),
+            other => panic!("expected a flat product, got {other:?}"),
+        }
+    }
+
+    /// The identities, so a chain can be built up from nothing.
+    #[test]
+    fn empty_products_and_sums_are_the_identities() {
+        assert_eq!(Spectrum::product(vec![]).at_nm(550.0), 1.0);
+        assert_eq!(Spectrum::sum(vec![]).at_nm(550.0), 0.0);
+        // Which means folding a list of filters onto an empty product works.
+        let filters = [
+            Spectrum::constant(0.9),
+            Spectrum::constant(0.8),
+            Spectrum::constant(0.5),
+        ];
+        let chain = filters
+            .iter()
+            .cloned()
+            .fold(Spectrum::product(vec![]), |acc, f| acc * f);
+        assert!((chain.at_nm(550.0) - 0.36).abs() < 1e-15);
+    }
+
+    /// Scaling is a product with a flat spectrum, so it joins a chain as a factor rather
+    /// than wrapping it — and it works from either side.
+    #[test]
+    fn scaling_joins_the_chain_rather_than_wrapping_it() {
+        let s = Spectrum::gaussian(nm(520.0), nm(25.0), 1.0);
+        let half = s.clone() * 0.5;
+        assert!((half.at_nm(520.0) - 0.5).abs() < 1e-15);
+        assert_eq!(2.0 * s.clone(), s.clone() * 2.0);
+        // Two scalings and a spectrum flatten to three factors, not nested wrappers.
+        match s * 0.5 * 4.0 {
+            Spectrum::Product { factors } => assert_eq!(factors.len(), 3),
+            other => panic!("expected a flat product, got {other:?}"),
+        }
+    }
+
+    /// The connection to the integration already in `radiometry`: multiplying and then
+    /// integrating is what `integrate_weighted` does, so the two must agree.
+    ///
+    /// That is also the trap this replaces. `integrate_weighted` takes exactly one weight,
+    /// so a chain of seven had to be evaluated by hand at every wavelength; and the
+    /// integral of a product is emphatically *not* the product of the integrals, which is
+    /// the mistake a shortcut would be.
+    #[test]
+    fn multiplying_then_integrating_matches_the_weighted_integral() {
+        use crate::radiometry::STEPS;
+        let lamp = Spectrum::blackbody(3200.0);
+        let filter = Spectrum::interference_bands(vec![[500.0, 560.0]], 0.95, 8.0);
+
+        let by_product = (lamp.clone() * filter.clone()).integrate(VISIBLE_RANGE, STEPS);
+        let by_weight = lamp.integrate_weighted(&filter, VISIBLE_RANGE, STEPS);
+        assert!(
+            (by_product / by_weight - 1.0).abs() < 1e-12,
+            "{by_product:e} against {by_weight:e}"
+        );
+
+        // And the integral of a product is not the product of the integrals — not wrong by
+        // a factor, but *not the same kind of quantity*. Each integral carries a metre
+        // from the wavelength axis, so their product carries two while the integral of the
+        // product carries one. The ratio between them is therefore a length, and it comes
+        // out on the order of the range integrated over.
+        //
+        // Which is a better warning than "it is off by ten": a shortcut that changes the
+        // dimensions cannot be rescued by a correction factor.
+        let separately =
+            lamp.integrate(VISIBLE_RANGE, STEPS) * filter.integrate(VISIBLE_RANGE, STEPS);
+        let ratio = separately / by_product;
+        let width = (VISIBLE_RANGE.1 - VISIBLE_RANGE.0).to_si();
+        assert!(
+            ratio / width > 0.3 && ratio / width < 3.0,
+            "the ratio should be a length of order the range: {ratio:e} m against a \
+             range of {width:e} m"
+        );
+    }
+
+    /// **The chain this variant exists for.** A fluorescence path is seven spectra
+    /// multiplied: lamp, excitation filter, dichroic transmission, dye absorption on the
+    /// way in; dye emission, dichroic reflection and emission filter on the way out.
+    ///
+    /// Before this, the composite could be evaluated but not *held* — there was no way to
+    /// hand the whole path to anything, and `integrate_weighted` takes one weight at a
+    /// time.
+    #[test]
+    fn a_fluorescence_path_is_one_spectrum() {
+        // GFP-like: excite near 488, emit near 509.
+        let lamp = Spectrum::blackbody(5500.0);
+        let excitation_filter = Spectrum::interference_bands(vec![[470.0, 495.0]], 0.95, 6.0);
+        let dichroic_pass = Spectrum::interference_bands(vec![[460.0, 500.0]], 0.93, 8.0);
+        let dye_absorption = Spectrum::gaussian(nm(488.0), nm(40.0), 1.0);
+
+        let dye_emission = Spectrum::gaussian(nm(509.0), nm(35.0), 1.0);
+        let dichroic_reflect = Spectrum::Bands {
+            bands: vec![[460.0, 500.0]],
+            in_band: 0.05,
+            out_of_band: 0.97,
+            edge_nm: 8.0,
+        };
+        let emission_filter = Spectrum::interference_bands(vec![[505.0, 560.0]], 0.94, 6.0);
+
+        let excitation = lamp.clone()
+            * excitation_filter.clone()
+            * dichroic_pass.clone()
+            * dye_absorption.clone();
+        let emission = dye_emission.clone() * dichroic_reflect.clone() * emission_filter.clone();
+
+        // Seven factors across two chains, and both are flat.
+        match (&excitation, &emission) {
+            (Spectrum::Product { factors: a }, Spectrum::Product { factors: b }) => {
+                assert_eq!(a.len() + b.len(), 7);
+            }
+            _ => panic!("both chains should be flat products"),
+        }
+
+        // The excitation path peaks where the dye absorbs and is dark where it emits.
+        let (peak_nm, _) = excitation.peak_over(VISIBLE_RANGE, 1500);
+        assert!(
+            (peak_nm.in_nm() - 488.0).abs() < 12.0,
+            "excitation should peak near the dye's absorption, got {} nm",
+            peak_nm.in_nm()
+        );
+        assert!(
+            excitation.at(nm(509.0)) / excitation.at(nm(488.0)) < 0.1,
+            "the excitation path must be dark where the dye emits, or the leak swamps \
+             the signal"
+        );
+
+        // The emission path peaks where the dye emits and rejects the excitation band.
+        let (emit_peak, _) = emission.peak_over(VISIBLE_RANGE, 1500);
+        assert!(
+            (emit_peak.in_nm() - 515.0).abs() < 15.0,
+            "emission should peak near the dye, got {} nm",
+            emit_peak.in_nm()
+        );
+        let rejection = emission.at(nm(488.0)) / emission.at(emit_peak);
+        assert!(
+            rejection < 1e-3,
+            "the emission path should reject the excitation by at least a thousand, got \
+             {rejection:e}"
+        );
+
+        // Every factor evaluated by hand at one wavelength, as the check that the chain is
+        // the chain and not something adjacent to it.
+        let w = 505.0;
+        let by_hand = dye_emission.at_nm(w) * dichroic_reflect.at_nm(w) * emission_filter.at_nm(w);
+        assert!((emission.at_nm(w) - by_hand).abs() < 1e-15);
+    }
+
+    /// Normalising, both ways, and the change of meaning one of them carries.
+    #[test]
+    fn normalising_scales_to_a_peak_or_to_an_area() {
+        use crate::radiometry::STEPS;
+        let band = Spectrum::gaussian(nm(550.0), nm(30.0), 7.3);
+
+        let by_peak = band.normalized_peak(VISIBLE_RANGE, STEPS);
+        assert!((by_peak.max_over(VISIBLE_RANGE, STEPS) - 1.0).abs() < 1e-9);
+        // The shape is untouched: every ratio survives.
+        assert!(
+            (by_peak.at_nm(535.0) / by_peak.at_nm(550.0) - band.at_nm(535.0) / band.at_nm(550.0))
+                .abs()
+                < 1e-12
+        );
+
+        let by_area = band.normalized_area(VISIBLE_RANGE, STEPS);
+        assert!((by_area.integrate(VISIBLE_RANGE, STEPS) - 1.0).abs() < 1e-9);
+        // Which is a distribution rather than a shape: its values are per metre, so they
+        // are enormous compared with the peak-normalised version.
+        assert!(by_area.at_nm(550.0) > 1e6);
+
+        // A dark spectrum cannot be normalised and is returned unchanged rather than as a
+        // field of infinities.
+        let dark = Spectrum::constant(0.0);
+        assert_eq!(dark.normalized_peak(VISIBLE_RANGE, STEPS), dark);
+        assert_eq!(dark.normalized_area(VISIBLE_RANGE, STEPS), dark);
+    }
+
+    /// A composed spectrum serialises, so a whole light path can live in a scene file.
+    #[test]
+    fn a_composed_path_round_trips_through_json() {
+        let path = Spectrum::blackbody(3200.0)
+            * Spectrum::interference_bands(vec![[500.0, 560.0]], 0.95, 8.0)
+            * 0.5
+            + Spectrum::constant(1e-6);
+        let json = serde_json::to_string(&path).unwrap();
+        let back: Spectrum = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, path);
+        for w in [450.0, 530.0, 650.0] {
+            assert_eq!(back.at_nm(w).to_bits(), path.at_nm(w).to_bits());
+        }
+        // The nesting is visible in the file rather than flattened away, since a sum of a
+        // product is genuinely two levels.
+        assert!(json.contains("\"sum\""), "{json}");
+        assert!(json.contains("\"product\""), "{json}");
+    }
+
+    /// A long chain is a flat fold, not a deep recursion — so a path with many elements
+    /// costs one pass and cannot overflow a stack.
+    #[test]
+    fn a_long_chain_stays_flat() {
+        let mut chain = Spectrum::constant(1.0);
+        for i in 0..2000 {
+            chain = chain * Spectrum::constant(1.0 - 1e-6 * i as f64);
+        }
+        match &chain {
+            Spectrum::Product { factors } => assert_eq!(factors.len(), 2001),
+            other => panic!("expected a flat product, got {other:?}"),
+        }
+        assert!(chain.at_nm(550.0) > 0.0 && chain.at_nm(550.0) < 1.0);
     }
 
     /// The wavelength argument is a length, so a path length cannot be handed over

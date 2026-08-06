@@ -50,6 +50,7 @@ dependencies = [
  "dualis-units",
  "glam",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
