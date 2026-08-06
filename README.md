@@ -5,8 +5,10 @@
 Physics for simulated worlds — a kernel that knows nothing about any particular
 physics, and domains built on it that do.
 
-Extracted from [AiryTrace](https://github.com/YounghyeonPark/airytrace), which is
-its first consumer.
+Extracted from AiryTrace, a non-sequential ray tracer, now archived. Nothing consumes
+this workspace yet — so every claim in it is checked against a closed form or an
+independent computation rather than against an application that might be wrong in the
+same direction.
 
 ## The crates
 
