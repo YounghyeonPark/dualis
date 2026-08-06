@@ -3,11 +3,27 @@
 [![CI](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml/badge.svg)](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
-physics, and domains built on it that do.
+physics, and five domains built on it that do: **light, heat, motion, sound, and matter
+one atom at a time.**
 
-Nothing consumes this workspace yet — so every claim in it is checked against a closed
-form or an independent computation rather than against an application that might be
-wrong in the same direction.
+Dimensions live in the type system, so `Length + Time` does not compile. Conservation is
+audited rather than assumed, and a `Violation` names what went missing and where. Every
+result is reproducible bit for bit — across platforms, across optimisation levels, in
+WebAssembly, and under sixteen threads as readily as one.
+
+```sh
+cargo run --release --example melting        # a crystal melting, read off its own structure
+cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
+cargo test --workspace                       # 341 tests, all against closed forms
+```
+
+Add `out.svg` to either example and it draws the result. There are six of them; the table
+is [further down](#examples).
+
+Nothing consumes this workspace yet, and that shapes how it is written: every claim in it
+is checked against a closed form or against an independent computation rather than against
+an application that might be wrong in the same direction. Where no closed form exists, the
+README says so.
 
 ## The crates
 
