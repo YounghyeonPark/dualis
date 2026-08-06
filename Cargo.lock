@@ -9,6 +9,7 @@ dependencies = [
  "dualis-acoustic",
  "dualis-core",
  "dualis-mechanics",
+ "dualis-molecular",
  "dualis-optics",
  "dualis-thermal",
  "dualis-units",
@@ -36,6 +37,15 @@ dependencies = [
 
 [[package]]
 name = "dualis-mechanics"
+version = "0.1.0"
+dependencies = [
+ "dualis-core",
+ "dualis-units",
+ "glam",
+]
+
+[[package]]
+name = "dualis-molecular"
 version = "0.1.0"
 dependencies = [
  "dualis-core",

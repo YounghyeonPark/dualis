@@ -19,7 +19,8 @@ wrong in the same direction.
 | `dualis-thermal` | Heat: lumped masses, explicit conduction, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
-| `dualis` | A facade over the six, and where the cross-domain integration tests live |
+| `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath |
+| `dualis` | A facade over the other six, and where the cross-domain integration tests live |
 
 ```text
 dualis-units       no dependencies but glam and serde
@@ -27,7 +28,8 @@ dualis-core        depends on units
 dualis-optics      depends on core     ─┐
 dualis-thermal     depends on core      ├─  none of these knows about
 dualis-mechanics   depends on core      │   any of the others
-dualis-acoustic    depends on core     ─┘
+dualis-acoustic    depends on core      │
+dualis-molecular   depends on core     ─┘
 dualis             depends on all of them
 ```
 
@@ -35,18 +37,18 @@ dualis             depends on all of them
 changed, the kernel was wrong — that rule is what makes "add sound, add fluids" a
 matter of writing a crate rather than editing this one.
 
-Four domains are now the proof rather than an assertion. Optics publishes absorbed
+Five domains are now the proof rather than an assertion. Optics publishes absorbed
 light as heat and thermal consumes it; mechanics publishes a dashpot's dissipation on
 the same channel and the same thermal domain consumes that too, with nothing changed
 on either side; acoustics publishes what an absorbing duct end radiates onto the same
-channel again. None of the four names another and none of them needed the kernel
-changed.
+channel again; and molecular dynamics arrived last without asking for anything. None of
+the five names another and none of them needed the kernel changed.
 
 One thing did need the kernel changed, and it is worth being precise about why that is
 not a violation of the rule. The rule is that a *domain* must never force a kernel edit.
 What forced this one was the coupling mechanism itself being under-specified from the
 start: a bus carrying one number per channel could not say *where* on a surface a
-quantity crossed, so no domain could ask for that and none of the four ever did. Adding
+quantity crossed, so no domain could ask for that and none of them ever did. Adding
 `Interface` and `Flux` did not teach the kernel any physics — a discretised boundary is
 not optics or heat — and no existing domain had to change to keep working.
 
@@ -311,6 +313,43 @@ it. Not a divergence: a perfectly stable run that quietly reflects. So `max_stab
 reports the impedance's own limit as well as the wave's, `Z·dx/2ρc²`, which halves the step
 for a matched end and leaves a closed one alone.
 
+## The domain whose answers are distributions
+
+Every domain but one is checked against a value: a Fresnel coefficient, a mode frequency, a
+temperature rise. `dualis-molecular` mostly cannot be. A hundred atoms in a box are chaotic by
+construction — perturb one coordinate in its last bit and the trajectories separate completely
+inside a few hundred steps — so "close enough" is not available as a notion, and the physics
+lives in what the trajectory averages to.
+
+There turns out to be plenty of that, and all of it exact:
+
+| Claim | Exact form |
+| --- | --- |
+| Equipartition | `⟨KE⟩ = (3N − 3) k_BT / 2` |
+| Ideal gas, dilute | `PV = N k_BT`, departing as `1 + B₂(T)ρ` |
+| Virial pressure, any density | `PV = N k_BT + ⟨Σ f·r⟩/3` |
+| Lennard-Jones well | `−ε` exactly, at `2^(1/6)σ` |
+| Momentum | To the last bit, by Newton's third law |
+| Energy, unthermostatted | Bounded rather than drifting, because Verlet is symplectic |
+
+The `− 3` in the first row is not a rounding. Momentum is conserved and the drift was removed,
+so the centre of mass is frozen and three degrees of freedom are gone; counting all `3N` makes
+every reported temperature low by `1/N`, which is a percent at a hundred atoms and looks
+exactly like statistics.
+
+Two things this domain leans on harder than any other. `Rng::for_index` keys the Langevin noise
+on `(seed, step, particle)`, which is the *only* route back to a reproducible run in a chaotic
+system — there is no "close enough" to fall back on. And the symplectic argument behind
+`velocity_verlet`, which the kernel proves on a harmonic oscillator and which is relied on here
+for a many-body potential with a truncated force.
+
+One test in it is worth describing because of how it was wrong first. The ideal-gas check
+asserted that doubling the density doubles the departure, ran on one seed, and passed. Across
+four seeds the ratio came out 1.35, 1.61, 2.34 and 2.92 — averaging to 2.06, but landing
+anywhere. A hundred atoms is a small sample and two thousand correlated snapshots are far fewer
+independent ones than they look. The test now averages over seeds, and the fix for a noisy
+statistical test is more samples rather than a wider tolerance.
+
 ## Watts, photons, and the chain that closes
 
 A spectrum is a shape until it is integrated against something. `SpectralPower`
@@ -388,6 +427,13 @@ different module.
 
 Acoustics is linear and up to two dimensions: a tube or a room, not a hall. No 3D grid,
 no scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
+
+Molecular dynamics is monatomic, so the crate's name is aspirational by one step: no bonds,
+angles or torsions, and therefore no molecules. And no electrostatics, which for a charged
+system is the hard part rather than a missing feature — Coulomb falls off as `1/r` and cannot
+be cut off at all, so it needs Ewald summation or a particle-mesh method, and that is a larger
+piece of work than everything currently in the crate. No constraints, no barostat, no
+free-energy machinery.
 
 Both acoustic domains had a boundary defect until recently, and how it was found is worth
 more than the fix. See the section below.

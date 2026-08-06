@@ -35,6 +35,7 @@
 pub use dualis_acoustic as acoustic;
 pub use dualis_core as core;
 pub use dualis_mechanics as mechanics;
+pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
 pub use dualis_thermal as thermal;
 pub use dualis_units as units;
@@ -51,6 +52,7 @@ pub mod prelude {
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,
     };
+    pub use dualis_molecular::{Fluid, LennardJones, PeriodicBox, Thermostat};
     pub use dualis_optics::diffraction::{
         abbe_limit, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy, mtf_at,
         rayleigh_limit, strehl_from_wavefront_error,
