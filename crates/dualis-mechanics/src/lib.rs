@@ -30,6 +30,10 @@
 //! tolerance to every quantity it sees, and a tolerance loose enough for an
 //! integrated energy would blunt the momentum check that is genuinely sharp.
 
+pub mod tree;
+
+pub use tree::TreeNBody;
+
 use dualis_core::conserved::quantity;
 use dualis_core::{velocity_verlet, Domain, Exchange, Kind, Ledger, Newtonian, State, Violation};
 use dualis_units::{

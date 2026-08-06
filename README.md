@@ -67,6 +67,13 @@ single shared generator loses reproducibility precisely when the run gets big en
 to need it. `rng::tests::the_stream_is_pinned` fixes the generator's output as a
 constant, and changing that constant is never the fix.
 
+The parallel half of that is executed rather than argued. `TreeNBody::with_threads`
+changes how many threads evaluate forces, and
+`tree::tests::parallel_and_sequential_agree_bit_for_bit` asserts the answers are
+identical across one, two, four, eight and sixteen of them — through a whole
+integration, not just one evaluation. It holds because each thread owns a disjoint
+range of the output: there is no reduction, so there is no summation order to vary.
+
 ## Running several domains at once
 
 Domains do not agree on how big a step is: an explicit FDTD solver on a nanometre
@@ -207,9 +214,17 @@ would either fail on correct code or hide a real leak.
 No scene graph, no renderer.
 
 Mechanics is particles, not rigid bodies: there is no orientation, no inertia tensor,
-no rolling, no friction along a surface — only normal contact against a plane. And
-`NBody` is direct summation at `O(n²)`, with no tree or multipole acceleration, so it
-is a few thousand bodies rather than a few million.
+no rolling, no friction along a surface — only normal contact against a plane.
+
+Gravity comes both ways and the choice is a real one. `NBody` sums every pair: exact,
+momentum conserved to the last bit, `O(n²)`, and awkward to parallelise precisely
+because the `i < j` pairing that makes it exact has two threads writing to one body.
+`TreeNBody` is Barnes-Hut: `O(n log n)`, embarrassingly parallel, and it **gives up
+exact momentum** — each body sees its own approximation of the rest, so their mutual
+forces no longer cancel. The drift is a knob rather than a defect, closing with the
+opening angle and vanishing at `θ = 0`, and the audit tolerance has to be the one the
+angle earns. There is no multipole beyond the monopole, so `θ` above about 1 is asking
+a centre of mass to stand in for a group that is not far enough away.
 
 Wave optics is single-plane. A pupil transforms to an image and that is all: there is
 no propagation between arbitrary planes, so a beam cannot be walked down a bench, and
