@@ -109,6 +109,24 @@ jobs:
             echo "::endgroup::"
           done
 
+  # Licences and advisories, against the allow-list in `deny.toml`.
+  #
+  # The tree was audited once by hand and came back clean. That was a snapshot: one added
+  # dependency or one upstream relicensing and it stops being true, silently. This crate
+  # already enforces its MSRV and its determinism in CI rather than promising them, and a
+  # licence claim deserves the same treatment.
+  #
+  # Worth having in place *before* `dualis-world`, whose windowing and GPU stack will be
+  # several hundred crates. Nobody audits that by reading.
+  deny:
+    name: licences, advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
   # WebAssembly builds at all. Catches an accidental dependency on something the
   # target does not have — a thread, a clock, the filesystem.
   wasm:

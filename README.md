@@ -491,5 +491,18 @@ declared MSRV should be a promise about what has been compiled.
 ## Licence
 
 Dual-licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your
-option — the Rust ecosystem's convention. MIT is short and universally understood;
-Apache-2.0 adds an explicit patent grant for anyone who needs one.
+option — the Rust ecosystem's convention, and not indecision. Each covers a gap the other
+has. Apache-2.0 carries an explicit patent grant and MIT does not, which is the first thing a
+corporate legal review asks about. MIT is compatible with GPLv2 and Apache-2.0 is not, which
+matters here because the scientific-computing world has plenty of GPLv2 code. Offering both
+lets a consumer take whichever they need, so `OR` is strictly *less* restrictive than either
+alone.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion
+in the work by you, as defined in the Apache-2.0 licence, shall be dual-licensed as above,
+without any additional terms or conditions.
+
+Every dependency is permissive too, and that is checked rather than remembered: `deny.toml`
+holds an allow-list and CI fails on anything outside it. Twelve external crates at the time of
+writing, of which three reach a built artifact — `glam`, `serde` and `serde_core`, all under
+the same `MIT OR Apache-2.0`. The rest are compile-time or test-only.

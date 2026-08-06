@@ -1,0 +1,60 @@
+# cargo-deny: make the licence audit a check rather than a memory.
+#
+# The dependency tree was audited by hand once and came back clean — twelve external crates,
+# all permissive, three of which reach a built artifact. That was a snapshot. One added
+# dependency, or one upstream relicensing, and it stops being true silently.
+#
+# This matters more than it looks, because `dualis-world` is coming and a windowing and GPU
+# stack is several hundred crates. Nobody audits that by reading. Better to have the gate
+# standing before the flood than to write it afterwards.
+#
+#     cargo install cargo-deny && cargo deny check
+
+[graph]
+# The targets actually built and tested, so a dependency that only exists for some platform
+# nobody uses does not have to be argued about.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "wasm32-unknown-unknown",
+    "wasm32-wasip1",
+]
+
+[licenses]
+# An allow-list rather than a deny-list. A licence nobody thought about should stop the build
+# and be considered, not slip through because it was not on a list of bad ones.
+allow = [
+    # What this workspace is under, and what almost everything in the tree is under.
+    "MIT",
+    "Apache-2.0",
+    # Public-domain dedication, offered by `memchr` alongside MIT.
+    "Unlicense",
+    # Required *in addition* to MIT or Apache by `unicode-ident`, hence `AND` in its
+    # expression rather than `OR`. OSI-approved in 2024, BSD-style, and its only obligation
+    # is keeping the notice. It reaches no artifact either: it arrives through
+    # serde_derive -> syn -> proc-macro2, which run at compile time.
+    "Unicode-3.0",
+]
+confidence-threshold = 0.93
+# `Unlicense` is allowed and never chosen — `memchr` offers it beside MIT and the resolver
+# takes MIT. Keeping the entry anyway: the point of the list is to say what is acceptable, not
+# to mirror what happens to be in the tree this week, and an entry that goes unused is not a
+# mistake worth a warning on every run.
+unused-allowed-license = "allow"
+
+[bans]
+# Two copies of one crate is usually a version conflict worth knowing about rather than a
+# problem in itself, so warn.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[advisories]
+# Anything RustSec knows about should fail. There is nothing to grandfather in yet, and
+# starting with an empty ignore list is the only time that is free.
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
