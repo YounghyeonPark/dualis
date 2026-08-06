@@ -156,6 +156,29 @@ optics crate, heat capacity and expansion from the kernel's `Substance`, depth o
 focus from diffraction; the dimensions are what let them compose, and the `Exchange`
 audit is what proves nothing leaked on the way.
 
+## Numerical against analytic, on purpose
+
+Two ways of computing the same optics, kept side by side so each checks the other.
+`diffraction` answers what a perfect system does, in closed form from Bessel
+functions. `wavefront` answers what an imperfect one does, by transforming a pupil.
+Set the aberrations to zero and the second must reproduce the first — and it does, in
+three independent places that share no code:
+
+| | |
+| --- | --- |
+| Airy profile | The transformed pupil agrees with `[2J₁(v)/v]²` to under 0.5% of the peak, out to 3 λ/D |
+| Ideal MTF | The transform of the PSF agrees with `(2/π)(arccos s − s√(1−s²))`, the closed-form autocorrelation of a disc |
+| Strehl ratio | Small aberrations follow `exp(−(2πσ)²)`, the Maréchal approximation, whichever mode produced the error |
+
+The comparison is what makes either side trustworthy. A pupil transform has a great
+deal of room to be subtly wrong — a sampling factor, a sign, a normalisation — and
+none of it shows up as anything but a plausible picture.
+
+It also catches mistakes in the *questions*. The first Airy zero is at 1.22 λ/D and
+at 0.61 λ/NA; those are the same zero and the factor of two is the numerical aperture.
+Asking for encircled energy at the wrong one of them gives 57% instead of 84%, which
+is exactly what happened the first time.
+
 ## What the audit tolerance is really measuring
 
 A conservation audit needs a tolerance, and the right one is a property of the
@@ -188,10 +211,9 @@ no rolling, no friction along a surface — only normal contact against a plane.
 `NBody` is direct summation at `O(n²)`, with no tree or multipole acceleration, so it
 is a few thousand bodies rather than a few million.
 
-Wave optics is present but analytic only: Airy patterns, encircled energy, the ideal
-MTF, Rayleigh and Abbe limits, depth of focus, Strehl. There is no wavefront
-propagation and no pupil FFT, so an aberrated PSF cannot be computed — only the
-diffraction-limited ceiling a real system is measured against.
+Wave optics is single-plane. A pupil transforms to an image and that is all: there is
+no propagation between arbitrary planes, so a beam cannot be walked down a bench, and
+there is no partial coherence — every PSF is the incoherent one.
 
 Meshes and grids are no longer excluded. They were, on the grounds that adding them
 before a second consumer would be guessing at an interface; finite elements and

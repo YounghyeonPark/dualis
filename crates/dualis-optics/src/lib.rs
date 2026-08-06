@@ -32,12 +32,17 @@
 //! | [`material`] | Refractive index against wavelength (Sellmeier and Cauchy, with a small glass catalogue), Abbe number, and how much light survives the glass |
 //! | [`geometry`] | Rays and hits, intersections against caps, conics, planes, annuli and cylinders, Snell's law, and disc sampling |
 //!
+//! | [`diffraction`] | What a *perfect* system does: Airy patterns, encircled energy, the ideal MTF, Rayleigh and Abbe limits |
+//! | [`wavefront`] | What an imperfect one does: Zernike aberrations, pupil transforms, aberrated PSFs and their MTFs |
+//! | [`radiometry`] | Integrating a spectrum, and the difference between watts and photons |
+//!
 //! # What is deliberately not in it
 //!
-//! No scene graph, no meshes, no acceleration structure, no renderer. No wave
-//! optics yet either — this crate is entirely geometric, which means it cannot
-//! express a diffraction limit, and for a microscope that is the thing that sets
-//! the resolution. That is the next gap worth closing, not an oversight.
+//! No scene graph, no meshes, no acceleration structure, no renderer.
+//!
+//! Wave optics is single-plane: a pupil transforms to an image and that is all. There
+//! is no propagation between arbitrary planes, so a beam cannot be walked down a
+//! bench, and there is no partial coherence — every PSF here is the incoherent one.
 
 pub mod diffraction;
 pub mod geometry;
@@ -45,6 +50,7 @@ pub mod material;
 pub mod optics;
 pub mod radiometry;
 pub mod spectrum;
+pub mod wavefront;
 
 pub use diffraction::{
     abbe_limit, airy_intensity, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy,
@@ -61,6 +67,7 @@ pub use optics::{
 };
 pub use radiometry::SpectralPower;
 pub use spectrum::{Spectrum, VISIBLE_RANGE};
+pub use wavefront::{Mtf, Psf, Pupil, Zernike};
 
 /// The kernel, re-exported so a consumer of this crate does not need to name it
 /// separately to get at `Rng`, `Simulation` or the units.

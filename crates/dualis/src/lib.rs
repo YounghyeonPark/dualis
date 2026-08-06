@@ -51,9 +51,10 @@ pub mod prelude {
         abbe_limit, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy, mtf_at,
         rayleigh_limit, strehl_from_wavefront_error,
     };
+    pub use dualis_optics::wavefront::AIRY_ZERO_LAMBDA_OVER_D;
     pub use dualis_optics::{
-        fresnel_reflectance, fresnel_split, Hit, Material, Ray, Scatter, SpectralPower, Spectrum,
-        SurfaceFinish, SurfaceOptics, VISIBLE_RANGE,
+        fresnel_reflectance, fresnel_split, Hit, Material, Mtf, Psf, Pupil, Ray, Scatter,
+        SpectralPower, Spectrum, SurfaceFinish, SurfaceOptics, Zernike, VISIBLE_RANGE,
     };
     pub use dualis_thermal::{Bar1D, Environment, LumpedMass, HEAT};
     pub use dualis_units::{
