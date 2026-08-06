@@ -582,7 +582,11 @@ fn fft_1d(re: &mut [f64], im: &mut [f64], inverse: bool) {
 }
 
 /// Two-dimensional transform: rows, then columns.
-fn fft2(re: &mut [f64], im: &mut [f64], n: usize, inverse: bool) {
+///
+/// Shared with [`propagation`](crate::propagation), which needs the same transform for
+/// the angular spectrum. One implementation rather than two means the reversibility and
+/// energy checks in either module cover both.
+pub(crate) fn fft2(re: &mut [f64], im: &mut [f64], n: usize, inverse: bool) {
     let mut row_re = vec![0.0; n];
     let mut row_im = vec![0.0; n];
     for y in 0..n {
@@ -607,7 +611,7 @@ fn fft2(re: &mut [f64], im: &mut [f64], n: usize, inverse: bool) {
 
 /// Swap quadrants so the zero frequency sits at the centre. Its own inverse for an
 /// even-sized grid, which is why [`Psf::mtf`] uses it to undo itself.
-fn fftshift(data: &[f64], n: usize) -> Vec<f64> {
+pub(crate) fn fftshift(data: &[f64], n: usize) -> Vec<f64> {
     let half = n / 2;
     let mut out = vec![0.0; n * n];
     for y in 0..n {

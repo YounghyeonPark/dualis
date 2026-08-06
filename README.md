@@ -16,15 +16,17 @@ its first consumer.
 | `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, multi-domain scheduling, deterministic sampling, closed-form rigid motion |
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
 | `dualis-thermal` | Heat: lumped masses, explicit conduction, radiative and convective loss |
-| `dualis-mechanics` | Motion under force: gravitational N-body, penalty contact |
-| `dualis` | A facade over the five, and where the cross-domain integration tests live |
+| `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
+| `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
+| `dualis` | A facade over the six, and where the cross-domain integration tests live |
 
 ```text
 dualis-units       no dependencies but glam and serde
 dualis-core        depends on units
 dualis-optics      depends on core     ─┐
 dualis-thermal     depends on core      ├─  none of these knows about
-dualis-mechanics   depends on core     ─┘   any of the others
+dualis-mechanics   depends on core      │   any of the others
+dualis-acoustic    depends on core     ─┘
 dualis             depends on all of them
 ```
 
@@ -32,15 +34,29 @@ dualis             depends on all of them
 changed, the kernel was wrong — that rule is what makes "add sound, add fluids" a
 matter of writing a crate rather than editing this one.
 
-Three domains are now the proof rather than an assertion. Optics publishes absorbed
+Four domains are now the proof rather than an assertion. Optics publishes absorbed
 light as heat and thermal consumes it; mechanics publishes a dashpot's dissipation on
 the same channel and the same thermal domain consumes that too, with nothing changed
-on either side and nothing added to the kernel. None of the three names another.
+on either side; acoustics publishes what an absorbing duct end radiates onto the same
+channel again. None of the four names another and none of them needed the kernel
+changed.
 
-Mechanics also brings the kernel's audit a second conserved quantity. Momentum is
-conserved *exactly* — forces are accumulated once per pair and applied with opposite
-signs, so their sum is zero to the last bit — which is what says the ledger
-convention was not quietly built around energy.
+They also brought the audit three conserved quantities instead of one, and the three
+hold to wildly different tolerances for structural reasons rather than through
+differences in effort:
+
+| Quantity | Holds to | Because |
+| --- | --- | --- |
+| Linear momentum (`NBody`) | 1e-13 | Exact by construction: equal and opposite forces cancel bit for bit |
+| Linear momentum (`TreeNBody`) | θ-dependent | Each body sees its own approximation of the rest, so nothing cancels |
+| Angular momentum (`RigidBody`) | 1e-9 | Nothing cancels here either; it is only as good as RK4 plus a quaternion renormalisation |
+| Energy across a coupling | 1e-9 | Both sides are closed-form evaluations, nothing is integrated |
+| Energy through a contact | 2e-2 | A penalty contact is a non-smooth potential, so the symplectic bound does not apply |
+
+Auditing a vector component by component also makes the *smallest* component the
+binding constraint, since the absolute error is set by the whole vector while the scale
+it is judged against is only that component. That is a property of the kernel's
+per-quantity audit, and it is written down where it will be met.
 
 Storage is SI base units everywhere: metres, kilograms, seconds, kelvin. Millimetres
 and nanometres are entry and exit forms, and the unit-bearing constructors are the
@@ -213,8 +229,18 @@ would either fail on correct code or hide a real leak.
 
 No scene graph, no renderer.
 
-Mechanics is particles, not rigid bodies: there is no orientation, no inertia tensor,
-no rolling, no friction along a surface — only normal contact against a plane.
+Rigid bodies rotate but do not collide: `RigidBody` is free rotation about a fixed
+centre, with no torque input, no contact between bodies, no rolling and no friction
+along a surface. `ContactSystem` is still particles against a plane.
+
+Acoustics is one-dimensional and linear — a tube, not a room. No 3D rooms, no
+scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
+
+**There is no fluid domain, and that is deliberate.** Sound *is* the fluid domain here:
+it is what a fluid does when the variations are small enough to linearise, which is
+exactly the regime where every answer has a closed form to check against. Full
+Navier-Stokes has none, and a solver that could not be validated against anything would
+be decoration. See the note below on turbulence.
 
 Gravity comes both ways and the choice is a real one. `NBody` sums every pair: exact,
 momentum conserved to the last bit, `O(n²)`, and awkward to parallelise precisely
@@ -226,9 +252,10 @@ opening angle and vanishing at `θ = 0`, and the audit tolerance has to be the o
 angle earns. There is no multipole beyond the monopole, so `θ` above about 1 is asking
 a centre of mass to stand in for a group that is not far enough away.
 
-Wave optics is single-plane. A pupil transforms to an image and that is all: there is
-no propagation between arbitrary planes, so a beam cannot be walked down a bench, and
-there is no partial coherence — every PSF is the incoherent one.
+Wave optics has no partial coherence: every PSF here is the incoherent one. Fields do
+propagate between planes now, by the angular spectrum, but only through free space —
+there is no element to put in the beam's way except an aperture, and the grid's reach
+is `NΔ²/λ`, past which the propagator refuses rather than aliasing.
 
 Meshes and grids are no longer excluded. They were, on the grounds that adding them
 before a second consumer would be guessing at an interface; finite elements and

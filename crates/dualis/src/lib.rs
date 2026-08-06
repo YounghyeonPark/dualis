@@ -32,6 +32,7 @@
 //! the kernel's [`Exchange`](dualis_core::Exchange), and adding a third domain does
 //! not touch either of them.
 
+pub use dualis_acoustic as acoustic;
 pub use dualis_core as core;
 pub use dualis_mechanics as mechanics;
 pub use dualis_optics as optics;
@@ -40,13 +41,16 @@ pub use dualis_units as units;
 
 /// Everything most simulations need, in one `use`.
 pub mod prelude {
+    pub use dualis_acoustic::{impedance, reflection_coefficient, End, Impedance, Tube};
     pub use dualis_core::conserved::quantity;
     pub use dualis_core::{
         audit, basis_for, oriented_against, reflect, velocity_verlet, Domain, Dynamics, Exchange,
         Integrator, Kind, Ledger, Motion, Newtonian, Rng, Schedule, Simulation, State, Strobe,
         Substance, Violation,
     };
-    pub use dualis_mechanics::{Body, ContactSystem, Coords, Ground, NBody, GRAVITATION};
+    pub use dualis_mechanics::{
+        Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,
+    };
     pub use dualis_optics::diffraction::{
         abbe_limit, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy, mtf_at,
         rayleigh_limit, strehl_from_wavefront_error,

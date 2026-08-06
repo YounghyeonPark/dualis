@@ -48,6 +48,7 @@ pub mod diffraction;
 pub mod geometry;
 pub mod material;
 pub mod optics;
+pub mod propagation;
 pub mod radiometry;
 pub mod spectrum;
 pub mod wavefront;
@@ -64,6 +65,9 @@ pub use material::{Dispersion, Material, C_LINE, D_LINE, F_LINE};
 pub use optics::{
     brewster_angle, critical_angle, fresnel_reflectance, fresnel_split, Scatter, SurfaceFinish,
     SurfaceOptics,
+};
+pub use propagation::{
+    gaussian_divergence, gaussian_radius_at, rayleigh_range, Grid, PropagationError,
 };
 pub use radiometry::SpectralPower;
 pub use spectrum::{Spectrum, VISIBLE_RANGE};
