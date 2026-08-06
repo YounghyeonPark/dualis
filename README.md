@@ -1,6 +1,6 @@
 # dualis
 
-[![CI](https://github.com/YounghyeonPark/dualis-core/actions/workflows/ci.yml/badge.svg)](https://github.com/YounghyeonPark/dualis-core/actions/workflows/ci.yml)
+[![CI](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml/badge.svg)](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
 physics, and domains built on it that do.
