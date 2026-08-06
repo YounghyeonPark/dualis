@@ -33,6 +33,10 @@
 //! answer, it explodes within a handful of steps, so the limit is reported and the step
 //! is refused rather than attempted.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 pub mod room;
 
 pub use room::Room;
@@ -176,6 +180,10 @@ impl Tube {
         )
     }
 
+    /// Set what each end does to a wave. Both are [`End::Closed`] until told otherwise.
+    ///
+    /// An absorbing end tightens [`Domain::max_stable_dt`], because it drains its half-width
+    /// boundary cell on a timescale of its own.
     pub fn with_ends(mut self, left: End, right: End) -> Tube {
         self.left = left;
         self.right = right;
@@ -197,14 +205,18 @@ impl Tube {
         self
     }
 
+    /// How many pressure samples along the tube.
     pub fn cells(&self) -> usize {
         self.pressure.len()
     }
 
+    /// Length of the tube. Note `(n − 1)·dx`: the samples sit *on* the ends, so `n` of them
+    /// span `n − 1` gaps.
     pub fn length(&self) -> Length {
         Length::from_si((self.pressure.len() - 1) as f64 * self.dx)
     }
 
+    /// Speed of sound in the medium filling it.
     pub fn sound_speed(&self) -> Velocity {
         Velocity::m_per_s(self.speed)
     }
@@ -214,6 +226,8 @@ impl Tube {
         Impedance::from_si(self.density * self.speed)
     }
 
+    /// Acoustic pressure at one sample, clamped to the ends. Signed: sound swings either
+    /// side of the ambient pressure, which is not represented here at all.
     pub fn pressure_at(&self, cell: usize) -> Pressure {
         Pressure::from_si(self.pressure[cell.min(self.pressure.len() - 1)])
     }

@@ -64,6 +64,7 @@ pub trait State: Clone {
 /// crate's unit types cannot express through a trait — so [`State`] is in raw SI
 /// numbers and the dimensions live in the domain's own types on either side.
 pub trait Dynamics {
+    /// The state this system evolves.
     type S: State;
 
     /// `f(s, t)`. Must be a pure function: two calls with the same arguments have
@@ -78,8 +79,10 @@ pub trait Dynamics {
 /// energy for a symplectic method to preserve; express those through [`Dynamics`]
 /// and [`Integrator::Rk4`] instead.
 pub trait Newtonian {
+    /// The configuration space — positions, not positions and velocities.
     type Coords: State;
 
+    /// `a(x, t)`. Must not depend on velocity; see the note on this trait for why.
     fn acceleration(&self, x: &Self::Coords, t: Time) -> Self::Coords;
 }
 

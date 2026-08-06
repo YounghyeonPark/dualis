@@ -75,10 +75,12 @@ impl RadialDistribution {
         }
     }
 
+    /// How far out the histogram reaches, after clamping to half the box.
     pub fn range(&self) -> f64 {
         self.range
     }
 
+    /// How many shells the range is cut into.
     pub fn bins(&self) -> usize {
         self.counts.len()
     }

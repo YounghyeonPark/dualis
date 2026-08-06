@@ -1,5 +1,30 @@
 //! Dimensional analysis: physical quantities that refuse to be added wrongly.
 //!
+//! ```
+//! use dualis_units::{Area, Energy, Length, Mass, Power, SpecificHeat, Temperature, Time};
+//!
+//! // A unit-bearing constructor is the only place a factor of a thousand may appear.
+//! let side = Length::mm(10.0);
+//! let area: Area = side * side;                       // the dimension follows the product
+//! assert!((area.to_si() - 1e-4).abs() < 1e-18);
+//!
+//! // Absorbed power over a time is an energy, and the type says so without being told.
+//! let absorbed = Power::mw(96.0);
+//! let heat: Energy = absorbed * Time::s(1.0);
+//!
+//! // Divide it by a heat capacity and a temperature comes out.
+//! let capacity = Mass::g(2.0) * SpecificHeat::j_per_kg_k(858.0);
+//! let rise: Temperature = heat / capacity;
+//! assert!((rise.to_si() - 0.05594).abs() < 1e-4);
+//! ```
+//!
+//! And the mistake the whole crate exists to prevent does not compile:
+//!
+//! ```compile_fail
+//! use dualis_units::{Length, Time};
+//! let nonsense = Length::mm(3.0) + Time::s(1.0);
+//! ```
+//!
 //! One domain can get away with a convention. `dualis-core` began as optics and
 //! said "millimetres, nanometres and seconds, everywhere" in a doc comment, and
 //! that held because every number in the crate was a length, a wavelength or a
@@ -43,6 +68,10 @@
 //! to a declared list is a dependency on `uom`. The list is cheap to extend, and
 //! anything undeclared can always go through [`Qty::from_si`].
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 use core::fmt;
@@ -98,18 +127,25 @@ impl<const L: i8, const M: i8, const T: i8, const I: i8, const K: i8, const N: i
         [L, M, T, I, K, N, J]
     }
 
+    /// Magnitude without its sign, in the same dimension.
     pub fn abs(self) -> Self {
         Qty(self.0.abs())
     }
 
+    /// The smaller of two quantities of the same dimension.
     pub fn min(self, other: Self) -> Self {
         Qty(self.0.min(other.0))
     }
 
+    /// The larger of two quantities of the same dimension.
     pub fn max(self, other: Self) -> Self {
         Qty(self.0.max(other.0))
     }
 
+    /// Whether the magnitude is neither infinite nor NaN.
+    ///
+    /// Worth checking where a limit is reported rather than computed: several methods here
+    /// return an infinity to mean "no limit", which is honest but arithmetic on it is not.
     pub fn is_finite(self) -> bool {
         self.0.is_finite()
     }
@@ -282,24 +318,43 @@ impl<
 /// A pure ratio: reflectance, duty cycle, refractive index, Strehl.
 pub type Dimensionless = Qty<0, 0, 0, 0, 0, 0, 0>;
 
+/// Metres.
 pub type Length = Qty<1, 0, 0, 0, 0, 0, 0>;
+/// Kilograms.
 pub type Mass = Qty<0, 1, 0, 0, 0, 0, 0>;
+/// Seconds.
 pub type Time = Qty<0, 0, 1, 0, 0, 0, 0>;
+/// Amperes.
 pub type Current = Qty<0, 0, 0, 1, 0, 0, 0>;
 /// Absolute temperature. Kelvin only — see [`Temperature::celsius`].
 pub type Temperature = Qty<0, 0, 0, 0, 1, 0, 0>;
+/// Moles.
 pub type Amount = Qty<0, 0, 0, 0, 0, 1, 0>;
+/// Candelas.
 pub type LuminousIntensity = Qty<0, 0, 0, 0, 0, 0, 1>;
 
+/// Square metres.
 pub type Area = Qty<2, 0, 0, 0, 0, 0, 0>;
+/// Cubic metres.
 pub type Volume = Qty<3, 0, 0, 0, 0, 0, 0>;
+/// Metres per second.
 pub type Velocity = Qty<1, 0, -1, 0, 0, 0, 0>;
+/// Metres per second squared.
 pub type Acceleration = Qty<1, 0, -2, 0, 0, 0, 0>;
+/// kg·m·s⁻¹ — mass times velocity, and the thing a closed system conserves
+/// exactly rather than nearly.
 pub type Momentum = Qty<1, 1, -1, 0, 0, 0, 0>;
+/// Newtons.
 pub type Force = Qty<1, 1, -2, 0, 0, 0, 0>;
+/// Pascals. Also the unit of an energy density and of a stress, which are the same
+/// dimension and not a coincidence.
 pub type Pressure = Qty<-1, 1, -2, 0, 0, 0, 0>;
+/// Joules.
 pub type Energy = Qty<2, 1, -2, 0, 0, 0, 0>;
+/// Watts.
 pub type Power = Qty<2, 1, -3, 0, 0, 0, 0>;
+/// kg·m⁻³. Note that a glass catalogue quotes g/cm³, a factor of a thousand away —
+/// see [`Density::g_per_cm3`].
 pub type Density = Qty<-3, 1, 0, 0, 0, 0, 0>;
 /// Cycles per second. Dimensionally identical to an angular velocity, since a
 /// radian is m/m — the type system cannot and should not pretend otherwise.
@@ -334,7 +389,9 @@ pub type Stiffness = Qty<0, 1, -2, 0, 0, 0, 0>;
 /// N·s·m⁻¹ — a dashpot's `c`. Force proportional to velocity, and the only place a
 /// mechanical simulation loses energy on purpose.
 pub type Damping = Qty<0, 1, -1, 0, 0, 0, 0>;
+/// Coulombs.
 pub type Charge = Qty<0, 0, 1, 1, 0, 0, 0>;
+/// Volts.
 pub type Voltage = Qty<2, 1, -3, -1, 0, 0, 0>;
 /// J·K⁻¹ — mass times specific heat. How much heat a thing can hide before it
 /// shows up as a temperature.
@@ -425,51 +482,65 @@ impl Area {
 // ---------------------------------------------------------------------------
 
 impl Length {
+    /// Metres.
     pub fn m(v: f64) -> Length {
         Qty(v)
     }
+    /// Millimetres.
     pub fn mm(v: f64) -> Length {
         Qty(v * 1e-3)
     }
+    /// Micrometres.
     pub fn um(v: f64) -> Length {
         Qty(v * 1e-6)
     }
+    /// Nanometres. The wavelength unit, and why every `Spectrum` field is named `_nm`.
     pub fn nm(v: f64) -> Length {
         Qty(v * 1e-9)
     }
+    /// As millimetres.
     pub fn in_mm(self) -> f64 {
         self.0 * 1e3
     }
+    /// As micrometres.
     pub fn in_um(self) -> f64 {
         self.0 * 1e6
     }
+    /// As nanometres.
     pub fn in_nm(self) -> f64 {
         self.0 * 1e9
     }
 }
 
 impl Time {
+    /// Seconds.
     pub fn s(v: f64) -> Time {
         Qty(v)
     }
+    /// Milliseconds.
     pub fn ms(v: f64) -> Time {
         Qty(v * 1e-3)
     }
+    /// Microseconds.
     pub fn us(v: f64) -> Time {
         Qty(v * 1e-6)
     }
+    /// Nanoseconds.
     pub fn ns(v: f64) -> Time {
         Qty(v * 1e-9)
     }
+    /// As milliseconds.
     pub fn in_ms(self) -> f64 {
         self.0 * 1e3
     }
+    /// As microseconds.
     pub fn in_us(self) -> f64 {
         self.0 * 1e6
     }
 }
 
 impl Temperature {
+    /// Kelvin, which is what is stored.
     pub fn kelvin(v: f64) -> Temperature {
         Qty(v)
     }
@@ -479,15 +550,18 @@ impl Temperature {
     pub fn celsius(v: f64) -> Temperature {
         Qty(v + 273.15)
     }
+    /// As degrees Celsius. Subtracts the offset; see [`Temperature::celsius`].
     pub fn in_celsius(self) -> f64 {
         self.0 - 273.15
     }
 }
 
 impl Mass {
+    /// Kilograms.
     pub fn kg(v: f64) -> Mass {
         Qty(v)
     }
+    /// Grams.
     pub fn g(v: f64) -> Mass {
         Qty(v * 1e-3)
     }
@@ -498,42 +572,52 @@ impl Density {
     pub fn g_per_cm3(v: f64) -> Density {
         Qty(v * 1e3)
     }
+    /// Kilograms per cubic metre, which is what is stored.
     pub fn kg_per_m3(v: f64) -> Density {
         Qty(v)
     }
 }
 
 impl Power {
+    /// Watts.
     pub fn w(v: f64) -> Power {
         Qty(v)
     }
+    /// Milliwatts.
     pub fn mw(v: f64) -> Power {
         Qty(v * 1e-3)
     }
+    /// Microwatts.
     pub fn uw(v: f64) -> Power {
         Qty(v * 1e-6)
     }
+    /// As milliwatts.
     pub fn in_mw(self) -> f64 {
         self.0 * 1e3
     }
 }
 
 impl Energy {
+    /// Joules.
     pub fn j(v: f64) -> Energy {
         Qty(v)
     }
+    /// Millijoules.
     pub fn mj(v: f64) -> Energy {
         Qty(v * 1e-3)
     }
 }
 
 impl Frequency {
+    /// Hertz.
     pub fn hz(v: f64) -> Frequency {
         Qty(v)
     }
+    /// Kilohertz.
     pub fn khz(v: f64) -> Frequency {
         Qty(v * 1e3)
     }
+    /// Megahertz.
     pub fn mhz(v: f64) -> Frequency {
         Qty(v * 1e6)
     }
@@ -544,15 +628,18 @@ impl Frequency {
 }
 
 impl Velocity {
+    /// Metres per second.
     pub fn m_per_s(v: f64) -> Velocity {
         Qty(v)
     }
+    /// Millimetres per second.
     pub fn mm_per_s(v: f64) -> Velocity {
         Qty(v * 1e-3)
     }
 }
 
 impl Irradiance {
+    /// Watts per square metre, which is what is stored.
     pub fn w_per_m2(v: f64) -> Irradiance {
         Qty(v)
     }
@@ -563,12 +650,14 @@ impl Irradiance {
 }
 
 impl ThermalConductivity {
+    /// W·m⁻¹·K⁻¹, the unit a materials table uses.
     pub fn w_per_m_k(v: f64) -> ThermalConductivity {
         Qty(v)
     }
 }
 
 impl SpecificHeat {
+    /// J·kg⁻¹·K⁻¹, the unit a materials table uses.
     pub fn j_per_kg_k(v: f64) -> SpecificHeat {
         Qty(v)
     }
@@ -582,6 +671,8 @@ impl ThermalExpansion {
 }
 
 impl Dimensionless {
+    /// A bare ratio, for the one case where a number genuinely has no dimension:
+    /// a reflectance, a duty cycle, a refractive index.
     pub fn ratio(v: f64) -> Dimensionless {
         Qty(v)
     }

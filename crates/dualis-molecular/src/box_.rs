@@ -40,6 +40,7 @@ pub struct PeriodicBox {
 }
 
 impl PeriodicBox {
+    /// A cube of the given edge length, in metres.
     pub fn cubic(length: f64) -> PeriodicBox {
         PeriodicBox {
             length: length.max(f64::MIN_POSITIVE),
@@ -52,6 +53,7 @@ impl PeriodicBox {
         PeriodicBox::cubic(volume.cbrt())
     }
 
+    /// Volume in cubic metres.
     pub fn volume(&self) -> f64 {
         self.length.powi(3)
     }
@@ -159,10 +161,13 @@ impl CellList {
         }
     }
 
+    /// Cells per side. One means the list degenerated to every pair, which happens in a box
+    /// too small to divide — see [`CellList::build`].
     pub fn divisions(&self) -> usize {
         self.divisions
     }
 
+    /// Edge length of one cell, which is never less than the cutoff it was built for.
     pub fn cell_size(&self) -> f64 {
         self.cell_size
     }

@@ -49,8 +49,11 @@ use glam::{DQuat, DVec3};
 /// Names for the axes of the angular momentum audit. See the note on
 /// [`conserved`](crate::conserved) for why a vector is audited per component.
 pub mod conserved {
+    /// The `x` component of angular momentum, kg·m²·s⁻¹.
     pub const ANGULAR_MOMENTUM_X: &str = "angular_momentum_x";
+    /// The `y` component.
     pub const ANGULAR_MOMENTUM_Y: &str = "angular_momentum_y";
+    /// The `z` component.
     pub const ANGULAR_MOMENTUM_Z: &str = "angular_momentum_z";
 }
 
@@ -62,6 +65,7 @@ pub mod conserved {
 /// arbitrary tensor would need diagonalising first, which is not implemented here.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Inertia {
+    /// The three principal moments, kg·m², along the body frame axes.
     pub principal: DVec3,
 }
 
@@ -180,7 +184,11 @@ pub struct RigidBody {
 /// The integrated state: angular velocity in the body frame, then the quaternion.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Spin {
+    /// Angular velocity in the *body* frame, rad/s. Body frame because that is where the
+    /// inertia tensor is diagonal, which is what makes Euler's equations simple.
     pub omega: DVec3,
+    /// Body-to-world rotation. Renormalised each step, since integrating a quaternion drifts
+    /// off the unit sphere and a non-unit quaternion is a rotation plus a scaling.
     pub orientation: DQuat,
 }
 
@@ -236,10 +244,12 @@ impl RigidBody {
         self
     }
 
+    /// Apply a torque, N·m in the world frame. Constant until set again.
     pub fn set_torque(&mut self, torque: DVec3) {
         self.torque_world = torque;
     }
 
+    /// The torque currently applied, world frame.
     pub fn torque(&self) -> DVec3 {
         self.torque_world
     }
@@ -256,6 +266,11 @@ impl RigidBody {
         self
     }
 
+    /// Point the body somewhere, keeping its *world* angular velocity unchanged.
+    ///
+    /// Which means the body-frame `omega` is rewritten. Turning a body should not change how
+    /// it is spinning in space, and storing the velocity in the body frame makes that a
+    /// conversion rather than a no-op.
     pub fn with_orientation(mut self, orientation: DQuat) -> RigidBody {
         let world = self.orientation * self.omega_body;
         self.orientation = orientation.normalize();
@@ -263,12 +278,14 @@ impl RigidBody {
         self
     }
 
+    /// The principal moments this body was given.
     pub fn inertia(&self) -> Inertia {
         Inertia {
             principal: self.inertia,
         }
     }
 
+    /// Body-to-world rotation, normalised.
     pub fn orientation(&self) -> DQuat {
         self.orientation
     }
@@ -293,6 +310,8 @@ impl RigidBody {
         self.orientation * (self.inertia * self.omega_body)
     }
 
+    /// `|L|`, for a quick check. The audit uses the components, because a ledger sums its
+    /// entries and the sum of magnitudes is not the magnitude of the sum.
     pub fn angular_momentum_magnitude(&self) -> AngularMomentum {
         AngularMomentum::from_si(self.angular_momentum().length())
     }

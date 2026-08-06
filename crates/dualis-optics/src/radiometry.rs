@@ -162,10 +162,13 @@ impl SpectralPower {
         self
     }
 
+    /// The distribution, without its total. Relative weights only.
     pub fn shape(&self) -> &Spectrum {
         &self.shape
     }
 
+    /// The wavelength band the total is spread over. Anything outside it is not modelled,
+    /// so a lamp that radiates past the range has that power silently excluded.
     pub fn range(&self) -> (Length, Length) {
         self.range
     }

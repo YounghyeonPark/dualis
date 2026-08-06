@@ -71,6 +71,10 @@ impl Coherence {
     /// Matched condenser, the usual compromise.
     pub const MATCHED: Coherence = Coherence { ratio: 1.0 };
 
+    /// A coherence from the ratio of the coherent to the incoherent cutoff.
+    ///
+    /// Clamped at zero below; there is no upper clamp, because a source can be more coherent
+    /// than the aperture needs and the transfer function simply saturates.
     pub fn new(ratio: f64) -> Coherence {
         Coherence {
             ratio: ratio.max(0.0),

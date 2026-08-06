@@ -141,24 +141,29 @@ impl Room {
         })
     }
 
+    /// Width of the room. `(nx − 1)·dx`, because the samples sit on the walls.
     pub fn width(&self) -> Length {
         Length::from_si((self.nx - 1) as f64 * self.dx)
     }
 
+    /// Height of the room.
     pub fn height(&self) -> Length {
         Length::from_si((self.ny - 1) as f64 * self.dx)
     }
 
+    /// Samples across and up, as `(nx, ny)`.
     pub fn cells(&self) -> (usize, usize) {
         (self.nx, self.ny)
     }
 
+    /// Acoustic pressure at one node, clamped to the walls. Signed.
     pub fn pressure_at(&self, i: usize, j: usize) -> Pressure {
         let i = i.min(self.nx - 1);
         let j = j.min(self.ny - 1);
         Pressure::from_si(self.pressure[j * self.nx + i])
     }
 
+    /// Largest pressure magnitude anywhere in the room.
     pub fn peak_pressure(&self) -> Pressure {
         Pressure::from_si(self.pressure.iter().fold(0.0f64, |a, p| a.max(p.abs())))
     }

@@ -77,18 +77,24 @@ impl Interface {
         }
     }
 
+    /// What this boundary is called. Both sides of a coupling must agree on it, and a
+    /// mismatch is how they discover they meant different surfaces.
     pub fn name(&self) -> &'static str {
         self.name
     }
 
+    /// How many faces it is cut into. This is the number both sides have to agree on.
     pub fn faces(&self) -> usize {
         self.areas.len()
     }
 
+    /// Area of one face. Zero past the end, so a consumer walking the boundary need not
+    /// bounds-check the kernel.
     pub fn area_of(&self, face: usize) -> Area {
         Area::from_si(self.areas.get(face).copied().unwrap_or(0.0))
     }
 
+    /// Total area of the boundary.
     pub fn total_area(&self) -> Area {
         Area::from_si(self.areas.iter().sum())
     }
@@ -118,12 +124,15 @@ pub struct Flux {
 }
 
 impl Flux {
+    /// Nothing, spread over the given number of faces. At least one face, so an empty flux
+    /// is not a special case every consumer has to handle.
     pub fn zeros(faces: usize) -> Flux {
         Flux {
             per_face: vec![0.0; faces.max(1)],
         }
     }
 
+    /// Amounts per face, in SI base units and in the interface's own order.
     pub fn from_faces(per_face: Vec<f64>) -> Flux {
         Flux {
             per_face: if per_face.is_empty() {
@@ -192,10 +201,12 @@ impl Flux {
         Flux::from_faces(weights.into_iter().map(|w| total * w / sum).collect())
     }
 
+    /// How many faces this flux covers. Must match the interface it is published on.
     pub fn faces(&self) -> usize {
         self.per_face.len()
     }
 
+    /// The amount on one face. Zero past the end.
     pub fn at(&self, face: usize) -> f64 {
         self.per_face.get(face).copied().unwrap_or(0.0)
     }

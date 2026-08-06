@@ -73,8 +73,10 @@ pub enum Kind {
 /// that describe a well-behaved evolving domain with no stability limit and no
 /// books to keep.
 pub trait Domain {
+    /// What this domain is called. Used to look it up and to name it in a violation.
     fn name(&self) -> &'static str;
 
+    /// Whether it has state to roll forward. Defaults to [`Kind::Evolving`].
     fn kind(&self) -> Kind {
         Kind::Evolving
     }
@@ -117,6 +119,10 @@ pub trait Domain {
     /// Restore the last [`Domain::checkpoint`].
     fn restore(&mut self) {}
 
+    /// Whether [`Domain::checkpoint`] and [`Domain::restore`] actually do something.
+    ///
+    /// [`Schedule::Iterative`] refuses to run a domain that says no, rather than iterating
+    /// from the wrong state and reporting a residual that means nothing.
     fn supports_restore(&self) -> bool {
         false
     }
@@ -154,6 +160,7 @@ pub struct Exchange {
 }
 
 impl Exchange {
+    /// An empty bus.
     pub fn new() -> Exchange {
         Exchange::default()
     }
@@ -347,7 +354,12 @@ pub enum Schedule {
     /// reported as a [`Violation`] rather than accepted, because an unconverged
     /// coupling that is allowed through is the most expensive kind of wrong
     /// answer: it looks like physics.
-    Iterative { max_iter: u32, tol: f64 },
+    Iterative {
+        /// Give up after this many sweeps. Reaching it is a [`Violation`], not a result.
+        max_iter: u32,
+        /// The residual every domain must fall under for the step to be accepted.
+        tol: f64,
+    },
     /// As [`Schedule::Staggered`], but each evolving domain takes as many equal
     /// substeps as its own stability limit needs.
     Multirate,
@@ -390,6 +402,9 @@ impl Simulation {
         }
     }
 
+    /// Add a domain. Order matters for [`Schedule::Staggered`] and its relatives: a domain
+    /// sees the output of those declared before it from this step, and of those after it from
+    /// the last one.
     pub fn with(mut self, domain: impl Domain + 'static) -> Simulation {
         self.domains.push(Box::new(domain));
         self
@@ -409,14 +424,18 @@ impl Simulation {
         self
     }
 
+    /// How far the simulation has been advanced.
     pub fn time(&self) -> Time {
         self.t
     }
 
+    /// The coupling bus, for reading what crossed between domains.
     pub fn bus(&self) -> &Exchange {
         &self.bus
     }
 
+    /// A domain by name, through the trait. For the concrete type, see
+    /// [`Simulation::domain_as`].
     pub fn domain(&self, name: &str) -> Option<&dyn Domain> {
         self.domains
             .iter()

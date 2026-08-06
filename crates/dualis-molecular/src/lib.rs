@@ -38,6 +38,10 @@
 //! What is here is the part with closed forms to check against, which is the same line every
 //! other domain in this workspace is drawn along.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 pub mod box_;
 pub mod fluid;
 pub mod potential;

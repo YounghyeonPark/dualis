@@ -44,10 +44,18 @@ pub(crate) const VISIBLE_RANGE_NM: (f64, f64) = (350.0, 1100.0);
 pub enum Spectrum {
     /// The same value at every wavelength. Honest for a metal mirror over a narrow
     /// band, and a useful way to isolate one effect from the others.
-    Constant { value: f64 },
+    Constant {
+        /// The value, at every wavelength.
+        value: f64,
+    },
     /// A measured curve: `(nm, value)` pairs, linearly interpolated between them
     /// and held flat outside them.
-    Curve { samples: Vec<(f64, f64)> },
+    Curve {
+        /// `(nanometres, value)`, in increasing wavelength. Held flat past either end, which
+        /// is right for a measurement that simply stops and wrong for a physical cutoff —
+        /// see the note on `Detector::quantum_efficiency` for what that cost once.
+        samples: Vec<(f64, f64)>,
+    },
     /// Pass bands with real edges. `in_band` inside, `out_of_band` outside, and a
     /// transition `edge_nm` wide between them.
     ///
@@ -58,7 +66,10 @@ pub enum Spectrum {
     Bands {
         /// `[low, high]` pairs, nm. A long-pass is one open-ended band.
         bands: Vec<[f64; 2]>,
+        /// Transmission inside a band.
         in_band: f64,
+        /// Transmission outside every band. Not zero for a real filter: blocking is finite,
+        /// and six orders of magnitude of it is what a fluorescence experiment lives on.
         #[serde(default)]
         out_of_band: f64,
         /// Width of the transition, nm. 0 is a brick wall.
@@ -75,8 +86,11 @@ pub enum Spectrum {
     /// `fwhm_nm` is the full width at half maximum, so a 20 nm LED is
     /// `fwhm_nm: 20`.
     Gaussian {
+        /// Centre wavelength, nm.
         center_nm: f64,
+        /// Full width at half maximum, nm — not the standard deviation.
         fwhm_nm: f64,
+        /// Value at the centre.
         peak: f64,
         /// Value far from the peak. Dyes have a real tail; lasers do not.
         #[serde(default)]
@@ -90,7 +104,10 @@ pub enum Spectrum {
     /// behaves differently under an LED. Scaled so its peak is `peak`, since a ray
     /// tracer only needs relative weights.
     Blackbody {
+        /// Colour temperature in kelvin. A tungsten lamp is about 3200, the sun about 5800.
         temperature_k: f64,
+        /// What the peak is scaled to. Planck's law in absolute units spans many decades,
+        /// and a ray tracer only needs relative weights.
         #[serde(default = "one")]
         peak: f64,
     },
@@ -104,12 +121,18 @@ pub enum Spectrum {
     ///
     /// An empty product is 1, which is the identity and lets a chain be built up from
     /// nothing.
-    Product { factors: Vec<Spectrum> },
+    Product {
+        /// The factors. Flattened on construction, so `Mul` is exactly associative.
+        factors: Vec<Spectrum>,
+    },
     /// Several spectra added together.
     ///
     /// Two dyes in the same sample, two lamps in the same illuminator, a signal plus the
     /// leak through a filter's blocking. An empty sum is 0.
-    Sum { terms: Vec<Spectrum> },
+    Sum {
+        /// The terms. Flattened on construction, as for [`Spectrum::Product`].
+        terms: Vec<Spectrum>,
+    },
 }
 
 fn one() -> f64 {

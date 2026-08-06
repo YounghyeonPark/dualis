@@ -30,6 +30,10 @@
 //! tolerance to every quantity it sees, and a tolerance loose enough for an
 //! integrated energy would blunt the momentum check that is genuinely sharp.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 pub mod collision;
 pub mod rigid;
 pub mod tree;
@@ -59,20 +63,27 @@ pub const HEAT: &str = quantity::ENERGY;
 /// audited per axis. The magnitude would not do: a ledger sums its contributions, and
 /// the sum of magnitudes is not the magnitude of the sum.
 pub mod conserved {
+    /// The `x` component of linear momentum, kg·m·s⁻¹.
     pub const MOMENTUM_X: &str = "momentum_x";
+    /// The `y` component of linear momentum, kg·m·s⁻¹.
     pub const MOMENTUM_Y: &str = "momentum_y";
+    /// The `z` component of linear momentum, kg·m·s⁻¹.
     pub const MOMENTUM_Z: &str = "momentum_z";
 }
 
 /// A point mass.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Body {
+    /// How much of it there is.
     pub mass: Mass,
+    /// Where it is.
     pub position: LengthVec,
+    /// How fast and which way it is going.
     pub velocity: VelocityVec,
 }
 
 impl Body {
+    /// A point mass with a position and a velocity.
     pub fn new(mass: Mass, position: LengthVec, velocity: VelocityVec) -> Body {
         Body {
             mass,
@@ -86,6 +97,7 @@ impl Body {
         dualis_units::vector::kinetic_energy(self.mass, self.velocity)
     }
 
+    /// `mv`. Audited per axis rather than as a magnitude — see [`conserved`].
     pub fn momentum(&self) -> dualis_units::MomentumVec {
         self.mass * self.velocity
     }
@@ -142,6 +154,7 @@ pub struct NBody {
 }
 
 impl NBody {
+    /// Every body attracting every other, summed exactly.
     pub fn new(name: &'static str, bodies: &[Body]) -> NBody {
         NBody {
             name,
@@ -153,15 +166,23 @@ impl NBody {
         }
     }
 
+    /// Soften the singularity: `1/(r² + ε²)` instead of `1/r²`.
+    ///
+    /// Two point masses passing arbitrarily close exchange arbitrarily large momentum in one
+    /// step, and no fixed-step integrator survives that. Softening trades the near field for
+    /// the far field staying right. Zero is exact Newtonian gravity, and correct only while
+    /// nothing gets close.
     pub fn with_softening(mut self, softening: Length) -> NBody {
         self.softening = softening.to_si().abs();
         self
     }
 
+    /// How many bodies.
     pub fn count(&self) -> usize {
         self.masses.len()
     }
 
+    /// One body, reassembled from the separate arrays the integrator works on.
     pub fn body(&self, index: usize) -> Body {
         Body {
             mass: Mass::from_si(self.masses[index]),
@@ -429,6 +450,8 @@ pub struct ContactSystem {
 }
 
 impl ContactSystem {
+    /// Bodies falling under gravity onto a ground plane, meeting it through a penalty
+    /// contact.
     pub fn new(
         name: &'static str,
         bodies: &[Body],
@@ -451,6 +474,7 @@ impl ContactSystem {
         }
     }
 
+    /// One body.
     pub fn body(&self, index: usize) -> Body {
         Body {
             mass: Mass::from_si(self.masses[index]),
@@ -459,6 +483,7 @@ impl ContactSystem {
         }
     }
 
+    /// How many bodies.
     pub fn count(&self) -> usize {
         self.masses.len()
     }

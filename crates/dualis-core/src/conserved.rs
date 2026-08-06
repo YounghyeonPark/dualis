@@ -52,14 +52,22 @@ pub struct Ledger(BTreeMap<&'static str, Entry>);
 /// can add its own without editing the kernel — but these spellings are the ones
 /// [`audit`] will match across domains, so use them.
 pub mod quantity {
+    /// Joules. The channel four of the five domains publish and consume on.
     pub const ENERGY: &str = "energy";
+    /// kg·m·s⁻¹. Audited component by component, which makes the smallest component the
+    /// binding one — see [`audit`](super::audit).
     pub const MOMENTUM: &str = "momentum";
+    /// Kilograms.
     pub const MASS: &str = "mass";
+    /// Coulombs.
     pub const CHARGE: &str = "charge";
+    /// A count, not an energy. A photon budget and a joule budget are different books, and
+    /// a detector is where the two stop being interchangeable.
     pub const PHOTONS: &str = "photons";
 }
 
 impl Ledger {
+    /// An empty ledger, holding nothing.
     pub fn new() -> Ledger {
         Ledger(BTreeMap::new())
     }
@@ -71,6 +79,10 @@ impl Ledger {
         self
     }
 
+    /// Add to a quantity's total, in SI base units.
+    ///
+    /// Also raises that entry's `scale` to the largest contribution seen, which is what makes
+    /// a relative tolerance mean anything when the net total is near zero.
     pub fn add(&mut self, quantity: &'static str, si_total: f64) {
         let entry = self.0.entry(quantity).or_default();
         entry.total += si_total;
@@ -88,6 +100,7 @@ impl Ledger {
         self.0.get(quantity).map(|e| e.scale)
     }
 
+    /// Whether anything at all has been recorded.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -117,7 +130,9 @@ pub struct Violation {
     pub quantity: String,
     /// Where it broke — a domain name, a coupling name, a wavelength.
     pub site: String,
+    /// What the quantity was, in SI base units.
     pub before: f64,
+    /// What it became.
     pub after: f64,
     /// What the discrepancy was measured against — the largest entry that went into
     /// the books, not the net total, since a correct system's net is often zero. Zero
@@ -243,6 +258,7 @@ pub fn audit(site: &str, before: &Ledger, after: &Ledger, rel_tol: f64) -> Resul
 /// Something that can say what it is holding. Implemented by domains, and by
 /// anything else whose books are worth checking.
 pub trait Conserves {
+    /// What this is currently holding.
     fn ledger(&self) -> Ledger;
 }
 

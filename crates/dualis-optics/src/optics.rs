@@ -288,9 +288,16 @@ pub enum SurfaceFinish {
     /// reflectance left, per wavelength: a good broadband V-coat leaves about 0.05
     /// of it (4% becomes 0.2%) in its design band and degrades outside it, which is
     /// why coatings are specified spectrally.
-    Coated { residual: Spectrum },
+    Coated {
+        /// Fraction of the bare Fresnel reflectance that survives, per wavelength.
+        residual: Spectrum,
+    },
     /// A mirrored surface: reflect rather than refract, with this reflectance.
-    Mirrored { reflectance: Spectrum },
+    Mirrored {
+        /// Reflectance per wavelength. Whatever is not reflected is absorbed, since a mirror
+        /// transmits nothing — which is what makes a mirror a heat source.
+        reflectance: Spectrum,
+    },
 }
 
 impl SurfaceFinish {

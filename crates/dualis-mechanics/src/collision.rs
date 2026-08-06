@@ -47,9 +47,13 @@ use crate::rigid::Inertia;
 /// through the collision, and that is a different module.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sphere {
+    /// How much of it there is.
     pub mass: Mass,
+    /// Its radius, which is where contact happens.
     pub radius: Length,
+    /// Centre position.
     pub position: LengthVec,
+    /// Velocity of the centre.
     pub velocity: VelocityVec,
     /// Angular velocity in the world frame, rad/s. A sphere is a spherical top, so
     /// there is no body frame to distinguish.
@@ -99,11 +103,13 @@ impl Sphere {
         }
     }
 
+    /// Set the centre-of-mass velocity.
     pub fn with_velocity(mut self, velocity: VelocityVec) -> Sphere {
         self.velocity = velocity;
         self
     }
 
+    /// Set the angular velocity, rad/s in the world frame.
     pub fn with_spin(mut self, spin: DVec3) -> Sphere {
         self.spin = spin;
         self
@@ -128,6 +134,10 @@ impl Sphere {
         self.velocity.to_si() + self.spin.cross(offset)
     }
 
+    /// Translational plus rotational: `½mv² + ½Iω²`.
+    ///
+    /// Both halves, because a rolling sphere keeps two sevenths of its energy in the spin and
+    /// a model that forgets it gets the wrong answer for a ball down a slope.
     pub fn kinetic_energy(&self) -> Energy {
         let v = self.velocity.to_si().length();
         Energy::from_si(
@@ -135,6 +145,7 @@ impl Sphere {
         )
     }
 
+    /// `mv` for the centre of mass. The spin carries angular momentum, not linear.
     pub fn momentum(&self) -> dualis_units::MomentumVec {
         self.mass * self.velocity
     }
@@ -180,6 +191,10 @@ impl Surface {
         }
     }
 
+    /// A surface with a coefficient of restitution and one of friction.
+    ///
+    /// Restitution is clamped to `0..=1`: above one a bounce would return more energy than it
+    /// arrived with, which is the one thing this workspace refuses everywhere.
     pub fn new(restitution: f64, friction: f64) -> Surface {
         Surface {
             restitution: restitution.clamp(0.0, 1.0),
@@ -286,6 +301,7 @@ impl Rolling {
         }
     }
 
+    /// The sphere as it is now, part way down the slope.
     pub fn ball(&self) -> Sphere {
         self.ball
     }
@@ -308,10 +324,13 @@ impl Rolling {
         self.speed() - self.ball.radius.to_si() * self.spin()
     }
 
+    /// How far along the slope it has travelled.
     pub fn distance(&self) -> Length {
         Length::from_si(self.travelled)
     }
 
+    /// Energy lost to friction while slipping. Zero once it rolls without slipping, which
+    /// is why a rolling ball does not heat up.
     pub fn dissipated_energy(&self) -> Energy {
         Energy::from_si(self.dissipated)
     }

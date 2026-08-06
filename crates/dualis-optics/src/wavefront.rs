@@ -52,7 +52,10 @@ use crate::diffraction::FIRST_AIRY_ZERO;
 /// wavefront specs quoting "0.1 waves of coma" can differ by a factor of `√8`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Zernike {
+    /// Radial order. Sets how many times the mode changes sign from centre to edge.
     pub n: u32,
+    /// Azimuthal frequency, signed. Its magnitude is the number of cycles around the pupil;
+    /// the sign picks cosine from sine, so `m` and `−m` are the same shape rotated.
     pub m: i32,
 }
 
@@ -61,19 +64,26 @@ impl Zernike {
     pub const PISTON: Zernike = Zernike { n: 0, m: 0 };
     /// Tilt, which moves the image rather than blurring it.
     pub const TILT_X: Zernike = Zernike { n: 1, m: 1 };
+    /// Tilt in the other direction.
     pub const TILT_Y: Zernike = Zernike { n: 1, m: -1 };
     /// Defocus. The one aberration a focus knob can remove.
     pub const DEFOCUS: Zernike = Zernike { n: 2, m: 0 };
     /// Astigmatism at 0 and 45 degrees.
     pub const ASTIGMATISM_0: Zernike = Zernike { n: 2, m: 2 };
+    /// Astigmatism at 45 degrees. The same shape as [`Zernike::ASTIGMATISM_0`], turned.
     pub const ASTIGMATISM_45: Zernike = Zernike { n: 2, m: -2 };
     /// Coma, which makes a point look like a comet and does not average out.
     pub const COMA_X: Zernike = Zernike { n: 3, m: 1 };
+    /// Coma along the other axis.
     pub const COMA_Y: Zernike = Zernike { n: 3, m: -1 };
+    /// Trefoil: three-fold symmetry, which is what a lens pinched by three mount points
+    /// does to a wavefront.
     pub const TREFOIL_0: Zernike = Zernike { n: 3, m: 3 };
     /// Spherical aberration: the one a single spherical surface cannot avoid.
     pub const SPHERICAL: Zernike = Zernike { n: 4, m: 0 };
 
+    /// An arbitrary mode. `m` outside `−n..=n`, or of the wrong parity, is not a Zernike
+    /// polynomial and evaluates to zero rather than to something plausible.
     pub fn new(n: u32, m: i32) -> Zernike {
         Zernike { n, m }
     }
@@ -226,10 +236,13 @@ impl Pupil {
         }
     }
 
+    /// Samples across the pupil grid.
     pub fn samples(&self) -> usize {
         self.samples
     }
 
+    /// Pupil diameter in samples. Smaller than the grid on purpose: the pupil has to be
+    /// padded to sample the point spread function finely enough to see the rings.
     pub fn diameter(&self) -> f64 {
         self.diameter
     }
@@ -337,6 +350,7 @@ pub struct Psf {
 }
 
 impl Psf {
+    /// Samples across the image grid.
     pub fn samples(&self) -> usize {
         self.samples
     }

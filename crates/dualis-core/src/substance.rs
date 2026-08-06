@@ -29,12 +29,22 @@ use serde::{Deserialize, Serialize};
 /// A material, as much of it as is known.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Substance {
+    /// What it is called. Free text: a catalogue designation, a common name, whatever the
+    /// caller will recognise in a violation message.
     pub name: String,
+    /// kg·m⁻³. The one property everything has, which is why it is not optional.
     pub density: Density,
+    /// Conductivity, specific heat, emissivity and a service limit, if they are known.
+    ///
+    /// Optional because a substance is often only known as far as it needed to be. A domain
+    /// asking for what is not here gets `None` rather than a plausible default, which is the
+    /// difference between "unknown" and "zero".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thermal: Option<ThermalProps>,
+    /// Stiffness, restitution and friction, if they are known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mechanical: Option<MechanicalProps>,
+    /// Sound speed and absorption, if they are known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acoustic: Option<AcousticProps>,
 }
@@ -93,6 +103,7 @@ impl Substance {
         Some(self.mass_of(volume) * t.specific_heat)
     }
 
+    /// Mass of a given volume of it.
     pub fn mass_of(&self, volume: Volume) -> Mass {
         self.density * volume
     }

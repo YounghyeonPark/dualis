@@ -35,6 +35,7 @@ pub const EPS: Length = Length::from_si(1e-9);
 /// A ray: where it starts and which way it goes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ray {
+    /// Where it starts.
     pub origin: LengthVec,
     /// Unit direction. Dimensionless, because a direction is.
     pub dir: DVec3,
@@ -77,6 +78,7 @@ impl Ray {
 pub struct Hit {
     /// Distance along the ray.
     pub t: Length,
+    /// Where it landed, in the same frame as the ray.
     pub point: LengthVec,
     /// Geometric unit normal, as the surface stores it — not yet oriented against
     /// the ray. Use [`oriented_against`](dualis_core::oriented_against) for that.

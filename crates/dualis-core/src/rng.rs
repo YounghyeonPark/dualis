@@ -91,6 +91,7 @@ impl Rng {
         (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
+    /// Uniform in `[lo, hi)`. One draw from the stream, whatever the bounds.
     pub fn range(&mut self, lo: f64, hi: f64) -> f64 {
         lo + (hi - lo) * self.unit()
     }

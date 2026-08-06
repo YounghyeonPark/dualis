@@ -29,6 +29,10 @@
 //! crate. The point here is a domain that couples correctly and reports its own
 //! stability limit, not a competitive thermal solver.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 use dualis_core::conserved::quantity;
 use dualis_core::{Domain, Exchange, Interface, Kind, Ledger, ScalarField, Substance, Violation};
 use dualis_units::{
@@ -47,6 +51,7 @@ pub const HEAT: &str = quantity::ENERGY;
 /// How a body loses heat to its surroundings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Environment {
+    /// The temperature the surroundings sit at, and what a body relaxes towards.
     pub ambient: Temperature,
     /// Convective coefficient `h`, W·m⁻²·K⁻¹. Still air is about 5 to 10; forced air
     /// 25 to 100; water hundreds. There is no right default, so there is no default.
@@ -103,6 +108,12 @@ pub struct LumpedMass {
 }
 
 impl LumpedMass {
+    /// A body of one substance at one temperature, losing heat to its surroundings.
+    ///
+    /// `thickness` is the characteristic length for the Biot number, usually volume over
+    /// surface area. It does not enter the dynamics — only
+    /// [`LumpedMass::biot_number`], which is how you find out whether the lumped
+    /// approximation was honest here.
     pub fn new(
         name: &'static str,
         substance: Substance,
@@ -124,6 +135,7 @@ impl LumpedMass {
         }
     }
 
+    /// Absolute temperature of the whole body.
     pub fn temperature(&self) -> Temperature {
         self.temperature
     }
@@ -133,6 +145,8 @@ impl LumpedMass {
         self.temperature - self.environment.ambient
     }
 
+    /// `mc_p` for this body. Infinite if the substance has no specific heat recorded,
+    /// which makes it refuse to warm rather than warm by a made-up amount.
     pub fn heat_capacity(&self) -> HeatCapacity {
         self.substance
             .heat_capacity(self.volume)
@@ -338,10 +352,12 @@ impl Bar1D {
         self.boundary.as_ref()
     }
 
+    /// Temperature of one cell, clamped to the ends of the bar.
     pub fn temperature_at(&self, index: usize) -> Temperature {
         Temperature::from_si(self.cells[index.min(self.cells.len() - 1)])
     }
 
+    /// How many cells the bar is cut into.
     pub fn cell_count(&self) -> usize {
         self.cells.len()
     }

@@ -42,6 +42,7 @@ pub struct QVec3<
 impl<const L: i8, const M: i8, const T: i8, const I: i8, const K: i8, const N: i8, const J: i8>
     QVec3<L, M, T, I, K, N, J>
 {
+    /// The zero vector, in whatever dimension this is.
     pub const ZERO: Self = QVec3(DVec3::ZERO);
 
     /// Wrap a vector already in SI base units.
@@ -54,6 +55,7 @@ impl<const L: i8, const M: i8, const T: i8, const I: i8, const K: i8, const N: i
         self.0
     }
 
+    /// From three quantities of the same dimension.
     pub fn new(
         x: Qty<L, M, T, I, K, N, J>,
         y: Qty<L, M, T, I, K, N, J>,
@@ -62,18 +64,22 @@ impl<const L: i8, const M: i8, const T: i8, const I: i8, const K: i8, const N: i
         QVec3(DVec3::new(x.to_si(), y.to_si(), z.to_si()))
     }
 
+    /// The same quantity in all three components.
     pub fn splat(v: Qty<L, M, T, I, K, N, J>) -> Self {
         QVec3(DVec3::splat(v.to_si()))
     }
 
+    /// The x component, carrying the dimension with it.
     pub fn x(self) -> Qty<L, M, T, I, K, N, J> {
         Qty::from_si(self.0.x)
     }
 
+    /// The y component, carrying the dimension with it.
     pub fn y(self) -> Qty<L, M, T, I, K, N, J> {
         Qty::from_si(self.0.y)
     }
 
+    /// The z component, carrying the dimension with it.
     pub fn z(self) -> Qty<L, M, T, I, K, N, J> {
         Qty::from_si(self.0.z)
     }
@@ -100,10 +106,16 @@ impl<const L: i8, const M: i8, const T: i8, const I: i8, const K: i8, const N: i
         QVec3(self.0 - direction * self.0.dot(direction))
     }
 
+    /// Whether every component is neither infinite nor NaN.
     pub fn is_finite(self) -> bool {
         self.0.is_finite()
     }
 
+    /// Straight-line interpolation, `t = 0` here and `t = 1` there.
+    ///
+    /// Not clamped, so `t` outside the unit interval extrapolates. Useful for a strobe
+    /// sampling between two recorded states, and wrong for anything that should not leave
+    /// the segment.
     pub fn lerp(self, other: Self, t: f64) -> Self {
         QVec3(self.0 + (other.0 - self.0) * t)
     }
@@ -235,9 +247,15 @@ impl<
 /// A position or a displacement, m. The same dimension, and deliberately the same
 /// type: the difference between them is a choice of origin, not of physics.
 pub type LengthVec = QVec3<1, 0, 0, 0, 0, 0, 0>;
+/// A velocity, m·s⁻¹.
 pub type VelocityVec = QVec3<1, 0, -1, 0, 0, 0, 0>;
+/// An acceleration, m·s⁻².
 pub type AccelerationVec = QVec3<1, 0, -2, 0, 0, 0, 0>;
+/// A force, newtons.
 pub type ForceVec = QVec3<1, 1, -2, 0, 0, 0, 0>;
+/// A momentum, kg·m·s⁻¹. The vector a closed system conserves component by
+/// component — and see the note in the workspace README on why the *smallest* component
+/// is what binds a conservation audit.
 pub type MomentumVec = QVec3<1, 1, -1, 0, 0, 0, 0>;
 
 /// A scalar times a vector, and the division that undoes it.
@@ -275,21 +293,26 @@ scaled_by!(LengthVec, Stiffness => ForceVec);
 scaled_by!(VelocityVec, Damping => ForceVec);
 
 impl LengthVec {
+    /// Millimetres.
     pub fn mm(x: f64, y: f64, z: f64) -> LengthVec {
         QVec3(DVec3::new(x, y, z) * 1e-3)
     }
+    /// Metres.
     pub fn m(x: f64, y: f64, z: f64) -> LengthVec {
         QVec3(DVec3::new(x, y, z))
     }
+    /// As millimetres.
     pub fn in_mm(self) -> DVec3 {
         self.0 * 1e3
     }
 }
 
 impl VelocityVec {
+    /// Millimetres per second.
     pub fn mm_per_s(x: f64, y: f64, z: f64) -> VelocityVec {
         QVec3(DVec3::new(x, y, z) * 1e-3)
     }
+    /// Metres per second.
     pub fn m_per_s(x: f64, y: f64, z: f64) -> VelocityVec {
         QVec3(DVec3::new(x, y, z))
     }

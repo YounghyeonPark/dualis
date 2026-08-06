@@ -43,9 +43,65 @@
 //! | [`transform`] | The discrete Fourier transform, accurate rather than fast |
 //! | [`vector`] | Basis construction and reflection — the vector maths no domain owns |
 //!
+//! # A domain, and the audit that checks it
+//!
+//! ```
+//! use dualis_core::conserved::quantity;
+//! use dualis_core::{Domain, Exchange, Kind, Ledger, Schedule, Simulation, Violation};
+//! use dualis_core::units::Time;
+//!
+//! /// A source that pays out a watt, and says so in its books.
+//! struct Lamp { paid: f64 }
+//! impl Domain for Lamp {
+//!     fn name(&self) -> &'static str { "lamp" }
+//!     fn kind(&self) -> Kind { Kind::QuasiStatic }
+//!     fn step(&mut self, _t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
+//!         let joules = 1.0 * dt.to_si();
+//!         bus.publish(quantity::ENERGY, joules);
+//!         self.paid += joules;
+//!         Ok(())
+//!     }
+//!     // Negative: it is holding a debt, having handed the energy away.
+//!     fn ledger(&self) -> Ledger { Ledger::new().with(quantity::ENERGY, -self.paid) }
+//! }
+//!
+//! /// A sink that takes whatever is offered and keeps it.
+//! struct Block { held: f64 }
+//! impl Domain for Block {
+//!     fn name(&self) -> &'static str { "block" }
+//!     fn step(&mut self, _t: Time, _dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
+//!         self.held += bus.take(quantity::ENERGY);
+//!         Ok(())
+//!     }
+//!     fn ledger(&self) -> Ledger { Ledger::new().with(quantity::ENERGY, self.held) }
+//!     // Opt in to being readable from outside. Without this, `domain_as` returns `None`:
+//!     // the coupling never needs the concrete type, so it is not given away by default.
+//!     fn as_any(&self) -> Option<&dyn std::any::Any> { Some(self) }
+//! }
+//!
+//! let mut sim = Simulation::new(Schedule::Staggered)
+//!     .with(Lamp { paid: 0.0 })
+//!     .with(Block { held: 0.0 });
+//! for _ in 0..10 {
+//!     sim.advance(Time::ms(100.0)).expect("the books balance");
+//! }
+//!
+//! // A joule went across, and the two ledgers cancel because nothing was lost.
+//! let block: &Block = sim.domain_as("block").unwrap();
+//! assert!((block.held - 1.0).abs() < 1e-12);
+//! assert!(sim.ledger().get(quantity::ENERGY).unwrap().abs() < 1e-12);
+//! ```
+//!
+//! Had `Block` consumed only half of what was published, `advance` would have returned a
+//! [`Violation`] naming the channel rather than quietly losing the rest.
+//!
 //! Units come from `dualis-units` and are re-exported below, so a domain crate
 //! needs one dependency rather than two.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 pub mod conserved;
 pub mod field;
 pub mod integrator;

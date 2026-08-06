@@ -23,6 +23,7 @@ pub struct Material {
     /// which is often close enough to be the sensible default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub internal_transmittance: Option<Spectrum>,
+    /// How the refractive index varies with wavelength.
     #[serde(flatten)]
     pub dispersion: Dispersion,
 }
@@ -32,13 +33,19 @@ pub struct Material {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Dispersion {
     /// Wavelength-independent index (ideal glass).
-    Constant { n: f64 },
+    Constant {
+        /// The index, at every wavelength.
+        n: f64,
+    },
     /// Three-term Sellmeier dispersion: n² = 1 + Σ Bᵢ λ² / (λ² - Cᵢ), wavelength in
     /// micrometres. Optional `name` keeps catalog identity.
     Sellmeier {
+        /// Catalogue designation, kept so a glass can be recognised after a round trip.
         #[serde(default)]
         name: String,
+        /// The three `B` coefficients, dimensionless.
         b: [f64; 3],
+        /// The three `C` coefficients, in µm².
         c: [f64; 3],
     },
     /// Cauchy dispersion: n = A + B/λ² + C/λ⁴, λ in micrometres.
@@ -46,7 +53,14 @@ pub enum Dispersion {
     /// Less accurate than Sellmeier and valid only across the visible, but it is
     /// the form a great deal of published data for plastics, liquids and coatings
     /// comes in — and a two-term fit is often all that was ever measured.
-    Cauchy { a: f64, b: f64, c: f64 },
+    Cauchy {
+        /// The constant term, which is the index in the limit of long wavelengths.
+        a: f64,
+        /// The `1/λ²` coefficient, µm².
+        b: f64,
+        /// The `1/λ⁴` coefficient, µm⁴. Often zero, because often only two terms were fitted.
+        c: f64,
+    },
 }
 
 impl From<Dispersion> for Material {
@@ -61,8 +75,11 @@ impl From<Dispersion> for Material {
 /// The Fraunhofer lines an optical prescription is written against: the helium d
 /// line and the hydrogen F and C lines. A glass is specified at these three
 /// wavelengths and nowhere else.
+/// The sodium `d` line, 587.5618 nm. The wavelength a glass's nominal index is quoted at.
 pub const D_LINE: Length = Length::from_si(587.5618e-9);
+/// The hydrogen `F` line, 486.1327 nm — the blue end of the Abbe number's span.
 pub const F_LINE: Length = Length::from_si(486.1327e-9);
+/// The hydrogen `C` line, 656.2725 nm — the red end.
 pub const C_LINE: Length = Length::from_si(656.2725e-9);
 
 impl Material {

@@ -32,6 +32,10 @@
 //! the kernel's [`Exchange`](dualis_core::Exchange), and adding a third domain does
 //! not touch either of them.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 pub use dualis_acoustic as acoustic;
 pub use dualis_core as core;
 pub use dualis_mechanics as mechanics;

@@ -72,6 +72,7 @@ pub trait ScalarField {
 
 /// A vector field: velocity, force per volume, electric field, heat flux.
 pub trait VectorField {
+    /// The value at a place and time, in this field's SI base unit.
     fn at(&self, p: LengthVec, t: Time) -> DVec3;
 
     /// ∇·F — net outflow per unit volume. Zero everywhere means nothing is being

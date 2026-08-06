@@ -374,6 +374,11 @@ pub struct TreeNBody {
 }
 
 impl TreeNBody {
+    /// A Barnes-Hut tree over these bodies: `O(n log n)`, parallel, and approximate.
+    ///
+    /// Approximate in a way worth knowing before using it — each body sees its own truncated
+    /// expansion of the rest, so their mutual forces no longer cancel and momentum drifts.
+    /// The drift is set by [`TreeNBody::with_theta`] and vanishes at zero.
     pub fn new(name: &'static str, bodies: &[Body]) -> TreeNBody {
         TreeNBody {
             name,
@@ -414,6 +419,7 @@ impl TreeNBody {
         self
     }
 
+    /// Soften the singularity, as [`NBody::with_softening`](crate::NBody::with_softening).
     pub fn with_softening(mut self, softening: Length) -> TreeNBody {
         self.softening = softening.to_si().abs();
         self
@@ -428,14 +434,18 @@ impl TreeNBody {
         self
     }
 
+    /// How many bodies.
     pub fn count(&self) -> usize {
         self.masses.len()
     }
 
+    /// The opening angle in use. Smaller is more accurate and slower; zero is exact and
+    /// `O(n²)`.
     pub fn theta(&self) -> f64 {
         self.theta
     }
 
+    /// One body.
     pub fn body(&self, index: usize) -> Body {
         Body {
             mass: Mass::from_si(self.masses[index]),
@@ -444,6 +454,8 @@ impl TreeNBody {
         }
     }
 
+    /// Total linear momentum. Not conserved here, unlike in `NBody` — see
+    /// [`TreeNBody::new`].
     pub fn momentum(&self) -> dualis_units::MomentumVec {
         let p = self
             .masses
@@ -454,6 +466,7 @@ impl TreeNBody {
         dualis_units::MomentumVec::from_si(p)
     }
 
+    /// Summed `½mv²` over every body.
     pub fn kinetic_energy(&self) -> Energy {
         let k: f64 = self
             .masses

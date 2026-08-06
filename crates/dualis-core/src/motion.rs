@@ -28,13 +28,20 @@ use serde::{Deserialize, Serialize};
 pub enum Motion {
     /// Constant velocity: a conveyor belt, a translation stage, or the drift of a
     /// star field across an untracked telescope.
-    Drift { velocity: VelocityVec },
+    Drift {
+        /// How fast and which way.
+        velocity: VelocityVec,
+    },
     /// Sinusoidal displacement about the authored position, which is the centre of
     /// the swing. `amplitude` carries both size and direction, so a floor
     /// vibration and an axial focus dither are the same variant.
     Oscillate {
+        /// Peak displacement, carrying its direction. Half the peak-to-peak swing.
         amplitude: LengthVec,
+        /// Cycles per second.
         frequency: Frequency,
+        /// Where in the cycle `t = 0` falls, in degrees. Zero starts at the centre moving
+        /// towards `amplitude`.
         #[serde(default)]
         phase_deg: f64,
     },
@@ -42,9 +49,13 @@ pub enum Motion {
     /// or a scanning mirror: it turns what it carries as well as moving it, so an
     /// element's own axis tilts too.
     Spin {
+        /// Rotation axis, normalised internally. Right-handed about this direction.
         axis: DVec3,
+        /// A point the axis passes through. Defaults to the origin, so a spin about the
+        /// authored position needs nothing said.
         #[serde(default)]
         pivot: LengthVec,
+        /// Degrees per second, positive being right-handed about `axis`.
         rate_deg_per_s: f64,
     },
 }
@@ -146,6 +157,10 @@ pub struct Strobe {
 }
 
 impl Strobe {
+    /// A strobe of the given period, open for `duty` of each cycle.
+    ///
+    /// `duty` is a fraction rather than a time, so changing the rate of a strobe leaves its
+    /// exposure *ratio* alone — which is how a camera behaves and not how a shutter does.
     pub fn new(period: Time, duty: f64) -> Strobe {
         Strobe {
             period,

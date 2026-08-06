@@ -32,6 +32,9 @@
 //! work is done in — which is the property the kernel's generator was built for and the one a
 //! chaotic system makes impossible to recover any other way.
 
+// Every public item carries a doc comment. See `dualis-units` for why this is denied.
+#![deny(missing_docs)]
+
 use dualis_core::conserved::quantity;
 use dualis_core::{Domain, Exchange, Kind, Ledger, Rng, Violation};
 use dualis_units::{Energy, Length, Mass, Pressure, Temperature, Time, Volume, BOLTZMANN};
@@ -53,7 +56,12 @@ pub enum Thermostat {
     /// reaches the target quickly and distorts the dynamics on the way, since a thermostat
     /// strong enough to fix the temperature is also strong enough to change the diffusion
     /// coefficient. A tenth of the inverse collision time is the usual compromise.
-    Langevin { target: Temperature, damping: f64 },
+    Langevin {
+        /// The temperature the bath holds the fluid at, in the long run and on average.
+        target: Temperature,
+        /// `γ`, in inverse seconds. See the note on this variant for how to choose it.
+        damping: f64,
+    },
 }
 
 /// A box of atoms interacting through a pair potential.
@@ -179,6 +187,10 @@ impl Fluid {
         self
     }
 
+    /// Attach a thermostat, or [`Thermostat::None`] for the NVE ensemble.
+    ///
+    /// Only without one does energy conservation mean anything, which is why the tests that
+    /// check it never set one.
     pub fn with_thermostat(mut self, thermostat: Thermostat) -> Fluid {
         self.thermostat = thermostat;
         self
@@ -196,14 +208,17 @@ impl Fluid {
         }
     }
 
+    /// How many atoms.
     pub fn count(&self) -> usize {
         self.positions.len()
     }
 
+    /// The periodic box they live in.
     pub fn bounds(&self) -> PeriodicBox {
         self.bounds
     }
 
+    /// Volume of the box. Fixed: there is no barostat, so this is the V of NVE and NVT.
     pub fn volume(&self) -> Volume {
         Volume::from_si(self.bounds.volume())
     }
@@ -213,10 +228,12 @@ impl Fluid {
         self.positions.len() as f64 / self.bounds.volume()
     }
 
+    /// Position of one atom in metres, wrapped into the box. Clamped index.
     pub fn position(&self, i: usize) -> DVec3 {
         self.positions[i.min(self.positions.len() - 1)]
     }
 
+    /// Velocity of one atom in m/s. Clamped index.
     pub fn velocity(&self, i: usize) -> DVec3 {
         self.velocities[i.min(self.velocities.len() - 1)]
     }
@@ -232,15 +249,23 @@ impl Fluid {
         (3 * self.positions.len()).saturating_sub(3) as f64
     }
 
+    /// `½Σmv²`. With the drift removed this is entirely thermal, which is what makes
+    /// [`Fluid::temperature`] a temperature.
     pub fn kinetic_energy(&self) -> Energy {
         let sum: f64 = self.velocities.iter().map(|v| v.length_squared()).sum();
         Energy::from_si(0.5 * self.mass * sum)
     }
 
+    /// Summed pair energies, from the same sweep that produced the forces.
+    ///
+    /// Truncated and shifted, so it is not comparable with a published number until the tail
+    /// correction is added — see [`LennardJones::energy_tail`].
     pub fn potential_energy(&self) -> Energy {
         Energy::from_si(self.potential_energy)
     }
 
+    /// Kinetic plus potential. Bounded rather than constant under Verlet, because a
+    /// symplectic integrator conserves a shadow Hamiltonian and not the energy.
     pub fn total_energy(&self) -> Energy {
         self.kinetic_energy() + self.potential_energy()
     }

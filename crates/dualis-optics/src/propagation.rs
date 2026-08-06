@@ -133,14 +133,17 @@ impl Grid {
         })
     }
 
+    /// Samples across the grid. A power of two, because the transform is radix-2.
     pub fn samples(&self) -> usize {
         self.samples
     }
 
+    /// Spacing between samples, which sets the highest spatial frequency represented.
     pub fn pitch(&self) -> Length {
         Length::from_si(self.pitch)
     }
 
+    /// The wavelength this grid was built for. Propagation distance limits scale with it.
     pub fn wavelength(&self) -> Length {
         Length::from_si(self.wavelength)
     }
@@ -303,7 +306,13 @@ impl Grid {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PropagationError {
     /// Past the distance this grid can represent without aliasing.
-    TooFar { requested: Length, limit: Length },
+    TooFar {
+        /// The distance that was asked for.
+        requested: Length,
+        /// The furthest this grid can go, `NΔ²/λ`. Beyond it the transfer function aliases,
+        /// which produces a picture rather than a diffraction pattern.
+        limit: Length,
+    },
 }
 
 impl std::fmt::Display for PropagationError {

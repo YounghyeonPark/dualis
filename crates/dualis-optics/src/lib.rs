@@ -52,6 +52,10 @@
 //! transmission cross-coefficients, which are a four-dimensional integral and are not
 //! here.
 
+// Every public item carries a doc comment. Denied rather than warned: a public physics API
+// whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
+// paragraph exists somewhere, and not in the sense a reader needs.
+#![deny(missing_docs)]
 pub mod coherence;
 pub mod detector;
 pub mod diffraction;

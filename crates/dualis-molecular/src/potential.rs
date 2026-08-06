@@ -51,6 +51,7 @@ pub struct LennardJones {
 /// vector next, and computing `r` from `r²` is a square root that is not otherwise needed.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pair {
+    /// Pair potential energy in joules, already shifted so it reaches the cutoff at zero.
     pub energy: f64,
     /// Force per unit separation: the force on the first particle is `force_over_r * d`,
     /// where `d` points from the second to the first.
@@ -85,6 +86,8 @@ impl LennardJones {
         }
     }
 
+    /// Move the cutoff. Beyond `L/2` of whatever box this ends up in, the minimum image
+    /// becomes ambiguous and [`PeriodicBox::admits`](crate::PeriodicBox::admits) says so.
     pub fn with_cutoff(mut self, cutoff: f64) -> LennardJones {
         self.cutoff = cutoff;
         self
