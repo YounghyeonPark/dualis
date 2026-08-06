@@ -37,6 +37,7 @@
 //! | [`substance`] | Thermal, mechanical and acoustic properties of matter |
 //! | [`motion`] | Closed-form rigid motion and time gating |
 //! | [`rng`] | A deterministic generator, and the sampling built on it |
+//! | [`transform`] | The discrete Fourier transform, accurate rather than fast |
 //! | [`vector`] | Basis construction and reflection — the vector maths no domain owns |
 //!
 //! Units come from `dualis-units` and are re-exported below, so a domain crate
@@ -49,6 +50,7 @@ pub mod motion;
 pub mod rng;
 pub mod sim;
 pub mod substance;
+pub mod transform;
 pub mod vector;
 
 pub use conserved::{audit, Conserves, Ledger, Violation};
@@ -58,6 +60,7 @@ pub use motion::{Motion, Strobe};
 pub use rng::Rng;
 pub use sim::{Domain, Exchange, Kind, Schedule, Simulation};
 pub use substance::Substance;
+pub use transform::{fft, fft2, fftshift, ifft, ifft2};
 pub use vector::{basis_for, oriented_against, reflect};
 
 /// Everything from `dualis-units`, so that `use dualis_core::units::*` is enough

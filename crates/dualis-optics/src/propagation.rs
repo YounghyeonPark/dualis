@@ -44,7 +44,7 @@ use std::f64::consts::{PI, TAU};
 
 use dualis_units::Length;
 
-use crate::wavefront::{fft2, fftshift};
+use dualis_core::transform::{fft2, fftshift, ifft2};
 
 /// A complex field sampled on a square grid with a stated physical spacing.
 ///
@@ -232,7 +232,7 @@ impl Grid {
         let n = self.samples;
         let mut re = self.re.clone();
         let mut im = self.im.clone();
-        fft2(&mut re, &mut im, n, false);
+        fft2(&mut re, &mut im, n);
 
         // Frequency of each sample, in cycles per metre, with the usual FFT layout:
         // 0..n/2 are positive, n/2..n are negative.
@@ -269,7 +269,7 @@ impl Grid {
             }
         }
 
-        fft2(&mut re, &mut im, n, true);
+        ifft2(&mut re, &mut im, n);
         Ok(Grid {
             samples: n,
             pitch: self.pitch,

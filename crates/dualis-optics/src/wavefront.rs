@@ -39,6 +39,8 @@
 
 use std::f64::consts::{PI, TAU};
 
+use dualis_core::transform::{fft2, fftshift};
+
 use crate::diffraction::FIRST_AIRY_ZERO;
 
 /// One Zernike polynomial, by its radial order `n` and azimuthal frequency `m`.
@@ -304,7 +306,7 @@ impl Pupil {
             re[i] = self.amplitude[i] * phase.cos();
             im[i] = self.amplitude[i] * phase.sin();
         }
-        fft2(&mut re, &mut im, n, false);
+        fft2(&mut re, &mut im, n);
 
         let throughput: f64 = self.amplitude.iter().sum();
         let norm = if throughput > 0.0 {
@@ -447,7 +449,7 @@ impl Psf {
         let unshifted = fftshift(&self.intensity, n);
         let mut re = unshifted;
         let mut im = vec![0.0; n * n];
-        fft2(&mut re, &mut im, n, false);
+        fft2(&mut re, &mut im, n);
         let dc = (re[0] * re[0] + im[0] * im[0]).sqrt();
         let norm = if dc > 0.0 { 1.0 / dc } else { 0.0 };
         let mut magnitude = vec![0.0; n * n];
@@ -513,115 +515,6 @@ impl Mtf {
         }
         sum / STEPS as f64
     }
-}
-
-// ---------------------------------------------------------------------------
-// Transform
-// ---------------------------------------------------------------------------
-
-/// In-place radix-2 Cooley-Tukey, on split real and imaginary arrays.
-///
-/// The twiddle factors are computed from `cos` and `sin` at each step rather than
-/// accumulated by repeated complex multiplication. Accumulating is faster and loses
-/// several digits by the end of a long transform; this is a physics library, the
-/// transforms here are small, and a PSF that is wrong in its fourth digit is not
-/// worth the cycles saved. It also keeps the result independent of how the loop was
-/// ordered, which matters for the same reason every other reduction in the workspace
-/// is written in a fixed order.
-fn fft_1d(re: &mut [f64], im: &mut [f64], inverse: bool) {
-    let n = re.len();
-    debug_assert!(n.is_power_of_two());
-
-    // Bit-reversal permutation.
-    let mut j = 0usize;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j |= bit;
-        if i < j {
-            re.swap(i, j);
-            im.swap(i, j);
-        }
-    }
-
-    let sign = if inverse { 1.0 } else { -1.0 };
-    let mut len = 2;
-    while len <= n {
-        let step = sign * TAU / len as f64;
-        let mut base = 0;
-        while base < n {
-            for k in 0..len / 2 {
-                let angle = step * k as f64;
-                let (wr, wi) = (angle.cos(), angle.sin());
-                let (a, b) = (base + k, base + k + len / 2);
-                let (ur, ui) = (re[a], im[a]);
-                let vr = re[b] * wr - im[b] * wi;
-                let vi = re[b] * wi + im[b] * wr;
-                re[a] = ur + vr;
-                im[a] = ui + vi;
-                re[b] = ur - vr;
-                im[b] = ui - vi;
-            }
-            base += len;
-        }
-        len <<= 1;
-    }
-
-    if inverse {
-        let scale = 1.0 / n as f64;
-        for v in re.iter_mut() {
-            *v *= scale;
-        }
-        for v in im.iter_mut() {
-            *v *= scale;
-        }
-    }
-}
-
-/// Two-dimensional transform: rows, then columns.
-///
-/// Shared with [`propagation`](crate::propagation), which needs the same transform for
-/// the angular spectrum. One implementation rather than two means the reversibility and
-/// energy checks in either module cover both.
-pub(crate) fn fft2(re: &mut [f64], im: &mut [f64], n: usize, inverse: bool) {
-    let mut row_re = vec![0.0; n];
-    let mut row_im = vec![0.0; n];
-    for y in 0..n {
-        row_re.copy_from_slice(&re[y * n..(y + 1) * n]);
-        row_im.copy_from_slice(&im[y * n..(y + 1) * n]);
-        fft_1d(&mut row_re, &mut row_im, inverse);
-        re[y * n..(y + 1) * n].copy_from_slice(&row_re);
-        im[y * n..(y + 1) * n].copy_from_slice(&row_im);
-    }
-    for x in 0..n {
-        for y in 0..n {
-            row_re[y] = re[y * n + x];
-            row_im[y] = im[y * n + x];
-        }
-        fft_1d(&mut row_re, &mut row_im, inverse);
-        for y in 0..n {
-            re[y * n + x] = row_re[y];
-            im[y * n + x] = row_im[y];
-        }
-    }
-}
-
-/// Swap quadrants so the zero frequency sits at the centre. Its own inverse for an
-/// even-sized grid, which is why [`Psf::mtf`] uses it to undo itself.
-pub(crate) fn fftshift(data: &[f64], n: usize) -> Vec<f64> {
-    let half = n / 2;
-    let mut out = vec![0.0; n * n];
-    for y in 0..n {
-        for x in 0..n {
-            let sx = (x + half) % n;
-            let sy = (y + half) % n;
-            out[y * n + x] = data[sy * n + sx];
-        }
-    }
-    out
 }
 
 /// Radius of the first Airy zero in units of `λ/D`: `3.8317/π`, or **1.2197**.
@@ -1092,23 +985,9 @@ mod tests {
         assert_eq!(a.strehl().to_bits(), b.strehl().to_bits());
     }
 
-    /// The forward transform followed by the inverse returns what went in, which
-    /// catches a sign or scaling error the magnitude-only tests would not.
-    #[test]
-    fn the_inverse_transform_undoes_the_forward_one() {
-        const N: usize = 64;
-        let mut re: Vec<f64> = (0..N * N)
-            .map(|i| ((i * 37) % 101) as f64 / 101.0)
-            .collect();
-        let mut im: Vec<f64> = (0..N * N).map(|i| ((i * 53) % 97) as f64 / 97.0).collect();
-        let (re0, im0) = (re.clone(), im.clone());
-        fft2(&mut re, &mut im, N, false);
-        fft2(&mut re, &mut im, N, true);
-        for i in 0..N * N {
-            assert!((re[i] - re0[i]).abs() < 1e-12, "real part at {i}");
-            assert!((im[i] - im0[i]).abs() < 1e-12, "imaginary part at {i}");
-        }
-    }
+    // The transform's own properties — reversibility, Parseval, separability, the sign
+    // convention — are tested where it now lives, in `dualis_core::transform`. What
+    // remains here is what this module does *with* it.
 
     /// Grids that the transform cannot handle are refused at construction rather than
     /// producing a wrong answer.
