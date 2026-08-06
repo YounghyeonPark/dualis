@@ -1,4 +1,4 @@
-//! dualis-optics: light, as a domain built on the `dualis-core` kernel.
+﻿//! dualis-optics: light, as a domain built on the `dualis-core` kernel.
 //!
 //! Spectral radiometry, surface optics, dispersion and ray geometry. This is the
 //! first domain, and its job is partly to prove the kernel can hold one: it uses
@@ -40,10 +40,17 @@
 //!
 //! No scene graph, no meshes, no acceleration structure, no renderer.
 //!
-//! Wave optics is single-plane: a pupil transforms to an image and that is all. There
-//! is no propagation between arbitrary planes, so a beam cannot be walked down a
-//! bench, and there is no partial coherence — every PSF here is the incoherent one.
+//! Fields propagate between planes only through free space: there is nothing to put in
+//! the beam's way except an aperture, and no element that refracts or reflects it
+//! mid-flight.
+//!
+//! And partial coherence is a transfer function rather than a simulation.
+//! [`coherence`] gives the two exact limits and the coherence a source has at a
+//! distance; computing an arbitrary object's partially coherent image needs the
+//! transmission cross-coefficients, which are a four-dimensional integral and are not
+//! here.
 
+pub mod coherence;
 pub mod diffraction;
 pub mod geometry;
 pub mod material;

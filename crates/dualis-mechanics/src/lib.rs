@@ -30,9 +30,11 @@
 //! tolerance to every quantity it sees, and a tolerance loose enough for an
 //! integrated energy would blunt the momentum check that is genuinely sharp.
 
+pub mod collision;
 pub mod rigid;
 pub mod tree;
 
+pub use collision::{resolve, Rolling, Sphere, Surface};
 pub use rigid::{Inertia, RigidBody};
 pub use tree::TreeNBody;
 

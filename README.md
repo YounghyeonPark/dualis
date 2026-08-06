@@ -229,12 +229,14 @@ would either fail on correct code or hide a real leak.
 
 No scene graph, no renderer.
 
-Rigid bodies rotate but do not collide: `RigidBody` is free rotation about a fixed
-centre, with no torque input, no contact between bodies, no rolling and no friction
-along a surface. `ContactSystem` is still particles against a plane.
+Rigid bodies are spheres where they collide. `RigidBody` rotates with an applied torque
+and an arbitrary inertia tensor, but `Sphere` and `Rolling` are the only things that
+touch anything, and a sphere is chosen because its inertia is the same about every axis
+— so a contact does not have to carry the orientation through. Boxes hitting boxes is a
+different module.
 
-Acoustics is one-dimensional and linear — a tube, not a room. No 3D rooms, no
-scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
+Acoustics is linear and up to two dimensions: a tube or a room, not a hall. No 3D grid,
+no scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
 
 **There is no fluid domain, and that is deliberate.** Sound *is* the fluid domain here:
 it is what a fluid does when the variations are small enough to linearise, which is
@@ -252,10 +254,18 @@ opening angle and vanishing at `θ = 0`, and the audit tolerance has to be the o
 angle earns. There is no multipole beyond the monopole, so `θ` above about 1 is asking
 a centre of mass to stand in for a group that is not far enough away.
 
-Wave optics has no partial coherence: every PSF here is the incoherent one. Fields do
-propagate between planes now, by the angular spectrum, but only through free space —
-there is no element to put in the beam's way except an aperture, and the grid's reach
-is `NΔ²/λ`, past which the propagator refuses rather than aliasing.
+Fields propagate between planes by the angular spectrum, but only through free space:
+there is nothing to put in the beam's way except an aperture, and the grid's reach is
+`NΔ²/λ`, past which the propagator refuses rather than aliasing.
+
+Partial coherence is a transfer function rather than a simulation. The two exact limits
+are there, and so is the coherence a source has at a distance, but computing an
+arbitrary object's partially coherent image needs the transmission cross-coefficients —
+a four-dimensional integral, and not here.
+
+The tree stops at the quadrupole. Higher multipoles would buy another order in the
+opening angle, and a proper Fast Multipole Method would change the complexity rather
+than the constant.
 
 Meshes and grids are no longer excluded. They were, on the grounds that adding them
 before a second consumer would be guessing at an interface; finite elements and

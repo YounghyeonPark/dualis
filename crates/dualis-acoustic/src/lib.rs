@@ -33,6 +33,10 @@
 //! answer, it explodes within a handful of steps, so the limit is reported and the step
 //! is refused rather than attempted.
 
+pub mod room;
+
+pub use room::Room;
+
 use dualis_core::conserved::quantity;
 use dualis_core::{Domain, Exchange, Kind, Ledger, Substance, Violation};
 use dualis_units::{Area, Density, Energy, Frequency, Length, Pressure, Time, Velocity};
@@ -116,6 +120,10 @@ pub struct Tube {
     name: &'static str,
     /// Pressure at cell centres.
     pressure: Vec<f64>,
+    /// Pressure one whole step earlier, so [`Tube::energy`] can report the quantity the
+    /// scheme conserves exactly. See [`Room::energy`](crate::room::Room::energy) for why
+    /// the obvious expression is not that quantity.
+    pressure_prev: Vec<f64>,
     /// Particle velocity at the faces between cells, so one shorter.
     velocity: Vec<f64>,
     dx: f64,
@@ -143,6 +151,7 @@ impl Tube {
         Tube {
             name,
             pressure: vec![0.0; cells],
+            pressure_prev: vec![0.0; cells],
             velocity: vec![0.0; cells - 1],
             dx: length.to_si() / (cells - 1) as f64,
             speed: sound_speed.to_si(),
@@ -183,6 +192,7 @@ impl Tube {
         for i in 0..self.pressure.len() {
             self.pressure[i] = profile(Length::from_si(i as f64 * self.dx)).to_si();
         }
+        self.pressure_prev.copy_from_slice(&self.pressure);
         self.velocity.iter_mut().for_each(|u| *u = 0.0);
         self
     }
@@ -240,7 +250,8 @@ impl Tube {
         let potential: f64 = self
             .pressure
             .iter()
-            .map(|p| p * p / (2.0 * rc2) * volume)
+            .zip(self.pressure_prev.iter())
+            .map(|(p, prev)| p * prev / (2.0 * rc2) * volume)
             .sum();
         let kinetic: f64 = self
             .velocity
@@ -324,6 +335,7 @@ impl Tube {
         let left_wall = self.wall_velocity(self.left, self.pressure[0], -1.0);
         let right_wall = self.wall_velocity(self.right, self.pressure[n - 1], 1.0);
 
+        self.pressure_prev.copy_from_slice(&self.pressure);
         let mut absorbed = 0.0;
         for i in 0..n {
             let inflow = if i == 0 {
@@ -411,6 +423,7 @@ impl Domain for Tube {
 
     fn restore(&mut self) {
         if let Some((pressure, velocity)) = self.saved.clone() {
+            self.pressure_prev.copy_from_slice(&pressure);
             self.pressure = pressure;
             self.velocity = velocity;
         }
@@ -660,11 +673,11 @@ mod tests {
         }
         assert_eq!(tube.radiated_energy().to_si(), 0.0);
         assert!(bus.peek(quantity::ENERGY).abs() < 1e-30);
-        // The leapfrog scheme at Courant one is non-dissipative, so the energy norm
-        // holds rather than decaying.
+        // Exactly, not approximately: the leapfrog is lossless and `energy` reports the
+        // time-centred quantity it conserves rather than one that wobbles.
         let now = tube.energy().to_si();
         assert!(
-            (now / start - 1.0).abs() < 0.05,
+            (now / start - 1.0).abs() < 1e-9,
             "energy went from {start:e} to {now:e}"
         );
     }
@@ -722,10 +735,9 @@ mod tests {
         assert!((limit.in_us() - 14.58).abs() < 0.05, "{} us", limit.in_us());
 
         let mut sim = Simulation::new(Schedule::Multirate)
-            // Non-dissipative at Courant one, but the substep count is an integer so the
-            // Courant number is a hair under one and the scheme is very slightly
-            // dispersive. A few percent over this many steps.
-            .conservation_tolerance(5e-2)
+            // The scheme is lossless at any stable Courant number, and `energy` reports
+            // what it conserves, so this can be as tight as the arithmetic allows.
+            .conservation_tolerance(1e-9)
             .with(tube);
 
         // A millisecond of audio is 69 substeps.

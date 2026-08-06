@@ -166,6 +166,14 @@ pub struct RigidBody {
     omega_body: DVec3,
     /// Body-to-world rotation.
     orientation: DQuat,
+    /// Applied torque in the **world** frame, N·m.
+    ///
+    /// A `DVec3` rather than a dimensioned type, for the reason `dualis-units`
+    /// documents: a torque is newton-metres and so is an energy, and SI cannot tell
+    /// them apart because the radian it would need is dimensionless. Angular velocity
+    /// is bare for the same reason, so at least the module is consistent about which
+    /// quantities the type system cannot help with.
+    torque_world: DVec3,
     saved: Option<(DVec3, DQuat)>,
 }
 
@@ -213,8 +221,27 @@ impl RigidBody {
             inertia: inertia.principal,
             omega_body: DVec3::ZERO,
             orientation: DQuat::IDENTITY,
+            torque_world: DVec3::ZERO,
             saved: None,
         }
+    }
+
+    /// Apply a constant torque, in the world frame.
+    ///
+    /// Held until changed, rather than consumed by a step: a motor keeps pushing. A
+    /// torque that should act once is an impulse, and belongs in
+    /// [`collision`](crate::collision) instead.
+    pub fn with_torque(mut self, torque: DVec3) -> RigidBody {
+        self.torque_world = torque;
+        self
+    }
+
+    pub fn set_torque(&mut self, torque: DVec3) {
+        self.torque_world = torque;
+    }
+
+    pub fn torque(&self) -> DVec3 {
+        self.torque_world
     }
 
     /// Set the angular velocity, given in the **body** frame.
@@ -293,17 +320,25 @@ impl RigidBody {
 impl Dynamics for RigidBody {
     type S = Spin;
 
-    /// Euler's equations, plus the quaternion kinematics.
+    /// Euler's equations with an applied torque, plus the quaternion kinematics.
+    ///
+    /// `I ω̇ = τ − ω × (Iω)`, with the torque rotated into the body frame using the
+    /// orientation *carried in the state* rather than the one on `self`. Runge-Kutta
+    /// evaluates the derivative at intermediate orientations, and using the body's
+    /// stored orientation for all four stages would apply the torque about the wrong
+    /// axes — a mistake that is invisible for a torque along the spin axis and wrong
+    /// for every other one.
     fn derivative(&self, s: &Spin, _t: Time) -> Spin {
         let (i1, i2, i3) = (self.inertia.x, self.inertia.y, self.inertia.z);
         let w = s.omega;
+        let torque_body = s.orientation.normalize().inverse() * self.torque_world;
         // A zero moment means no freedom about that axis — a thin rod's own length —
         // rather than an infinite acceleration.
         let d = |num: f64, i: f64| if i > 0.0 { num / i } else { 0.0 };
         let domega = DVec3::new(
-            d((i2 - i3) * w.y * w.z, i1),
-            d((i3 - i1) * w.z * w.x, i2),
-            d((i1 - i2) * w.x * w.y, i3),
+            d(torque_body.x + (i2 - i3) * w.y * w.z, i1),
+            d(torque_body.y + (i3 - i1) * w.z * w.x, i2),
+            d(torque_body.z + (i1 - i2) * w.x * w.y, i3),
         );
 
         // q̇ = ½ q ⊗ ω, with ω in the body frame as a pure quaternion.
@@ -359,6 +394,10 @@ impl Domain for RigidBody {
     }
 
     /// Angular momentum, per world axis.
+    ///
+    /// Only conserved when no torque is applied. A driven body's angular momentum grows
+    /// at exactly `τ`, which is the definition of a torque rather than a leak — so the
+    /// audit is meaningful for a free body and expected to fire for a driven one.
     fn ledger(&self) -> Ledger {
         let l = self.angular_momentum();
         Ledger::new()
