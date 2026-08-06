@@ -208,6 +208,63 @@ let rise: Temperature = (absorbed * dualis_units::Time::s(1.0)) / capacity;
 // 0.58 mK, and every step of that chain landed on the dimension that names it.
 ```
 
+## Examples
+
+```
+cargo run --example beam_hot_spot            # numbers, checked
+cargo run --example beam_hot_spot out.svg    # and a picture
+```
+
+| | |
+| --- | --- |
+| `beam_hot_spot` | A 100 W laser on a mirror. Optics and heat meeting over a shared boundary, and the peak temperature a lumped model cannot see |
+| `airy_pattern` | What a *perfect* lens does to a point: the Airy pattern, its encircled energy, and the MTF that follows from both |
+| `detector_snr` | Why read noise is the first number on a datasheet, with the Poisson statistics sampled rather than asserted |
+
+Each one prints its numbers and **asserts** them, so CI runs all three on every commit.
+An example is a claim that the library works, which makes a quietly broken one worse than
+no example at all — every value printed has been checked against a closed form or against
+a calculation that did not go through the same code. Give a path and it also writes an SVG;
+give none and it just checks. Nothing generated is committed.
+
+Plotting has no dependency. SVG is text, so it is a `format!` and a file write — no
+encoder, no fonts, and it opens by double-click. `examples/common/svg.rs` is about three
+hundred lines and is the right size for this job; when it stops being, the answer is
+`dualis-world` rather than a bigger version of it.
+
+The examples also exist to keep the library honest in a way tests cannot. `ScalarField` was
+written as the interface a visualiser would read a simulation through and then sat with no
+implementor at all, which meant "is it the right interface" was a guess. `beam_hot_spot`
+reads the bar through it and never mentions `Bar1D`, and writing that turned up two things
+worth knowing — see the next section.
+
+## What implementing the field interface found
+
+Two things, and both are the kind that only surface when something actually uses a trait.
+
+**`ScalarField::at` takes a time, and a marched domain has only "now".** A closed-form field
+like `Motion` answers for any instant; `Bar1D` holds one state and no history, so the
+argument is ignored. That would have made the default `rate` — a difference across two
+times — read zero, which is worse than unavailable, since the bar is visibly heating. The
+fix is not a workaround: a diffusive field's time derivative *is* `α∇²T`, so the governing
+equation supplies from the present state exactly what the finite difference wanted history
+for. And it is not approximately right. The explicit update is `T += α·dt·∇²T` on the same
+stencil, so the rate the field reports is bit-for-bit the step the domain is about to take.
+
+**A field's gradient cannot always be the derivative of its own values.** `at` interpolates
+linearly between cell centres, so its exact second derivative is zero between nodes and
+infinite at them — a Laplacian read off the interpolant is useless, and must come from the
+cell stencil instead. The cost is that `gradient` is the derivative the *scheme* uses rather
+than of `at` exactly. That is a property of sampling a discrete field, not a rough edge that
+could be polished out, and it is documented where a caller meets it.
+
+A third thing was a claim of mine that was simply wrong: I wrote that the mirrored stencil
+gives a zero gradient at an insulated wall. It does not. On a cell-centred grid the first
+sample sits half a cell inside the wall, where the temperature really is still changing, so
+the reported slope there is not zero and pretending otherwise would misdescribe what the
+grid knows. Insulation shows up as no heat crossing the boundary — which the conservation
+audit checks — not as a zero slope at a position the grid cannot sample.
+
 ## Watts, photons, and the chain that closes
 
 A spectrum is a shape until it is integrated against something. `SpectralPower`

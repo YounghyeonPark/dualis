@@ -30,10 +30,12 @@
 //! stability limit, not a competitive thermal solver.
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Interface, Kind, Ledger, Substance, Violation};
+use dualis_core::{Domain, Exchange, Interface, Kind, Ledger, ScalarField, Substance, Violation};
 use dualis_units::{
-    Area, Energy, HeatCapacity, Length, Power, Temperature, Time, Volume, STEFAN_BOLTZMANN,
+    Area, Energy, HeatCapacity, Length, LengthVec, Power, Temperature, Time, Volume,
+    STEFAN_BOLTZMANN,
 };
+use glam::DVec3;
 
 /// The bus channel heat arrives on, in joules.
 ///
@@ -484,6 +486,124 @@ impl Domain for Bar1D {
     }
 }
 
+/// The bar as a temperature field, in kelvin.
+///
+/// The first implementation of [`ScalarField`] in the workspace, and it exists to answer a
+/// question rather than to be used internally: the trait was written as the interface a
+/// visualiser would read a simulation through, and until something implemented it, whether
+/// it was the *right* interface was a guess. Two things came out of implementing it.
+///
+/// # The bar lies along x, and is uniform in y and z
+///
+/// Cell `i` is centred at `(i + ½)·dx`, so the bar occupies `0` to `n·dx`. Off the ends the
+/// value is held constant, which is not a fudge: the ends are insulated, so the temperature
+/// really does stop changing there. Off-axis it is uniform, which is not an approximation
+/// being hidden either — a one-dimensional model *is* the claim that nothing varies across
+/// the bar, and [`LumpedMass::biot_number`] is where you check whether that claim holds.
+///
+/// # `at` ignores the time it is given, and that is the interface's one rough edge
+///
+/// [`ScalarField::at`] takes a [`Time`], because a closed-form field like
+/// [`Motion`](dualis_core::Motion) can answer for any instant. A marched domain cannot: it
+/// holds *now* and nothing else. So the argument is ignored here, and a caller wanting a
+/// different instant has to have recorded one.
+///
+/// The default [`ScalarField::rate`] would then read zero — it differences `at` across two
+/// times — which would be wrong rather than merely unavailable, since the bar is visibly
+/// heating. It is overridden below, and the fix is not a workaround: a diffusive field's
+/// time derivative *is* `α∇²T`, so the governing equation supplies from the present state
+/// exactly what the finite difference wanted history for.
+///
+/// # The derivatives use the domain's own stencil
+///
+/// [`ScalarField`] offers central differences over a step you choose, and its documentation
+/// says a field that knows better should override them. This one does: `gradient` and
+/// `laplacian` use the same mirrored three-point stencil that [`Domain::step`] integrates,
+/// evaluated on the cells rather than by re-sampling the interpolated field. So the field
+/// reports what the domain actually believes, and the `h` argument is ignored — asking for
+/// a derivative on a scale finer than `dx` is asking for information the bar does not have.
+///
+/// They have to come from the cells rather than from `at`, and the reason is worth stating:
+/// `at` interpolates linearly, so its exact second derivative is zero between nodes and
+/// infinite at them. A Laplacian read off the interpolant would be useless. The cost is that
+/// `gradient` is not quite the derivative of `at` — it is the derivative the *scheme* uses —
+/// and that is an unavoidable property of sampling a discrete field, not a rough edge that
+/// could be polished out.
+impl ScalarField for Bar1D {
+    fn at(&self, p: LengthVec, _t: Time) -> f64 {
+        let last = self.cells.len() - 1;
+        // Position in cell-index space: cell centres land on the integers.
+        let u = p.to_si().x / self.dx.to_si() - 0.5;
+        // The NaN case is spelled out rather than folded into a negated comparison: it is a
+        // real input a visualiser can hand over, and it must not reach the cast below.
+        if u.is_nan() || u <= 0.0 {
+            return self.cells[0];
+        }
+        if u >= last as f64 {
+            return self.cells[last];
+        }
+        let i = u.floor() as usize;
+        let f = u - i as f64;
+        self.cells[i] * (1.0 - f) + self.cells[i + 1] * f
+    }
+
+    fn gradient(&self, p: LengthVec, _t: Time, _h: Length) -> DVec3 {
+        let (left, _, right) = self.stencil_at(p);
+        DVec3::new((right - left) / (2.0 * self.dx.to_si()), 0.0, 0.0)
+    }
+
+    fn laplacian(&self, p: LengthVec, _t: Time, _h: Length) -> f64 {
+        let (left, centre, right) = self.stencil_at(p);
+        let dx = self.dx.to_si();
+        (left - 2.0 * centre + right) / (dx * dx)
+    }
+
+    /// `∂T/∂t = α∇²T` — the heat equation, evaluated rather than differenced.
+    ///
+    /// Conduction only. Heat arriving over the bus is a source term the field cannot see,
+    /// so during illumination this reports how fast the bar is *spreading* what it has, not
+    /// how fast it is warming. Away from the beam those are the same number.
+    fn rate(&self, p: LengthVec, t: Time, _dt: Time) -> f64 {
+        let Some(alpha) = self.substance.diffusivity() else {
+            return 0.0;
+        };
+        alpha.to_si() * self.laplacian(p, t, self.dx)
+    }
+}
+
+impl Bar1D {
+    /// The three cell values the domain's own update uses at this point, with the ends
+    /// mirrored exactly as [`Domain::step`] mirrors them.
+    ///
+    /// Past either end the stencil goes flat, so the derivatives agree with [`ScalarField::at`]
+    /// holding its value out there. Inside, mirroring is what makes the ends insulated —
+    /// but note what that does *not* mean. On a cell-centred grid the first sample sits half
+    /// a cell inside the wall, so the gradient reported at `x = 0` is the mirrored estimate
+    /// `(T₁ − T₀)/2dx` and not zero. Insulation shows up as no heat crossing the boundary,
+    /// which the conservation audit checks; it does not show up as a zero slope at a
+    /// position the grid cannot sample.
+    fn stencil_at(&self, p: LengthVec) -> (f64, f64, f64) {
+        let last = self.cells.len() - 1;
+        let x = p.to_si().x / self.dx.to_si();
+        // The bar occupies [0, L], so the walls are inside it and only points beyond them go
+        // flat. NaN spelled out for the same reason as in `at`.
+        if x.is_nan() || x < 0.0 {
+            let v = self.cells[0];
+            return (v, v, v);
+        }
+        if x >= self.cells.len() as f64 {
+            let v = self.cells[last];
+            return (v, v, v);
+        }
+        let i = (x as usize).min(last);
+        (
+            self.cells[i.saturating_sub(1)],
+            self.cells[i],
+            self.cells[(i + 1).min(last)],
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -863,6 +983,197 @@ mod tests {
         bar.step(Time::ZERO, Time::from_si(1e-4), &mut bus).unwrap();
         assert!((bar.absorbed_energy().to_si() - 2.0).abs() < 1e-12);
         assert!(bus.unclaimed().next().is_none());
+    }
+
+    /// The field reads the bar where the bar is, and holds its value past the insulated
+    /// ends rather than running off the array.
+    #[test]
+    fn the_field_samples_the_bar_and_stops_at_its_ends() {
+        let mut bar = Bar1D::new(
+            "bar",
+            Substance::aluminium_6061(),
+            5,
+            Length::mm(1.0),
+            Area::from_si(1e-4),
+            Temperature::celsius(20.0),
+        );
+        // A ramp, so every cell is distinguishable.
+        for (i, cell) in bar.cells.iter_mut().enumerate() {
+            *cell = 300.0 + i as f64;
+        }
+        let at = |mm: f64| bar.at(LengthVec::mm(mm, 0.0, 0.0), Time::ZERO);
+
+        // Cell centres are at 0.5, 1.5, ... mm and read exactly.
+        for i in 0..5 {
+            assert!(
+                (at(i as f64 + 0.5) - (300.0 + i as f64)).abs() < 1e-12,
+                "cell {i}"
+            );
+        }
+        // Halfway between two centres is halfway between their values.
+        assert!((at(1.0) - 300.5).abs() < 1e-12);
+        assert!((at(3.75) - 303.25).abs() < 1e-12);
+
+        // Past either end the value is held. The ends are insulated, so the temperature
+        // really does stop changing there — this is the physics, not a clamp for safety.
+        assert!((at(-50.0) - 300.0).abs() < 1e-12);
+        assert!((at(0.0) - 300.0).abs() < 1e-12);
+        assert!((at(5.0) - 304.0).abs() < 1e-12);
+        assert!((at(1e6) - 304.0).abs() < 1e-12);
+        assert!(
+            (at(f64::NAN) - 300.0).abs() < 1e-12,
+            "a NaN must not index the array"
+        );
+
+        // Uniform across the bar, which is what a one-dimensional model asserts.
+        assert_eq!(
+            bar.at(LengthVec::mm(2.5, 0.0, 0.0), Time::ZERO),
+            bar.at(LengthVec::mm(2.5, 40.0, -70.0), Time::ZERO)
+        );
+    }
+
+    /// Gradient and Laplacian against closed forms. A linear ramp has a constant gradient
+    /// and no curvature; a quadratic has a curvature the three-point stencil gets exactly,
+    /// because a second difference of a quadratic is not an approximation.
+    #[test]
+    fn the_fields_derivatives_match_their_closed_forms() {
+        let dx = 1e-3;
+        let build = |f: &dyn Fn(f64) -> f64| {
+            let mut bar = Bar1D::new(
+                "bar",
+                Substance::aluminium_6061(),
+                21,
+                Length::from_si(dx),
+                Area::from_si(1e-4),
+                Temperature::celsius(20.0),
+            );
+            for (i, cell) in bar.cells.iter_mut().enumerate() {
+                *cell = f((i as f64 + 0.5) * dx);
+            }
+            bar
+        };
+        let probe = LengthVec::from_si(DVec3::new(10.5 * dx, 0.0, 0.0));
+        let h = Length::from_si(dx);
+
+        // T = 300 + 40x, so dT/dx = 40 K/m everywhere and the curvature is zero.
+        let ramp = build(&|x| 300.0 + 40.0 * x);
+        let g = ramp.gradient(probe, Time::ZERO, h);
+        assert!((g.x - 40.0).abs() < 1e-9, "got {g}");
+        assert!(
+            g.y == 0.0 && g.z == 0.0,
+            "a 1D bar has no transverse gradient"
+        );
+        assert!(
+            ramp.laplacian(probe, Time::ZERO, h).abs() < 1e-6,
+            "a ramp has no curvature"
+        );
+
+        // T = 300 + 5000x², so d²T/dx² = 10000 K/m² exactly, and dT/dx = 10000x.
+        let curved = build(&|x| 300.0 + 5000.0 * x * x);
+        let lap = curved.laplacian(probe, Time::ZERO, h);
+        assert!((lap / 10_000.0 - 1.0).abs() < 1e-9, "got {lap}");
+        let g = curved.gradient(probe, Time::ZERO, h);
+        assert!((g.x / (10_000.0 * 10.5 * dx) - 1.0).abs() < 1e-9, "got {g}");
+
+        // Past the ends the derivatives go to zero, because that is where `at` goes flat.
+        // A field whose gradient disagreed with its own values would be worse than useless
+        // to a visualiser, which reads both.
+        for outside in [-5.0 * dx, 30.0 * dx] {
+            let p = LengthVec::from_si(DVec3::new(outside, 0.0, 0.0));
+            assert_eq!(
+                curved.gradient(p, Time::ZERO, h),
+                DVec3::ZERO,
+                "at {outside}"
+            );
+            assert_eq!(curved.laplacian(p, Time::ZERO, h), 0.0, "at {outside}");
+        }
+
+        // But *at* the insulated wall the gradient is not zero, and pretending otherwise
+        // would be a lie about what a cell-centred grid knows: its first sample is half a
+        // cell inside, where the temperature really is still changing.
+        let wall = LengthVec::ZERO;
+        let expected = (curved.cells[1] - curved.cells[0]) / (2.0 * dx);
+        assert!((curved.gradient(wall, Time::ZERO, h).x - expected).abs() < 1e-9);
+        assert!(expected > 0.0, "the mirrored estimate is not zero");
+    }
+
+    /// **The check that makes the field worth having.** The rate it reports is exactly what
+    /// the domain does on its next step — not approximately, to the last bit.
+    ///
+    /// That is not a coincidence and it is the reason `rate` is overridden. The explicit
+    /// update *is* `T += α·dt·∇²T` on this stencil, so evaluating the governing equation and
+    /// taking the step are the same arithmetic. A visualiser drawing `rate` is drawing what
+    /// is about to happen, and the default finite difference in time — which would have
+    /// needed history the domain does not keep — would have read zero.
+    #[test]
+    fn the_reported_rate_is_exactly_the_step_the_domain_takes() {
+        let dx = 1e-3;
+        let mut bar = Bar1D::new(
+            "bar",
+            Substance::aluminium_6061(),
+            21,
+            Length::from_si(dx),
+            Area::from_si(1e-4),
+            Temperature::celsius(20.0),
+        );
+        bar.cells[10] = Temperature::celsius(60.0).to_si();
+        bar.cells[14] = Temperature::celsius(35.0).to_si();
+
+        let dt = bar.max_stable_dt(Time::ZERO) * 0.5;
+        let probes: Vec<LengthVec> = (0..21)
+            .map(|i| LengthVec::from_si(DVec3::new((i as f64 + 0.5) * dx, 0.0, 0.0)))
+            .collect();
+        let predicted: Vec<f64> = probes
+            .iter()
+            .map(|p| bar.rate(*p, Time::ZERO, dt))
+            .collect();
+        let before: Vec<f64> = bar.cells.clone();
+
+        bar.step(Time::ZERO, dt, &mut Exchange::new()).unwrap();
+
+        for (i, p) in probes.iter().enumerate() {
+            let observed = (bar.cells[i] - before[i]) / dt.to_si();
+            let _ = p;
+            if predicted[i].abs() < 1e-12 {
+                assert!(
+                    observed.abs() < 1e-9,
+                    "cell {i}: {observed} against nothing"
+                );
+            } else {
+                assert!(
+                    (observed / predicted[i] - 1.0).abs() < 1e-12,
+                    "cell {i}: predicted {} but the step did {observed}",
+                    predicted[i]
+                );
+            }
+        }
+        // And the hot cell really was cooling while its neighbours warmed, so the test is
+        // not passing on a bar where nothing happened.
+        assert!(
+            predicted[10] < -1.0,
+            "the peak should be cooling: {}",
+            predicted[10]
+        );
+        assert!(
+            predicted[9] > 1.0,
+            "and its neighbour warming: {}",
+            predicted[9]
+        );
+    }
+
+    /// A substance with no diffusivity has no conduction to report, rather than an
+    /// infinity or a panic.
+    #[test]
+    fn a_field_with_no_diffusivity_reports_no_rate() {
+        let bar = Bar1D::new(
+            "bar",
+            Substance::bulk("mystery", Density::from_si(1000.0)),
+            5,
+            Length::mm(1.0),
+            Area::from_si(1e-4),
+            Temperature::celsius(20.0),
+        );
+        assert_eq!(bar.rate(LengthVec::ZERO, Time::ZERO, Time::s(1.0)), 0.0);
     }
 
     /// The domain plugs into the kernel's scheduler and its books balance: heat taken

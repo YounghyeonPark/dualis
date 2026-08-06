@@ -81,6 +81,34 @@ jobs:
       - name: cargo test --release
         run: cargo test --locked --workspace --release
 
+  # The examples, actually run rather than only compiled.
+  #
+  # `clippy --all-targets` already builds them, which catches an API that moved. It does
+  # not catch an example that compiles and then prints nonsense — and an example is a
+  # claim that the library works, so a broken one is worse than none. Every number they
+  # print is asserted against a closed form or an independent calculation, so running
+  # them *is* the check.
+  #
+  # No argument means "print and assert"; an argument would make them write an SVG. CI
+  # passes none, so nothing is generated and nothing generated is ever committed.
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Release, because one of them draws two hundred thousand samples from the noise
+      # model to check a variance against a mean, and debug takes a minute over it.
+      - name: run every example
+        run: |
+          set -euo pipefail
+          for example in beam_hot_spot airy_pattern detector_snr readme_check; do
+            echo "::group::$example"
+            cargo run --locked --release --example "$example"
+            echo "::endgroup::"
+          done
+
   # WebAssembly builds at all. Catches an accidental dependency on something the
   # target does not have — a thread, a clock, the filesystem.
   wasm:

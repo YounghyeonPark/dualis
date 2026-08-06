@@ -59,6 +59,7 @@ version = "0.1.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
+ "glam",
  "serde",
 ]
 
