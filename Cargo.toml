@@ -12,6 +12,9 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+# Verified by the `msrv` CI job rather than guessed, and set by `Cargo.lock` being
+# format version 4 rather than by anything in the source — see that job's comment.
+rust-version = "1.78"
 license = "MIT OR Apache-2.0"
 authors = ["Younghyeon Park and dualis contributors"]
 repository = "https://github.com/YounghyeonPark/dualis-core"
