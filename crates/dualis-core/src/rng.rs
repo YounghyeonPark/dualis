@@ -154,6 +154,52 @@ impl Rng {
     pub fn normal(&mut self, mean: f64, std_dev: f64) -> f64 {
         mean + std_dev * self.gaussian()
     }
+
+    /// A Poisson deviate: the number of independent events that happened, when the
+    /// expected number was `mean`.
+    ///
+    /// The distribution of counting things that arrive at random — photons on a detector,
+    /// decays in a sample, molecules crossing a boundary. Its defining property is that
+    /// **the variance equals the mean**, so the noise on a count of `N` is `√N` and the
+    /// signal-to-noise ratio of counting improves only as the square root of how long you
+    /// count. That is not a limitation of any instrument; it is what counting is.
+    ///
+    /// Two methods, chosen by the mean rather than by the draw, so stream consumption
+    /// stays a function of the inputs:
+    ///
+    /// - Below 30, inverse transform from a *single* uniform. Walking the cumulative
+    ///   distribution costs `O(mean)` time and exactly one draw, where the textbook
+    ///   product-of-uniforms method would consume a variable number and make the stream
+    ///   depend on the values it produced.
+    /// - At 30 and above, a rounded normal. The skew there is 0.18 and the tail error is
+    ///   under a percent, which is far below any detector's calibration — and the exact
+    ///   method's cost grows with the mean while its benefit does not.
+    pub fn poisson(&mut self, mean: f64) -> u64 {
+        // A NaN mean is neither positive nor negative, so it needs saying separately —
+        // `mean <= 0.0` alone would let it through into the loop below.
+        if mean.is_nan() || mean <= 0.0 {
+            return 0;
+        }
+        if mean < 30.0 {
+            let u = self.unit();
+            // p is P(k) and cumulative is P(X <= k), stepped up together.
+            let mut p = (-mean).exp();
+            let mut cumulative = p;
+            let mut k = 0u64;
+            // A generous cap: at mean 30 the distribution is spent by 100, and this only
+            // guards against a uniform draw arbitrarily close to one.
+            let cap = (mean * 20.0) as u64 + 100;
+            while u > cumulative && k < cap {
+                k += 1;
+                p *= mean / k as f64;
+                cumulative += p;
+            }
+            k
+        } else {
+            let drawn = mean + self.gaussian() * mean.sqrt();
+            drawn.round().max(0.0) as u64
+        }
+    }
 }
 
 #[cfg(test)]
@@ -298,6 +344,74 @@ mod tests {
             (mean_cos - 2.0 / 3.0).abs() < 0.01,
             "Lambertian mean cosine should be 2/3, got {mean_cos}"
         );
+    }
+
+    /// The property that defines a Poisson count: its variance equals its mean.
+    ///
+    /// Checked across the crossover between the two methods, because that is where an
+    /// error would hide — either side alone could be right while the join is not.
+    #[test]
+    fn poisson_variance_equals_its_mean() {
+        const N: usize = 200_000;
+        for mean in [0.5f64, 3.0, 12.0, 29.0, 31.0, 200.0, 5000.0] {
+            let mut r = Rng::new(0xC0FFEE);
+            let draws: Vec<f64> = (0..N).map(|_| r.poisson(mean) as f64).collect();
+            let measured_mean = draws.iter().sum::<f64>() / N as f64;
+            let variance = draws
+                .iter()
+                .map(|d| (d - measured_mean).powi(2))
+                .sum::<f64>()
+                / N as f64;
+            assert!(
+                (measured_mean / mean - 1.0).abs() < 0.02,
+                "mean {mean}: got {measured_mean}"
+            );
+            assert!(
+                (variance / mean - 1.0).abs() < 0.05,
+                "mean {mean}: variance {variance} should equal the mean"
+            );
+        }
+    }
+
+    /// At a small mean the exact probabilities are checkable term by term, which the
+    /// variance alone would not catch — a distribution with the right first two moments
+    /// can still be the wrong distribution.
+    #[test]
+    fn a_small_poisson_matches_its_exact_probabilities() {
+        const N: usize = 400_000;
+        let mean = 2.5f64;
+        let mut r = Rng::new(7);
+        let mut counts = [0usize; 12];
+        for _ in 0..N {
+            let k = r.poisson(mean) as usize;
+            if k < counts.len() {
+                counts[k] += 1;
+            }
+        }
+        // P(k) = e^-m m^k / k!
+        let mut factorial = 1.0;
+        for (k, count) in counts.iter().enumerate() {
+            if k > 0 {
+                factorial *= k as f64;
+            }
+            let exact = (-mean).exp() * mean.powi(k as i32) / factorial;
+            let measured = *count as f64 / N as f64;
+            assert!(
+                (measured - exact).abs() < 3e-3,
+                "P({k}): measured {measured:.5}, exact {exact:.5}"
+            );
+        }
+    }
+
+    /// Counting nothing counts nothing, and a nonsensical mean does not panic.
+    #[test]
+    fn a_degenerate_poisson_counts_nothing() {
+        let mut r = Rng::new(1);
+        assert_eq!(r.poisson(0.0), 0);
+        assert_eq!(r.poisson(-5.0), 0);
+        assert_eq!(r.poisson(f64::NAN), 0);
+        // And a large mean stays finite rather than overflowing the cast.
+        assert!(r.poisson(1e12) > 0);
     }
 
     /// Uniform hemisphere sampling has mean cosine 1/2, which is how it differs

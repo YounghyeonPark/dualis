@@ -1,4 +1,4 @@
-﻿//! dualis-optics: light, as a domain built on the `dualis-core` kernel.
+//! dualis-optics: light, as a domain built on the `dualis-core` kernel.
 //!
 //! Spectral radiometry, surface optics, dispersion and ray geometry. This is the
 //! first domain, and its job is partly to prove the kernel can hold one: it uses
@@ -31,10 +31,12 @@
 //! | [`optics`] | What a surface does to light — Fresnel from the refractive indices, spectral R/T/A, coatings, polarisation split, scatter sampling |
 //! | [`material`] | Refractive index against wavelength (Sellmeier and Cauchy, with a small glass catalogue), Abbe number, and how much light survives the glass |
 //! | [`geometry`] | Rays and hits, intersections against caps, conics, planes, annuli and cylinders, Snell's law, and disc sampling |
-//!
 //! | [`diffraction`] | What a *perfect* system does: Airy patterns, encircled energy, the ideal MTF, Rayleigh and Abbe limits |
 //! | [`wavefront`] | What an imperfect one does: Zernike aberrations, pupil transforms, aberrated PSFs and their MTFs |
+//! | [`propagation`] | Walking a field between planes by the angular spectrum, checked against a Gaussian beam |
+//! | [`coherence`] | The coherent and incoherent limits, and how coherent a source is at a distance |
 //! | [`radiometry`] | Integrating a spectrum, and the difference between watts and photons |
+//! | [`detector`] | Turning photons into a number, and the four noises that come with it |
 //!
 //! # What is deliberately not in it
 //!
@@ -51,6 +53,7 @@
 //! here.
 
 pub mod coherence;
+pub mod detector;
 pub mod diffraction;
 pub mod geometry;
 pub mod material;
@@ -60,6 +63,7 @@ pub mod radiometry;
 pub mod spectrum;
 pub mod wavefront;
 
+pub use detector::{Detector, Reading};
 pub use diffraction::{
     abbe_limit, airy_intensity, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy,
     mtf_at, mtf_ideal, rayleigh_limit, strehl_from_wavefront_error,
