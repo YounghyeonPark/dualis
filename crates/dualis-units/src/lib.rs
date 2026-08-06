@@ -314,6 +314,16 @@ pub type SpecificHeat = Qty<2, 0, -2, 0, -1, 0, 0>;
 pub type Diffusivity = Qty<2, 0, -1, 0, 0, 0, 0>;
 /// K⁻¹ — the coefficient that turns absorbed light into a focus shift.
 pub type ThermalExpansion = Qty<0, 0, 0, 0, -1, 0, 0>;
+/// kg·m² — how hard a body is to spin up about an axis.
+///
+/// The rotational counterpart of mass, and unlike mass it depends on the axis: a
+/// pencil is trivial to spin about its length and awkward about its middle. That
+/// direction-dependence is why it is a tensor and why a free body's rotation is
+/// interesting rather than uniform.
+pub type MomentOfInertia = Qty<2, 1, 0, 0, 0, 0, 0>;
+/// kg·m²·s⁻¹ — the rotational counterpart of momentum, and conserved for the same
+/// reason.
+pub type AngularMomentum = Qty<2, 1, -1, 0, 0, 0, 0>;
 /// N·m⁻¹ — a spring's `k`, and the penalty stiffness a contact is modelled with.
 ///
 /// This is what sets a mechanical solver's stability limit: a mass on a spring
@@ -394,6 +404,8 @@ product!(Irradiance, Area => Power);
 product!(Density, Volume => Mass);
 product!(Current, Time => Charge);
 product!(Voltage, Current => Power);
+product!(Mass, Area => MomentOfInertia);
+product!(MomentOfInertia, Frequency => AngularMomentum);
 product!(Stiffness, Length => Force);
 product!(Damping, Velocity => Force);
 product!(Mass, SpecificHeat => HeatCapacity);

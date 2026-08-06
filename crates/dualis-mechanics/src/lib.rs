@@ -30,8 +30,10 @@
 //! tolerance to every quantity it sees, and a tolerance loose enough for an
 //! integrated energy would blunt the momentum check that is genuinely sharp.
 
+pub mod rigid;
 pub mod tree;
 
+pub use rigid::{Inertia, RigidBody};
 pub use tree::TreeNBody;
 
 use dualis_core::conserved::quantity;
