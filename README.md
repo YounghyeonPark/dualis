@@ -19,7 +19,7 @@ wrong in the same direction.
 | `dualis-thermal` | Heat: lumped masses, explicit conduction, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
-| `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath |
+| `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other six, and where the cross-domain integration tests live |
 
 ```text
@@ -223,8 +223,9 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `airy_pattern` | What a *perfect* lens does to a point: the Airy pattern, its encircled energy, and the MTF that follows from both |
 | `detector_snr` | Why read noise is the first number on a datasheet, with the Poisson statistics sampled rather than asserted |
 | `room_modes` | Why a small room booms at one note, and why that note is not a note. Four mode shapes and a corner trace |
+| `melting` | A Lennard-Jones crystal melting, read off its own radial distribution rather than declared |
 
-Each one prints its numbers and **asserts** them, so CI runs all three on every commit.
+Each one prints its numbers and **asserts** them, so CI runs all of them on every commit.
 An example is a claim that the library works, which makes a quietly broken one worse than
 no example at all — every value printed has been checked against a closed form or against
 a calculation that did not go through the same code. Give a path and it also writes an SVG;
@@ -343,7 +344,24 @@ system — there is no "close enough" to fall back on. And the symplectic argume
 `velocity_verlet`, which the kernel proves on a harmonic oscillator and which is relied on here
 for a many-body potential with a truncated force.
 
-One test in it is worth describing because of how it was wrong first. The ideal-gas check
+The `melting` example is where this pays off. Three state points are equilibrated and the
+radial distribution function decides which phase each one is, rather than anyone declaring it:
+`g(r)` peaks at 5.1 for the crystal, 2.9 for the liquid and 1.4 for the gas, while the *number*
+of first neighbours barely moves between solid and liquid — 12.4 against 12.8. Melting costs the
+order and keeps the packing, which is why a liquid is nearly as dense as its solid and a gas is
+a thousand times thinner.
+
+The crystal panel is checked exactly before anything harder is attempted: an fcc lattice's
+neighbour shells are at `1 : √2 : √3 : 2` holding 12, 6, 24 and 12 atoms, and the histogram
+reproduces all four to 1e-12. Combinatorics rather than measurement.
+
+And one thing the data corrected. Long-range order should be checked at the *third* shell, not
+the fourth. The fourth was the obvious choice and reads 1.045 for the crystal against 0.999 for
+the liquid — no discrimination at all — because thermal broadening washes out a thin shell at a
+large radius long before a fat one nearer in. The third holds 24 atoms, twice as many as the
+fourth, and separates them cleanly at 2.81 against 1.27.
+
+One test in the crate is worth describing because of how it was wrong first. The ideal-gas check
 asserted that doubling the density doubles the departure, ran on one seed, and passed. Across
 four seeds the ratio came out 1.35, 1.61, 2.34 and 2.92 — averaging to 2.06, but landing
 anywhere. A hundred atoms is a small sample and two thousand correlated snapshots are far fewer
