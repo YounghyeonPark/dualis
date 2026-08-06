@@ -220,6 +220,7 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `beam_hot_spot` | A 100 W laser on a mirror. Optics and heat meeting over a shared boundary, and the peak temperature a lumped model cannot see |
 | `airy_pattern` | What a *perfect* lens does to a point: the Airy pattern, its encircled energy, and the MTF that follows from both |
 | `detector_snr` | Why read noise is the first number on a datasheet, with the Poisson statistics sampled rather than asserted |
+| `room_modes` | Why a small room booms at one note, and why that note is not a note. Four mode shapes and a corner trace |
 
 Each one prints its numbers and **asserts** them, so CI runs all three on every commit.
 An example is a claim that the library works, which makes a quietly broken one worse than
@@ -234,13 +235,14 @@ hundred lines and is the right size for this job; when it stops being, the answe
 
 The examples also exist to keep the library honest in a way tests cannot. `ScalarField` was
 written as the interface a visualiser would read a simulation through and then sat with no
-implementor at all, which meant "is it the right interface" was a guess. `beam_hot_spot`
-reads the bar through it and never mentions `Bar1D`, and writing that turned up two things
-worth knowing — see the next section.
+implementor at all, which meant "is it the right interface" was a guess. There are two now —
+a one-dimensional bar governed by diffusion and a two-dimensional room governed by a wave —
+and the pair has said more about the interface than either could alone. See the next section.
 
 ## What implementing the field interface found
 
-Two things, and both are the kind that only surface when something actually uses a trait.
+The kind of thing that only surfaces when something uses a trait, and more of it once there
+were two implementors that disagreed.
 
 **`ScalarField::at` takes a time, and a marched domain has only "now".** A closed-form field
 like `Motion` answers for any instant; `Bar1D` holds one state and no history, so the
@@ -258,12 +260,27 @@ cell stencil instead. The cost is that `gradient` is the derivative the *scheme*
 than of `at` exactly. That is a property of sampling a discrete field, not a rough edge that
 could be polished out, and it is documented where a caller meets it.
 
-A third thing was a claim of mine that was simply wrong: I wrote that the mirrored stencil
-gives a zero gradient at an insulated wall. It does not. On a cell-centred grid the first
-sample sits half a cell inside the wall, where the temperature really is still changing, so
-the reported slope there is not zero and pretending otherwise would misdescribe what the
-grid knows. Insulation shows up as no heat crossing the boundary — which the conservation
-audit checks — not as a zero slope at a position the grid cannot sample.
+**`rate` is not always about the next step.** `Bar1D` marches forward, so the rate it reports
+is exactly the change the next step will make. `Room` is a leapfrog and stores its velocities
+half a step behind its pressures, so the velocity for the next update does not exist yet —
+what it can report exactly is `(pⁿ − pⁿ⁻¹)/h`, the step just taken. Being half a step behind
+is the better trade rather than a compromise: a centred difference at the midpoint is second
+order where a forward one at the present instant is first.
+
+**And a claim of mine that was simply wrong.** I wrote that the mirrored stencil gives a zero
+gradient at an insulated wall. For `Bar1D` it does not: its grid is cell-centred, so the first
+sample sits half a cell inside the wall where the temperature really is still changing.
+`Room`'s grid is node-centred, a node sits *on* the wall, and there the gradient is zero to
+the last bit. Same physics, different sampling — and only the second implementor could have
+shown that the first one's behaviour was about the grid rather than about the boundary.
+
+Two smaller things a caller will meet. A grid-backed field interpolates in `at` but snaps to
+the nearest node for its derivatives, because the derivatives are the scheme's own stencils
+and the scheme has values only at nodes — so combining them at an arbitrary point divides a
+number computed here by one computed slightly over there. And a signed field needs a
+different colour map from a positive one: a temperature climbs from a floor, a pressure swings
+about zero, and a ramp built for the first draws a room at rest as though half of it were
+cold.
 
 ## Watts, photons, and the chain that closes
 
@@ -342,6 +359,15 @@ different module.
 
 Acoustics is linear and up to two dimensions: a tube or a room, not a hall. No 3D grid,
 no scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
+
+`Room` also has a known defect, found by the `room_modes` example and left in deliberately
+rather than fixed in the same commit that found it. A wall node's control volume is half a
+cell wide, but the pressure update divides its divergence by the whole `dx`, so the walls come
+out twice as heavy as they should be. Every mode reads low — 1.4% on an 89-cell grid — and the
+whole scheme converges at *first* order despite being second order in the interior. The
+example measures the convergence rather than hiding it behind a tolerance. Fixing it means
+touching the energy functional too, which was carefully built to make the conservation audit
+tight, so it is its own piece of work.
 
 **There is no fluid domain, and that is deliberate.** Sound *is* the fluid domain here:
 it is what a fluid does when the variations are small enough to linearise, which is

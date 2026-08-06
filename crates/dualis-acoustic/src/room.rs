@@ -31,8 +31,9 @@
 //! three-dimensional acoustics is expensive rather than merely large.
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, Violation};
-use dualis_units::{Area, Density, Energy, Frequency, Length, Pressure, Time, Velocity};
+use dualis_core::{Domain, Exchange, Kind, Ledger, ScalarField, Violation};
+use dualis_units::{Area, Density, Energy, Frequency, Length, LengthVec, Pressure, Time, Velocity};
+use glam::DVec3;
 
 /// A rectangular room, discretised on a uniform grid with rigid walls.
 pub struct Room {
@@ -367,6 +368,200 @@ impl Domain for Room {
     fn supports_restore(&self) -> bool {
         true
     }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+}
+
+/// The room as a pressure field, in pascals.
+///
+/// The second implementation of [`ScalarField`] in the workspace, and it exists to answer
+/// the question the first one could not: whether the trait fits anything but a
+/// one-dimensional diffusion. `Bar1D` is a line of cells governed by an equation that is
+/// first order in time; this is a plane of nodes governed by one that is second order. They
+/// disagree in three ways that are worth writing down, because a visualiser will meet all
+/// three.
+///
+/// # `rate` needs the velocity, not the Laplacian
+///
+/// For diffusion the governing equation gives `∂T/∂t = α∇²T`, so the field's own curvature
+/// *is* its rate of change and one array answers everything. A wave is second order:
+/// `∂²p/∂t² = c²∇²p`. The Laplacian gives the acceleration, and the *rate* comes from the
+/// companion velocity field instead — `∂p/∂t = −ρc²∇·u`, which this scheme stores on the
+/// faces and which [`Domain::step`] uses verbatim.
+///
+/// So both domains can report an exact rate from their present state and neither needs
+/// history, but by different routes. The general statement is the useful one: a marched
+/// domain can answer `rate` whenever its stored state is enough to evaluate the governing
+/// equation, which is the same condition as being well posed as a first-order system. It is
+/// not a property of diffusion.
+///
+/// # The gradient really is zero at these walls
+///
+/// The thermal crate's `Bar1D` — named in prose rather than linked, because these two
+/// domains do not depend on each other and rustdoc rightly refuses to pretend otherwise —
+/// uses a cell-centred grid, which puts its first sample half a cell
+/// inside the wall, where the temperature is still changing, so a gradient reported there is
+/// not zero. This grid is node-centred: a node sits *on* the wall, and a rigid wall's
+/// boundary condition is exactly `∂p/∂n = 0`. Mirroring gives `(p₁ − p₁)/2dx`, which is zero
+/// to the last bit.
+///
+/// Neither is a mistake. The difference is where the samples are, and that is the kind of
+/// thing only a second implementor could have shown.
+///
+/// # And the values are signed
+///
+/// A temperature is positive and climbs; a pressure swings either side of zero and averages
+/// out. Any colour map worth having for this one is diverging with a fixed midpoint, and one
+/// built for temperature will draw a room as though half of it were cold. That is a
+/// requirement on a renderer that a single monotonic field would never have surfaced.
+///
+/// # One sharp edge to know about
+///
+/// `at` interpolates between nodes; `gradient`, `laplacian` and `rate` snap to the nearest
+/// one, because they are the scheme's own stencils and the scheme only has values at nodes.
+/// So combining them at an arbitrary point — `laplacian(p) / at(p)`, say — divides a number
+/// computed at one place by one computed at another. Sample on a node when the ratio
+/// matters. The same is true of any field backed by a grid.
+///
+/// Depth is ignored: this is a two-dimensional model and says so.
+impl ScalarField for Room {
+    fn at(&self, p: LengthVec, _t: Time) -> f64 {
+        let v = p.to_si();
+        let (u, w) = (v.x / self.dx, v.y / self.dx);
+        // Bilinear between the four surrounding nodes, clamped to the walls.
+        let (i, fx) = clamp_index(u, self.nx);
+        let (j, fy) = clamp_index(w, self.ny);
+        let (i1, j1) = ((i + 1).min(self.nx - 1), (j + 1).min(self.ny - 1));
+        let p00 = self.pressure[j * self.nx + i];
+        let p10 = self.pressure[j * self.nx + i1];
+        let p01 = self.pressure[j1 * self.nx + i];
+        let p11 = self.pressure[j1 * self.nx + i1];
+        let bottom = p00 * (1.0 - fx) + p10 * fx;
+        let top = p01 * (1.0 - fx) + p11 * fx;
+        bottom * (1.0 - fy) + top * fy
+    }
+
+    /// `∇p`, by the mirrored central difference the walls impose. Exactly zero on a wall,
+    /// in the direction normal to it.
+    fn gradient(&self, p: LengthVec, _t: Time, _h: Length) -> DVec3 {
+        let (i, j) = self.node_at(p);
+        let sample = |i: usize, j: usize| self.pressure[j * self.nx + i];
+        let mirror = |k: usize, n: usize| {
+            (
+                if k == 0 { 1 } else { k - 1 },
+                if k + 1 >= n {
+                    n.saturating_sub(2)
+                } else {
+                    k + 1
+                },
+            )
+        };
+        let (il, ir) = mirror(i, self.nx);
+        let (jl, jr) = mirror(j, self.ny);
+        DVec3::new(
+            (sample(ir, j) - sample(il, j)) / (2.0 * self.dx),
+            (sample(i, jr) - sample(i, jl)) / (2.0 * self.dx),
+            0.0,
+        )
+    }
+
+    /// `∇²p`, five-point with rigid walls. This is `∂²p/∂t²` over `c²` — the acceleration,
+    /// not the rate; see [`Room::rate`](ScalarField::rate).
+    fn laplacian(&self, p: LengthVec, _t: Time, _h: Length) -> f64 {
+        let (i, j) = self.node_at(p);
+        let sample = |i: usize, j: usize| self.pressure[j * self.nx + i];
+        let mirror = |k: usize, n: usize| {
+            (
+                if k == 0 { 1 } else { k - 1 },
+                if k + 1 >= n {
+                    n.saturating_sub(2)
+                } else {
+                    k + 1
+                },
+            )
+        };
+        let (il, ir) = mirror(i, self.nx);
+        let (jl, jr) = mirror(j, self.ny);
+        let centre = sample(i, j);
+        (sample(il, j) + sample(ir, j) + sample(i, jl) + sample(i, jr) - 4.0 * centre)
+            / (self.dx * self.dx)
+    }
+
+    /// `∂p/∂t = −ρc²∇·u`, read off the stored face velocities.
+    ///
+    /// The same expression [`Domain::step`] integrates, on the same stencil, with the same
+    /// zero flux through the walls — so it is exact rather than approximate. But it is exact
+    /// about the step just *taken*, not the one coming, and that is worth being precise
+    /// about because the bar is the other way round.
+    ///
+    /// A leapfrog stores its velocities half a step behind its pressures. The update is
+    /// `pⁿ⁺¹ = pⁿ − h·ρc²∇·uⁿ⁺¹⁄²`, and `uⁿ⁺¹⁄²` does not exist until the next step computes
+    /// it — what is in the arrays now is `uⁿ⁻¹⁄²`. So this returns `(pⁿ − pⁿ⁻¹)/h` exactly:
+    /// the centred derivative at `t − dt/2`.
+    ///
+    /// Being half a step stale is the better trade, not a compromise. A centred difference
+    /// at the midpoint is second-order accurate where a forward one at the present instant
+    /// is first-order, and half a step is nothing next to a period — twenty microseconds
+    /// against a fiftieth of a second for a room mode.
+    ///
+    /// Nearest node rather than interpolated, because the divergence is a cell quantity and
+    /// inventing values between cells would report a rate the scheme is not going to
+    /// produce.
+    fn rate(&self, p: LengthVec, _t: Time, _dt: Time) -> f64 {
+        let (i, j) = self.node_at(p);
+        let (nx, ny) = (self.nx, self.ny);
+        let left = if i == 0 {
+            0.0
+        } else {
+            self.vx[j * (nx - 1) + i - 1]
+        };
+        let right = if i == nx - 1 {
+            0.0
+        } else {
+            self.vx[j * (nx - 1) + i]
+        };
+        let below = if j == 0 {
+            0.0
+        } else {
+            self.vy[(j - 1) * nx + i]
+        };
+        let above = if j == ny - 1 {
+            0.0
+        } else {
+            self.vy[j * nx + i]
+        };
+        -self.density * self.speed * self.speed / self.dx * ((right - left) + (above - below))
+    }
+}
+
+impl Room {
+    /// Nearest node to a point, clamped into the room.
+    fn node_at(&self, p: LengthVec) -> (usize, usize) {
+        let v = p.to_si();
+        let round = |q: f64, n: usize| {
+            if q.is_nan() || q < 0.0 {
+                0
+            } else {
+                (q / self.dx).round().min((n - 1) as f64) as usize
+            }
+        };
+        (round(v.x, self.nx), round(v.y, self.ny))
+    }
+}
+
+/// Index of the node below a position in grid units, and the fraction beyond it.
+fn clamp_index(q: f64, n: usize) -> (usize, f64) {
+    if q.is_nan() || q <= 0.0 {
+        return (0, 0.0);
+    }
+    let last = (n - 1) as f64;
+    if q >= last {
+        return (n - 1, 0.0);
+    }
+    let i = q.floor();
+    (i as usize, q - i)
 }
 
 #[cfg(test)]
@@ -375,6 +570,191 @@ mod tests {
 
     fn square(cells: usize) -> Room {
         Room::of_air("room", Length::m(4.0), Length::m(4.0), cells)
+    }
+
+    fn at(x: f64, y: f64) -> LengthVec {
+        LengthVec::m(x, y, 0.0)
+    }
+
+    /// The field reads the room where the room is, interpolates between nodes, and holds
+    /// its value outside the walls.
+    #[test]
+    fn the_field_samples_the_room_and_stops_at_its_walls() {
+        let room = square(33).released_in_mode(1, 0, Pressure::from_si(1.0));
+        let (lx, _) = (room.width().to_si(), room.height().to_si());
+
+        // The mode is cos(pi x / Lx), so it is +1 at one wall and -1 at the other.
+        assert!((room.at(at(0.0, 2.0), Time::ZERO) - 1.0).abs() < 1e-12);
+        assert!((room.at(at(lx, 2.0), Time::ZERO) + 1.0).abs() < 1e-12);
+        assert!(room.at(at(lx / 2.0, 2.0), Time::ZERO).abs() < 1e-12);
+
+        // Between two nodes, bilinear rather than nearest — a visualiser sampling finer
+        // than the grid must not get stairs.
+        let dx = lx / 32.0;
+        let midpoint = room.at(at(dx * 0.5, 2.0), Time::ZERO);
+        let ends = (room.at(at(0.0, 2.0), Time::ZERO) + room.at(at(dx, 2.0), Time::ZERO)) / 2.0;
+        assert!((midpoint - ends).abs() < 1e-12, "{midpoint} against {ends}");
+
+        // Outside the walls the value is held rather than extrapolated or indexed out of
+        // range, and a NaN reads as the corner rather than casting to nonsense.
+        assert!((room.at(at(-9.0, 2.0), Time::ZERO) - 1.0).abs() < 1e-12);
+        assert!((room.at(at(lx + 9.0, 2.0), Time::ZERO) + 1.0).abs() < 1e-12);
+        assert!(room.at(at(f64::NAN, f64::NAN), Time::ZERO).is_finite());
+
+        // And it is uniform in depth, which is what a two-dimensional model claims.
+        assert_eq!(
+            room.at(LengthVec::m(1.0, 2.0, 0.0), Time::ZERO),
+            room.at(LengthVec::m(1.0, 2.0, 55.0), Time::ZERO)
+        );
+    }
+
+    /// **Where this differs from the bar, and why neither is wrong.** A rigid wall's
+    /// boundary condition is `∂p/∂n = 0`, and on a node-centred grid a node sits *on* the
+    /// wall — so the reported gradient there is zero to the last bit.
+    ///
+    /// `Bar1D` reports a nonzero gradient at its insulated end for the opposite reason: its
+    /// grid is cell-centred, so the nearest sample is half a cell inside, where the field is
+    /// still changing. The physics agrees in both cases; the grids sample it differently,
+    /// and only a second implementor could have shown that.
+    #[test]
+    fn the_gradient_vanishes_on_a_rigid_wall() {
+        let room = square(33).released_in_mode(1, 1, Pressure::from_si(1.0));
+        let (lx, ly) = (room.width().to_si(), room.height().to_si());
+
+        for (x, y) in [(0.0, 1.5), (lx, 2.5), (1.5, 0.0), (2.5, ly)] {
+            let g = room.gradient(at(x, y), Time::ZERO, Length::from_si(room.dx));
+            // Only the component normal to that wall has to vanish.
+            let normal = if x == 0.0 || x == lx { g.x } else { g.y };
+            assert!(
+                normal == 0.0,
+                "at ({x}, {y}) the normal gradient was {normal}"
+            );
+            assert_eq!(g.z, 0.0, "a two-dimensional room has no gradient in z");
+        }
+
+        // Away from the walls it is emphatically not zero, so the test above is not passing
+        // on a field that is flat everywhere.
+        let inside = room.gradient(at(1.0, 1.0), Time::ZERO, Length::from_si(room.dx));
+        assert!(inside.length() > 0.1, "got {inside}");
+    }
+
+    /// The Laplacian against the closed form the mode shape provides.
+    ///
+    /// For `p = cos(nπx/Lx)cos(mπy/Ly)` the exact Laplacian is `−[(nπ/Lx)² + (mπ/Ly)²]p`,
+    /// so the ratio of the two is a constant the grid should reproduce. It reproduces it to
+    /// second order in `dx`, which is checked by refining rather than by asserting a
+    /// tolerance that happened to pass.
+    #[test]
+    fn the_laplacian_matches_the_mode_it_was_given() {
+        let error_at = |cells: usize| {
+            let room = square(cells).released_in_mode(1, 1, Pressure::from_si(1.0));
+            let (lx, ly) = (room.width().to_si(), room.height().to_si());
+            let k2 = (std::f64::consts::PI / lx).powi(2) + (std::f64::consts::PI / ly).powi(2);
+            // A quarter of the way in, where the mode is neither at a peak nor a node.
+            let p = at(lx * 0.25, ly * 0.25);
+            let expected = -k2 * room.at(p, Time::ZERO);
+            let got = room.laplacian(p, Time::ZERO, Length::from_si(room.dx));
+            (got / expected - 1.0).abs()
+        };
+        let coarse = error_at(17);
+        let fine = error_at(33);
+        assert!(coarse < 0.02, "17 cells was already off by {coarse}");
+        // Halving dx should quarter the error. Allowing 3x rather than 4x leaves room for
+        // the height being requantised to a whole number of cells.
+        assert!(
+            fine < coarse / 3.0,
+            "refining must converge second order: {coarse} then {fine}"
+        );
+    }
+
+    /// **The check that makes the field worth having, and it is not the Laplacian.**
+    ///
+    /// A wave equation is second order in time, so `α∇²p` is not the rate — it is the
+    /// acceleration. The rate comes from the velocity divergence the scheme stores, and
+    /// because it is the same expression on the same stencil it is exact.
+    ///
+    /// Exact about the step just *taken*, though, where the bar's was exact about the one
+    /// coming. A leapfrog holds its velocities half a step behind its pressures, so the
+    /// velocity for the next update does not exist yet. That is the sign convention this
+    /// test exists to pin down, and getting it backwards is invisible in a picture.
+    #[test]
+    fn the_reported_rate_is_exactly_the_step_just_taken() {
+        let mut room = square(21).released_in_mode(2, 1, Pressure::from_si(1.0));
+        let dt = Time::from_si(room.dx / (343.0 * std::f64::consts::SQRT_2) * 0.9);
+
+        let (nx, ny) = room.cells();
+        let nodes: Vec<LengthVec> = (0..ny)
+            .flat_map(|j| (0..nx).map(move |i| (i, j)))
+            .map(|(i, j)| LengthVec::from_si(DVec3::new(i as f64, j as f64, 0.0) * room.dx))
+            .collect();
+
+        // Twice, so this cannot be an accident of starting from rest.
+        for round in 0..2 {
+            let before: Vec<f64> = room.pressure.clone();
+            room.step(Time::ZERO, dt, &mut Exchange::new()).unwrap();
+            let reported: Vec<f64> = nodes
+                .iter()
+                .map(|p| room.rate(*p, Time::ZERO, dt))
+                .collect();
+
+            let scale = reported.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+            assert!(
+                scale > 1.0,
+                "round {round}: nothing moved, so nothing was tested"
+            );
+            for (k, p) in nodes.iter().enumerate() {
+                let observed = (room.pressure[k] - before[k]) / dt.to_si();
+                let _ = p;
+                assert!(
+                    (observed - reported[k]).abs() < scale * 1e-12,
+                    "round {round}, node {k}: reported {} but the step did {observed}",
+                    reported[k]
+                );
+            }
+        }
+
+        // And the Laplacian is not that rate but the *acceleration*, which has a closed form
+        // of its own: `c²∇²p = ∂²p/∂t² = −ω²p` for a mode. So dividing the field's curvature
+        // by its value has to give back the mode frequency that `mode_frequency` computes
+        // from the room's dimensions alone — two numbers that share no code arriving at the
+        // same answer.
+        //
+        // Comparing the Laplacian against the rate directly would have been meaningless:
+        // one is Pa/m² and the other Pa/s, so their ratio says more about the choice of
+        // units than about the physics.
+        let probe = at(room.width().to_si() * 0.15, room.height().to_si() * 0.3);
+        let value = room.at(probe, Time::ZERO);
+        let curvature = room.laplacian(probe, Time::ZERO, Length::from_si(room.dx));
+        assert!(
+            value.abs() > 0.1,
+            "pick a probe where the mode is alive: {value}"
+        );
+        let omega = -room.speed * room.speed * curvature / value;
+        let expected = (std::f64::consts::TAU * room.mode_frequency(2, 1).to_si()).powi(2);
+        assert!(
+            (omega / expected - 1.0).abs() < 0.02,
+            "omega squared {omega} against the closed form {expected}"
+        );
+    }
+
+    /// A pressure field swings either side of zero, which a temperature never does. Worth
+    /// pinning because it is a requirement on anything that draws one.
+    #[test]
+    fn the_field_is_signed_about_zero() {
+        let room = square(33).released_in_mode(1, 1, Pressure::from_si(2.0));
+        let (lx, ly) = (room.width().to_si(), room.height().to_si());
+        let corners = [
+            room.at(at(0.0, 0.0), Time::ZERO),
+            room.at(at(lx, 0.0), Time::ZERO),
+            room.at(at(0.0, ly), Time::ZERO),
+            room.at(at(lx, ly), Time::ZERO),
+        ];
+        assert!(corners.iter().any(|v| *v > 1.9), "{corners:?}");
+        assert!(corners.iter().any(|v| *v < -1.9), "{corners:?}");
+        // And it averages to nothing, so a colour map anchored at the minimum would put the
+        // midpoint in the wrong place.
+        let mean: f64 = room.pressure.iter().sum::<f64>() / room.pressure.len() as f64;
+        assert!(mean.abs() < 1e-12, "mean {mean}");
     }
 
     /// The closed form, and the two things about it a tube cannot show.

@@ -57,6 +57,27 @@ pub fn heat(v: f64) -> String {
     rgb(r, g, b)
 }
 
+/// A blue–white–red ramp for a signed field, with `v = 0` mapping to the middle.
+///
+/// [`heat`] is wrong for a pressure and the reason is not aesthetic. A temperature is
+/// positive and climbs, so a ramp anchored at the minimum tells the truth about it. A
+/// pressure swings either side of zero and averages out, so the same ramp puts the midpoint
+/// wherever the extremes happen to fall this frame — a room at rest would be drawn as though
+/// half of it were cold, and the colours would shift as the wave passed rather than staying
+/// pinned to the physics.
+///
+/// So zero is fixed at white and `v` is in −1 to 1 against a symmetric scale the caller
+/// chooses, usually the peak magnitude. Quantised for the same reason [`heat`] is.
+pub fn diverging(v: f64) -> String {
+    let v = (v.clamp(-1.0, 1.0) * 32.0).round() / 32.0;
+    let m = v.abs();
+    // Toward red for positive, toward blue for negative, white in between.
+    let (hot, cold) = ((178.0, 34.0, 34.0), (28.0, 76.0, 168.0));
+    let (r, g, b) = if v >= 0.0 { hot } else { cold };
+    let mix = |c: f64| (255.0 + (c - 255.0) * m).round() as u8;
+    rgb(mix(r), mix(g), mix(b))
+}
+
 impl Plot {
     pub fn new(width: f64, height: f64, x: (f64, f64), y: (f64, f64)) -> Plot {
         Plot {
