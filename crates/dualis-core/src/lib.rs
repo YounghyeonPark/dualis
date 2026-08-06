@@ -20,7 +20,9 @@
 //!   what a process claims to hold and [`audit`] is the check; energy crossing
 //!   between domains goes through [`Exchange`], which refuses to let a transfer
 //!   silently lose some. This generalises what `SurfaceOptics` did for one
-//!   quantity at one kind of boundary.
+//!   quantity at one kind of boundary. Where a boundary is resolved into faces,
+//!   the audit is per face — a redistribution that keeps the total but moves it
+//!   to the wrong part of a mirror is the one bug a total-only check cannot see.
 //! - **Nothing is random.** [`Rng::for_index`] gives every piece of work its own
 //!   stateless stream, so a parallel simulation is still bit-reproducible — which
 //!   is when the guarantee starts to matter, and when a single shared generator
@@ -33,6 +35,7 @@
 //! | [`conserved`] | Conservation as an audit: ledgers, violations, tolerances |
 //! | [`integrator`] | Fixed-step time evolution, and why symplectic beats accurate |
 //! | [`sim`] | Several domains on one clock: quasi-static, multirate, iterative coupling |
+//! | [`scene`] | Where two domains meet: shared boundaries, and flux that knows its place |
 //! | [`field`] | Scalar and vector fields, with gradient, divergence, curl, Laplacian |
 //! | [`substance`] | Thermal, mechanical and acoustic properties of matter |
 //! | [`motion`] | Closed-form rigid motion and time gating |
@@ -48,6 +51,7 @@ pub mod field;
 pub mod integrator;
 pub mod motion;
 pub mod rng;
+pub mod scene;
 pub mod sim;
 pub mod substance;
 pub mod transform;
@@ -58,6 +62,7 @@ pub use field::{ScalarField, VectorField};
 pub use integrator::{velocity_verlet, Dynamics, Integrator, Newtonian, State};
 pub use motion::{Motion, Strobe};
 pub use rng::Rng;
+pub use scene::{Flux, Interface};
 pub use sim::{Domain, Exchange, Kind, Schedule, Simulation};
 pub use substance::Substance;
 pub use transform::{fft, fft2, fftshift, ifft, ifft2};

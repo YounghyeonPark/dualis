@@ -45,8 +45,8 @@ pub mod prelude {
     pub use dualis_core::conserved::quantity;
     pub use dualis_core::{
         audit, basis_for, oriented_against, reflect, velocity_verlet, Domain, Dynamics, Exchange,
-        Integrator, Kind, Ledger, Motion, Newtonian, Rng, Schedule, Simulation, State, Strobe,
-        Substance, Violation,
+        Flux, Integrator, Interface, Kind, Ledger, Motion, Newtonian, Rng, Schedule, Simulation,
+        State, Strobe, Substance, Violation,
     };
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,

@@ -30,7 +30,7 @@
 //! stability limit, not a competitive thermal solver.
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, Substance, Violation};
+use dualis_core::{Domain, Exchange, Interface, Kind, Ledger, Substance, Violation};
 use dualis_units::{
     Area, Energy, HeatCapacity, Length, Power, Temperature, Time, Volume, STEFAN_BOLTZMANN,
 };
@@ -252,6 +252,10 @@ impl Domain for LumpedMass {
     fn supports_restore(&self) -> bool {
         true
     }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// One-dimensional explicit heat conduction on a uniform grid.
@@ -273,8 +277,11 @@ pub struct Bar1D {
     dx: Length,
     /// Cross-sectional area, for turning joules into a temperature.
     area: Area,
+    /// The boundary this bar offers to other domains, one face per cell, if it has one.
+    boundary: Option<Interface>,
     absorbed: f64,
-    initial_heat: f64,
+    /// The temperature the stored heat is measured from — see [`Bar1D::stored_heat`].
+    reference: f64,
 }
 
 impl Bar1D {
@@ -289,18 +296,44 @@ impl Bar1D {
     ) -> Bar1D {
         let cells = cells.max(2);
         let temps = vec![initial.to_si(); cells];
-        let mut bar = Bar1D {
+        Bar1D {
             name,
             substance,
             cells: temps.clone(),
             saved: temps,
             dx,
             area,
+            boundary: None,
             absorbed: 0.0,
-            initial_heat: 0.0,
-        };
-        bar.initial_heat = bar.stored_heat();
-        bar
+            reference: initial.to_si(),
+        }
+    }
+
+    /// Expose the bar's long side as an [`Interface`], one face per cell.
+    ///
+    /// Without this the bar can only be heated lumpedly, and the heat lands in cell 0
+    /// because that is where a surface absorbing light *would* put it if the bar knew where
+    /// the surface was. It does not: `Exchange::publish` carries an amount and no place, so
+    /// "the light hit the middle" is unsayable.
+    ///
+    /// With it, whoever illuminates the bar publishes a [`Flux`](dualis_core::Flux) over these faces and the
+    /// heat appears where it landed. One face per cell deliberately: the two sides then
+    /// share a discretisation, so nothing has to interpolate, and interpolation is where a
+    /// coupling loses energy. A publisher on a different grid resamples explicitly with
+    /// [`Flux::resample`](dualis_core::Flux::resample), which the bus insists on rather than doing quietly.
+    ///
+    /// `face_area` is the area of one cell's exposed side, which is not the bar's
+    /// cross-section — a bar conducts along its length and is illuminated across it. It is
+    /// only used to turn a lumped total into a distribution, so it does not enter the
+    /// conduction at all.
+    pub fn exposing(mut self, boundary: &'static str, face_area: Area) -> Bar1D {
+        self.boundary = Some(Interface::uniform(boundary, self.cells.len(), face_area));
+        self
+    }
+
+    /// The boundary other domains publish onto, if [`Bar1D::exposing`] gave it one.
+    pub fn boundary(&self) -> Option<&Interface> {
+        self.boundary.as_ref()
     }
 
     pub fn temperature_at(&self, index: usize) -> Temperature {
@@ -330,10 +363,21 @@ impl Bar1D {
             .unwrap_or(f64::INFINITY)
     }
 
+    /// Heat held, measured from the temperature the bar started at.
+    ///
+    /// The reference point of an enthalpy is arbitrary, so it should be chosen for
+    /// precision, and the natural-looking choice is the bad one. Against absolute zero this
+    /// bar holds 228 kJ, and a millijoule arriving is a change in the ninth significant
+    /// figure — so differencing two such numbers leaves a rounding floor of about 10⁻¹¹ J
+    /// whatever the transfer was, and the audit's *relative* check on a 1 mJ step is then
+    /// asking for precision the arithmetic threw away. Refining the grid makes it worse,
+    /// because there are more absolute temperatures to add up.
+    ///
+    /// Measured from the initial temperature, the number being summed *is* the change, and
+    /// the audit's precision tracks the heat that moved rather than the enthalpy it moved
+    /// within.
     fn stored_heat(&self) -> f64 {
-        // Against absolute zero, which is arbitrary but constant — only differences
-        // enter the audit.
-        self.cell_capacity() * self.cells.iter().sum::<f64>()
+        self.cell_capacity() * self.cells.iter().map(|t| t - self.reference).sum::<f64>()
     }
 
     /// Heat taken from the bus over the run.
@@ -382,12 +426,27 @@ impl Domain for Bar1D {
             });
         }
 
-        // All the heat offered goes into the first cell, which is where a surface
-        // absorbing light would put it.
+        let capacity = self.cell_capacity();
+
+        // Lumped heat has no place, so it goes into the first cell — where a surface
+        // absorbing light would put it, if the bar knew where the surface was.
         let gained = bus.take(HEAT);
         self.absorbed += gained;
-        let capacity = self.cell_capacity();
         self.cells[0] += gained / capacity;
+
+        // Heat that does know where it landed. Taken before the conduction sweep so it
+        // spreads on the same step it arrives, and taken out of the borrow of `boundary`
+        // before the cells are written to.
+        let arriving = match self.boundary.as_ref() {
+            Some(boundary) => Some(bus.take_on(boundary, HEAT)?),
+            None => None,
+        };
+        if let Some(flux) = arriving {
+            for (cell, joules) in self.cells.iter_mut().zip(flux.per_face()) {
+                *cell += joules / capacity;
+            }
+            self.absorbed += flux.total();
+        }
 
         // Insulated ends: the boundary cell exchanges with its one neighbour only,
         // which is what makes the total conserved to the last bit.
@@ -405,7 +464,7 @@ impl Domain for Bar1D {
     /// came in over the bus — see the note on [`LumpedMass::ledger`] for why the
     /// absorbed total is not subtracted here as well.
     fn ledger(&self) -> Ledger {
-        Ledger::new().with(quantity::ENERGY, self.stored_heat() - self.initial_heat)
+        Ledger::new().with(quantity::ENERGY, self.stored_heat())
     }
 
     fn checkpoint(&mut self) {
@@ -419,12 +478,16 @@ impl Domain for Bar1D {
     fn supports_restore(&self) -> bool {
         true
     }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dualis_core::{Schedule, Simulation};
+    use dualis_core::{Flux, Schedule, Simulation};
     use dualis_units::Density;
 
     fn lens_volume() -> Volume {
@@ -671,6 +734,135 @@ mod tests {
         // A lumped model would have reported zero gradient from the start; this one
         // still sees a little.
         assert!(bar.mean_temperature().in_celsius() > 21.0);
+    }
+
+    /// **What a place-aware flux buys, stated as the difference it makes.** The same
+    /// joules, delivered to the same bar, once as a lumped total and once resolved over the
+    /// boundary, land somewhere different — and the resolved one lands where the light
+    /// actually was.
+    ///
+    /// This is the check that could not be written before: the lumped bus had no way to say
+    /// "the middle", so both runs would have been the same run.
+    #[test]
+    fn heat_arrives_where_the_flux_says_it_did() {
+        let build = || {
+            Bar1D::new(
+                "bar",
+                Substance::aluminium_6061(),
+                21,
+                Length::mm(1.0),
+                Area::from_si(1e-4),
+                Temperature::celsius(20.0),
+            )
+        };
+        let joules = 2.0;
+
+        // Lumped: everything into cell 0, because there is nothing else it could mean.
+        let mut lumped = build();
+        let mut bus = Exchange::new();
+        bus.publish(HEAT, joules);
+        lumped
+            .step(Time::ZERO, Time::from_si(1e-4), &mut bus)
+            .unwrap();
+
+        // Resolved: all of it onto face 10, the middle of the bar.
+        let mut resolved = build().exposing("bar face", Area::from_si(1e-4));
+        let boundary = resolved.boundary().expect("it was just given one").clone();
+        assert_eq!(
+            boundary.faces(),
+            21,
+            "one face per cell, so nothing interpolates"
+        );
+        let mut spot = vec![0.0; 21];
+        spot[10] = joules;
+        bus.publish_on(&boundary, HEAT, &Flux::from_faces(spot))
+            .unwrap();
+        resolved
+            .step(Time::ZERO, Time::from_si(1e-4), &mut bus)
+            .unwrap();
+
+        // Same energy in, by the domain's own accounting.
+        assert!(
+            (resolved.absorbed_energy().to_si() - lumped.absorbed_energy().to_si()).abs() < 1e-15,
+            "the two runs must differ in place, not in amount"
+        );
+        assert!(
+            bus.unclaimed().next().is_none(),
+            "and nothing was left on the bus"
+        );
+
+        // But a different bar. The lumped run is hot at the end it was told nothing about;
+        // the resolved one is hot in the middle, where the beam was.
+        let lumped_end = lumped.temperature_at(0).in_celsius();
+        let lumped_middle = lumped.temperature_at(10).in_celsius();
+        assert!(
+            lumped_end > lumped_middle + 1.0,
+            "lumped heat piled up at cell 0"
+        );
+        assert!(
+            (lumped_middle - 20.0).abs() < 1e-9,
+            "and never reached the middle"
+        );
+
+        let resolved_end = resolved.temperature_at(0).in_celsius();
+        let resolved_middle = resolved.temperature_at(10).in_celsius();
+        assert!(
+            resolved_middle > resolved_end + 1.0,
+            "resolved heat is in the middle"
+        );
+        assert!(
+            (resolved_end - 20.0).abs() < 1e-9,
+            "and the end is untouched"
+        );
+        // Symmetric about the spot, which a one-sided injection can never be.
+        assert!(
+            (resolved.temperature_at(9).in_celsius() - resolved.temperature_at(11).in_celsius())
+                .abs()
+                < 1e-12
+        );
+    }
+
+    /// A distribution the bar cannot read is refused, and refusing it means the step fails
+    /// rather than heating the wrong cells. The bar's grid is the discretisation; a
+    /// publisher on a different one has to say so.
+    #[test]
+    fn a_flux_on_the_wrong_grid_stops_the_step() {
+        let mut bar = Bar1D::new(
+            "bar",
+            Substance::aluminium_6061(),
+            21,
+            Length::mm(1.0),
+            Area::from_si(1e-4),
+            Temperature::celsius(20.0),
+        )
+        .exposing("bar face", Area::from_si(1e-4));
+        let boundary = bar.boundary().unwrap().clone();
+
+        // An illuminator on a 64-pixel grid, which is a perfectly reasonable thing to be.
+        let camera = Interface::uniform("bar face", 64, Area::from_si(1e-4) * (21.0 / 64.0));
+        let mut bus = Exchange::new();
+        bus.publish_on(&camera, HEAT, &Flux::spread_over(2.0, &camera))
+            .unwrap();
+
+        let err = bar
+            .step(Time::ZERO, Time::from_si(1e-4), &mut bus)
+            .expect_err("a 64-face flux is not a 21-cell bar");
+        assert!(err.quantity.contains("expected 21"), "{err}");
+        assert!(
+            (bar.temperature_at(10).in_celsius() - 20.0).abs() < 1e-9,
+            "and nothing was heated"
+        );
+
+        // Resampling first is what works, and the bar then gets all of it.
+        let crossed = bus
+            .take_on(&camera, HEAT)
+            .unwrap()
+            .resample(&camera, &boundary)
+            .unwrap();
+        bus.publish_on(&boundary, HEAT, &crossed).unwrap();
+        bar.step(Time::ZERO, Time::from_si(1e-4), &mut bus).unwrap();
+        assert!((bar.absorbed_energy().to_si() - 2.0).abs() < 1e-12);
+        assert!(bus.unclaimed().next().is_none());
     }
 
     /// The domain plugs into the kernel's scheduler and its books balance: heat taken

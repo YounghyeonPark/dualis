@@ -47,12 +47,14 @@
 //! become more unstable as the step shrinks. That is what
 //! [`Schedule::Iterative`] is for, and why it is worth its cost.
 
+use std::any::Any;
 use std::collections::BTreeMap;
 
 use dualis_units::Time;
 
 use crate::conserved::{audit, Ledger, Violation};
 use crate::integrator::substeps_for;
+use crate::scene::{mismatch, Flux, Interface};
 
 /// Whether a domain has state to roll forward.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +120,22 @@ pub trait Domain {
     fn supports_restore(&self) -> bool {
         false
     }
+
+    /// This domain as [`Any`], so a caller can get the concrete type back out of a
+    /// [`Simulation`] — see [`Simulation::domain_as`].
+    ///
+    /// Opt-in, and returning `None` by default, because it cannot be automatic. Deriving it
+    /// from the trait would need `Domain: Any` plus upcasting `dyn Domain` to `dyn Any`,
+    /// which is a newer Rust than this crate promises. A domain that wants to be inspected
+    /// writes `fn as_any(&self) -> Option<&dyn Any> { Some(self) }` and is done.
+    ///
+    /// The coupling never needs this: domains meet through [`Exchange`] and nothing else,
+    /// which is the property the whole design rests on. What needs it is everything *around*
+    /// the simulation — a test asserting a temperature profile, a visualiser drawing one —
+    /// and that is a reader, not a participant.
+    fn as_any(&self) -> Option<&dyn Any> {
+        None
+    }
 }
 
 /// The channel between domains: named quantities, in SI base units.
@@ -129,6 +147,10 @@ pub trait Domain {
 pub struct Exchange {
     published: BTreeMap<&'static str, f64>,
     consumed: BTreeMap<&'static str, f64>,
+    /// Channels that carry a place as well as an amount, keyed by
+    /// `(interface name, channel)` so the audit reports them in a fixed order.
+    spatial: BTreeMap<(&'static str, &'static str), Flux>,
+    spatial_consumed: BTreeMap<(&'static str, &'static str), f64>,
 }
 
 impl Exchange {
@@ -155,14 +177,93 @@ impl Exchange {
         self.published.get(channel).copied().unwrap_or(0.0)
     }
 
+    /// Offer an amount that knows where on a boundary it landed.
+    ///
+    /// The spatial counterpart of [`publish`](Exchange::publish), and the reason
+    /// [`scene`](crate::scene) exists: a coating absorbs where the beam is, and a lumped
+    /// number cannot say that. Repeated publishes accumulate face by face, so two
+    /// mechanisms heating the same surface add up in place.
+    ///
+    /// Refuses a [`Flux`] whose face count does not match the interface. Silently padding
+    /// or truncating would put energy on the wrong part of the boundary, which is worse
+    /// than losing it — losing it the audit would catch.
+    pub fn publish_on(
+        &mut self,
+        interface: &Interface,
+        channel: &'static str,
+        flux: &Flux,
+    ) -> Result<(), Violation> {
+        if flux.faces() != interface.faces() {
+            return Err(mismatch(
+                &format!("publish on {}/{channel}", interface.name()),
+                interface.faces(),
+                flux.faces(),
+            ));
+        }
+        let key = (interface.name(), channel);
+        match self.spatial.get_mut(&key) {
+            Some(existing) => existing.add(flux),
+            None => {
+                self.spatial.insert(key, flux.clone());
+                Ok(())
+            }
+        }
+    }
+
+    /// Take everything offered on an interface's channel, leaving it empty.
+    ///
+    /// Returns zeros rather than an error when nothing was published, because a consumer
+    /// stepping a boundary that happens to be dark this step is not a fault. A face-count
+    /// disagreement *is*, and is reported: the two sides do not share a discretisation, and
+    /// the fix is [`Flux::resample`] at whichever side owns the decision.
+    pub fn take_on(
+        &mut self,
+        interface: &Interface,
+        channel: &'static str,
+    ) -> Result<Flux, Violation> {
+        let key = (interface.name(), channel);
+        // Removed rather than zeroed. A drained channel is empty, and an empty channel
+        // should not go on pinning a face count for the rest of the step — the next
+        // publisher on that boundary is entitled to its own discretisation.
+        let Some(offered) = self.spatial.remove(&key) else {
+            return Ok(Flux::zeros(interface.faces()));
+        };
+        if offered.faces() != interface.faces() {
+            // Put it back: a consumer that could not read it has not consumed it, and the
+            // audit should still see the energy sitting there unclaimed.
+            let found = offered.faces();
+            self.spatial.insert(key, offered);
+            return Err(mismatch(
+                &format!("take from {}/{channel}", interface.name()),
+                interface.faces(),
+                found,
+            ));
+        }
+        *self.spatial_consumed.entry(key).or_insert(0.0) += offered.total();
+        Ok(offered)
+    }
+
+    /// Look at a spatial channel without taking it.
+    pub fn peek_on(&self, interface: &Interface, channel: &'static str) -> Option<&Flux> {
+        self.spatial.get(&(interface.name(), channel))
+    }
+
     /// Channels that were published to but never taken from, with what is left on
     /// them. Energy sitting here at the end of a step is energy that left one
     /// domain and arrived nowhere.
-    pub fn unclaimed(&self) -> impl Iterator<Item = (&'static str, f64)> + '_ {
+    ///
+    /// Spatial channels appear as `"interface/channel"`, with the total left on them.
+    pub fn unclaimed(&self) -> impl Iterator<Item = (String, f64)> + '_ {
         self.published
             .iter()
             .filter(|(_, v)| v.abs() > 0.0)
-            .map(|(k, v)| (*k, *v))
+            .map(|(k, v)| ((*k).to_string(), *v))
+            .chain(
+                self.spatial
+                    .iter()
+                    .filter(|(_, f)| f.total().abs() > 0.0)
+                    .map(|((i, c), f)| (format!("{i}/{c}"), f.total())),
+            )
     }
 
     /// Fail if anything published was not consumed.
@@ -170,6 +271,13 @@ impl Exchange {
     /// This is the check that catches a coupling whose two sides disagree — a
     /// surface that absorbed 3.7 mW handing it to a mesh that received 3.4 mW
     /// because the interpolation between their discretisations lost the rest.
+    ///
+    /// The original design said that, and then could not check it: with one number per
+    /// channel there was no discretisation to disagree about. Spatial channels close that
+    /// gap, and they are audited **face by face** rather than on their total — a
+    /// redistribution that moves heat from one side of a mirror to the other keeps the sum
+    /// exactly right, so a total-only check would pass the one bug the spatial coupling
+    /// exists to prevent. The failure names the face.
     pub fn audit_transfers(&self, site: &str, abs_tol: f64) -> Result<(), Violation> {
         for (channel, left) in self.published.iter() {
             if left.abs() > abs_tol {
@@ -185,6 +293,20 @@ impl Exchange {
                 });
             }
         }
+        for ((interface, channel), flux) in self.spatial.iter() {
+            for (face, left) in flux.per_face().iter().enumerate() {
+                if left.abs() > abs_tol {
+                    return Err(Violation {
+                        quantity: format!("{interface}/{channel} face {face}"),
+                        site: format!("{site} (published but not consumed)"),
+                        before: *left,
+                        after: 0.0,
+                        scale: left.abs(),
+                        tolerance: abs_tol,
+                    });
+                }
+            }
+        }
         Ok(())
     }
 
@@ -193,9 +315,18 @@ impl Exchange {
         self.consumed.get(channel).copied().unwrap_or(0.0)
     }
 
+    /// Total taken from a spatial channel over the run, summed over its faces.
+    pub fn total_consumed_on(&self, interface: &Interface, channel: &'static str) -> f64 {
+        self.spatial_consumed
+            .get(&(interface.name(), channel))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
     /// Empty the offers, keeping the running consumption totals.
     pub fn clear_offers(&mut self) {
         self.published.clear();
+        self.spatial.clear();
     }
 }
 
@@ -291,6 +422,17 @@ impl Simulation {
             .iter()
             .find(|d| d.name() == name)
             .map(|d| d.as_ref())
+    }
+
+    /// A domain by name and concrete type, for a caller that needs more than the
+    /// [`Domain`] trait exposes — a temperature profile, a body's position.
+    ///
+    /// Returns `None` if the name is not here, if the type is wrong, or if that domain did
+    /// not implement [`Domain::as_any`]. Three different reasons for the same answer, which
+    /// is a wart; the alternative was a required method on every implementor of a trait whose
+    /// value is being cheap to implement.
+    pub fn domain_as<T: Any>(&self, name: &str) -> Option<&T> {
+        self.domain(name)?.as_any()?.downcast_ref::<T>()
     }
 
     /// Every domain's books, summed.
@@ -401,6 +543,7 @@ impl Simulation {
 mod tests {
     use super::*;
     use crate::conserved::quantity;
+    use dualis_units::Area;
 
     /// A quasi-static source: converts an input into watts on the bus without any
     /// state of its own. This is the shape optics has — solved, never stepped.
@@ -656,5 +799,126 @@ mod tests {
         assert_eq!(bus.take(quantity::ENERGY), 0.0);
         assert_eq!(bus.total_consumed(quantity::ENERGY), 8.0);
         assert!(bus.unclaimed().next().is_none());
+    }
+
+    /// A spatial channel behaves like a lumped one — accumulate, drain once — but face by
+    /// face, so two mechanisms heating the same mirror add up *where* each of them did.
+    #[test]
+    fn a_spatial_channel_accumulates_and_drains_in_place() {
+        let mirror = Interface::uniform("mirror", 4, Area::from_si(1e-4));
+        let mut bus = Exchange::new();
+
+        // Absorption in the coating, on the two faces the beam covers.
+        bus.publish_on(
+            &mirror,
+            quantity::ENERGY,
+            &Flux::from_faces(vec![0.0, 2.0, 3.0, 0.0]),
+        )
+        .unwrap();
+        // And a mount conducting into one edge, which is a different mechanism on the same
+        // boundary. It must land on face 0, not be averaged in.
+        bus.publish_on(
+            &mirror,
+            quantity::ENERGY,
+            &Flux::from_faces(vec![1.0, 0.0, 0.0, 0.0]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            bus.peek_on(&mirror, quantity::ENERGY).unwrap().per_face(),
+            &[1.0, 2.0, 3.0, 0.0]
+        );
+
+        let taken = bus.take_on(&mirror, quantity::ENERGY).unwrap();
+        assert_eq!(taken.per_face(), &[1.0, 2.0, 3.0, 0.0]);
+        assert!((bus.total_consumed_on(&mirror, quantity::ENERGY) - 6.0).abs() < 1e-15);
+        // Emptied, so it cannot be consumed twice.
+        assert_eq!(bus.take_on(&mirror, quantity::ENERGY).unwrap().total(), 0.0);
+        assert!(bus.unclaimed().next().is_none());
+
+        // A channel nobody published to reads as zeros over the right boundary, not an
+        // error: a mirror that happens to be dark this step is not a fault.
+        let dark = bus.take_on(&mirror, "photons").unwrap();
+        assert_eq!(dark.faces(), 4);
+        assert_eq!(dark.total(), 0.0);
+    }
+
+    /// **The bug the spatial audit exists to catch.** A consumer that keeps the total but
+    /// moves it to the wrong part of the boundary is invisible to a total-only check, and
+    /// is exactly the failure a shared discretisation is supposed to prevent.
+    #[test]
+    fn the_audit_names_the_face_that_was_left_holding_something() {
+        let mirror = Interface::uniform("mirror", 8, Area::from_si(1e-4));
+        let mut bus = Exchange::new();
+
+        // Ten joules on face 6.
+        let mut absorbed = vec![0.0; 8];
+        absorbed[6] = 10.0;
+        bus.publish_on(&mirror, quantity::ENERGY, &Flux::from_faces(absorbed))
+            .unwrap();
+
+        // A consumer takes it and puts back the same total in the wrong place. The sum is
+        // exactly right, and the sum is not what is being checked.
+        let taken = bus.take_on(&mirror, quantity::ENERGY).unwrap();
+        let mut misplaced = vec![0.0; 8];
+        misplaced[1] = -taken.total();
+        misplaced[2] = taken.total();
+        bus.publish_on(&mirror, quantity::ENERGY, &Flux::from_faces(misplaced))
+            .unwrap();
+
+        assert!(
+            bus.peek_on(&mirror, quantity::ENERGY)
+                .unwrap()
+                .total()
+                .abs()
+                < 1e-12,
+            "the total balances, which is the whole point of the example"
+        );
+        let err = bus
+            .audit_transfers("mirror coupling", 1e-9)
+            .expect_err("a redistribution that keeps the total must still be caught");
+        assert!(err.quantity.contains("face 1"), "{err}");
+        assert!(err.quantity.contains("mirror/energy"), "{err}");
+    }
+
+    /// Two sides that do not share a discretisation are refused rather than resampled
+    /// behind the caller's back, on both the publishing and the consuming side.
+    #[test]
+    fn a_discretisation_disagreement_is_refused_at_the_bus() {
+        let coarse = Interface::uniform("mirror", 4, Area::from_si(1e-4));
+        let fine = Interface::uniform("mirror", 16, Area::from_si(0.25e-4));
+        let mut bus = Exchange::new();
+
+        // Publishing 16 faces onto a 4-face boundary.
+        let err = bus
+            .publish_on(&coarse, quantity::ENERGY, &Flux::zeros(16))
+            .expect_err("16 faces is not 4 faces");
+        assert!(err.quantity.contains("expected 4"), "{err}");
+        assert!(err.site.contains("mirror/energy"), "{err}");
+
+        // And a consumer whose own boundary is finer than what was published. Note both
+        // interfaces are named "mirror": the channel matches, the discretisation does not,
+        // and it is the face count that decides.
+        bus.publish_on(&coarse, quantity::ENERGY, &Flux::from_faces(vec![1.0; 4]))
+            .unwrap();
+        let err = bus
+            .take_on(&fine, quantity::ENERGY)
+            .expect_err("a 16-cell mesh must not read a 4-face flux");
+        assert!(err.quantity.contains("expected 16"), "{err}");
+        assert!(err.quantity.contains("found 4"), "{err}");
+
+        // A refused take consumed nothing, so the energy is still there to be found.
+        assert!((bus.peek_on(&coarse, quantity::ENERGY).unwrap().total() - 4.0).abs() < 1e-15);
+        assert_eq!(bus.total_consumed_on(&coarse, quantity::ENERGY), 0.0);
+        assert!(bus.audit_transfers("mirror", 1e-9).is_err());
+
+        // Saying it explicitly is what works, and it conserves.
+        let crossed = bus
+            .take_on(&coarse, quantity::ENERGY)
+            .unwrap()
+            .resample(&coarse, &fine)
+            .unwrap();
+        assert_eq!(crossed.faces(), 16);
+        assert!((crossed.total() - 4.0).abs() < 1e-12);
     }
 }

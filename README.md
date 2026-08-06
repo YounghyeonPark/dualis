@@ -13,7 +13,7 @@ its first consumer.
 | Crate | |
 | --- | --- |
 | `dualis-units` | Dimensional analysis. SI quantities and vectors whose dimension lives in the type, so `Length + Time` does not compile |
-| `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, multi-domain scheduling, deterministic sampling, closed-form rigid motion |
+| `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, closed-form rigid motion |
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
 | `dualis-thermal` | Heat: lumped masses, explicit conduction, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
@@ -40,6 +40,14 @@ the same channel and the same thermal domain consumes that too, with nothing cha
 on either side; acoustics publishes what an absorbing duct end radiates onto the same
 channel again. None of the four names another and none of them needed the kernel
 changed.
+
+One thing did need the kernel changed, and it is worth being precise about why that is
+not a violation of the rule. The rule is that a *domain* must never force a kernel edit.
+What forced this one was the coupling mechanism itself being under-specified from the
+start: a bus carrying one number per channel could not say *where* on a surface a
+quantity crossed, so no domain could ask for that and none of the four ever did. Adding
+`Interface` and `Flux` did not teach the kernel any physics — a discretised boundary is
+not optics or heat — and no existing domain had to change to keep working.
 
 They also brought the audit three conserved quantities instead of one, and the three
 hold to wildly different tolerances for structural reasons rather than through
@@ -110,6 +118,45 @@ nothing. Three mechanisms deal with that:
   standard example is fluid-structure interaction at comparable densities. Failing
   to converge is a `Violation`, not a result — an unconverged coupling produces
   numbers that look like physics.
+
+## Where two domains meet
+
+Sharing a clock is not enough; they also have to share a *place*. `Exchange::publish`
+carries an amount and nothing else, so "a 1 mm beam on a 20 mm mirror" and "one watt
+spread over the whole mirror" are the same message — and a coating fails at its hot
+spot, not at its average.
+
+An `Interface` is a boundary cut into faces that both sides address, and a `Flux` is a
+quantity spread over them. Both sides share one discretisation on purpose: interpolating
+between two meshes is where energy quietly goes missing, so a face-count disagreement is
+refused rather than papered over, and a caller who genuinely needs to cross grids says so
+with `Flux::resample`, which conserves the total by construction. Spatial channels are
+audited **face by face** — a redistribution that keeps the total but moves it to the wrong
+end of a mirror is exactly the bug a total-only check cannot see.
+
+Three things fell out of building it that are worth knowing.
+
+An enthalpy's reference point is arbitrary, so it should be chosen for precision, and the
+obvious choice is the bad one. Measured from absolute zero a warm aluminium bar holds
+228 kJ, so a millijoule arriving is a change in the ninth significant figure and
+differencing two such numbers leaves a rounding floor of about 10⁻¹¹ J whatever the
+transfer was — worse as the grid is refined, because there are more absolute temperatures
+to add up. Measured from the initial temperature, the number being summed *is* the change.
+
+An insulated bar under a continuous beam does not flatten out. It settles into a fixed
+shape and rides upward on a mean that climbs forever, so the hot spot is permanent and the
+lumped model's error in kelvin never shrinks; what shrinks is the *fraction*. The
+intuition that says it evens out eventually is about a bar heated once.
+
+And how often the domains talk is itself an error source — here the largest one, and the
+only one no conservation check can catch. A 10 ms coupling window on a bar whose own step
+is 0.44 ms delivers exactly the right joules and reads the peak temperature 12% low,
+because the bar spends most of each window relaxing with nothing arriving. Nothing is
+lost, nothing is created, both domains stay inside their stability limits, and the answer
+is still wrong. The only thing that finds it is a solution that never went through the
+coupling: `tests/beam_heats_where_it_lands.rs` computes one by quadrature from the
+steady-state energy balance, checks *that* against the exact `ṫL²/12α` for a point
+source, and then watches the coupled answer converge on it as the window shrinks.
 
 ## Closed form where there is one
 
@@ -251,8 +298,10 @@ because the `i < j` pairing that makes it exact has two threads writing to one b
 exact momentum** — each body sees its own approximation of the rest, so their mutual
 forces no longer cancel. The drift is a knob rather than a defect, closing with the
 opening angle and vanishing at `θ = 0`, and the audit tolerance has to be the one the
-angle earns. There is no multipole beyond the monopole, so `θ` above about 1 is asking
-a centre of mass to stand in for a group that is not far enough away.
+angle earns. The expansion carries the quadrupole as well as the monopole, which buys
+back most of that accuracy at close angles — a factor of six at `θ = 0.3` — but nothing
+past it, so `θ` above about 1 is still asking a centre of mass to stand in for a group
+that is not far enough away.
 
 Fields propagate between planes by the angular spectrum, but only through free space:
 there is nothing to put in the beam's way except an aperture, and the grid's reach is
@@ -271,6 +320,20 @@ Meshes and grids are no longer excluded. They were, on the grounds that adding t
 before a second consumer would be guessing at an interface; finite elements and
 finite differences need them, so that decision has been reversed deliberately rather
 than drifted away from.
+
+An `Interface` is one-dimensional: a boundary is a sequence of faces, and `Flux::resample`
+remaps between two of them by overlap in cumulative area. That is enough for a mirror
+face, a bar's side, a row of pixels, and any boundary whose faces have a natural order —
+and it is not enough for a triangulated surface or an arbitrary mesh-to-mesh projection,
+where the overlaps are not an interval intersection and there is no order to walk. The
+conservation argument generalises; the implementation does not, and the doc comment says
+so where a caller will meet it rather than only here.
+
+An `Interface` also carries areas and an order and nothing else — no coordinates, no
+normals, no connectivity. A domain that needs to know where a face *is* in space still
+has nowhere to put that, so a beam profile has to be handed over in the boundary's own
+coordinate rather than computed from geometry. That is the next thing this layer is short
+of, and it is deliberately not guessed at before something needs it.
 
 And some things stay out for reasons that will not change: general relativity and
 quantum field theory are research subjects rather than simulation targets, turbulent
