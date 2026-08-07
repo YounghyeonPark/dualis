@@ -18,6 +18,41 @@
 //! assert!(through < lamp.total());
 //! ```
 //!
+//! # Start here
+//!
+//! Three ideas carry the whole library.
+//!
+//! 1. **Units are types.** Dimensions live in the type, so `Length + Time` does not compile.
+//!    One place may hold a factor of a thousand — a unit-bearing constructor — and `to_si()`
+//!    is the only way back to a bare `f64`.
+//! 2. **A domain is anything that steps.** [`Domain`](dualis_core::Domain) requires
+//!    `name` and `step`; everything else has a default. Override `ledger` so the audit has
+//!    something to check.
+//! 3. **Domains never call each other.** They meet on
+//!    [`Exchange`](dualis_core::Exchange), a bus of named channels carrying SI *amounts* —
+//!    joules, not watts. A ledger says what you are holding, not what has passed through you.
+//!
+//! And the reason to pick this over a general-purpose engine: conservation is audited every
+//! step, so a wrong model does not run quietly. `advance` returns a
+//! [`Violation`](dualis_core::Violation) naming the quantity, the site, and the before and
+//! after — a correctness signal you can act on without a human noticing first.
+//!
+//! ```text
+//! energy destroyed at simulation: 5.000000e2 became 4.995000e2,
+//! a relative change of 1.000e-3 against a tolerance of 1.000e-9
+//! ```
+//!
+//! Be clear about the limit: the audit catches quantities appearing or vanishing, amounts
+//! left unclaimed on the bus, and fluxes disagreeing face by face across a shared boundary.
+//! It does *not* catch a model that is internally consistent and physically wrong — publish
+//! a power where a joule was wanted and both sides agree perfectly about a number off by
+//! `1/dt`. For that, check against something the code did not compute: a closed form, an
+//! exact limit, or a convergence rate.
+//!
+//! `cargo run --example agents_quickstart` is all of the above as a running program,
+//! including a deliberate leak so the failure is visible. `AGENTS.md` in the repository is
+//! the one-page version.
+//!
 //! # The dependency rule
 //!
 //! ```text
