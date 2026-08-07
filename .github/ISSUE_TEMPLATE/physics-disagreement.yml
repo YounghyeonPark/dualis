@@ -1,0 +1,56 @@
+name: A number looks wrong
+description: The code disagrees with a closed form, a published value, or another tool.
+labels: ["physics"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful form of this report is three things: what the code produced, what it
+        should have produced, and **how the gap behaves when something is refined**.
+
+        That last one is not a formality. A 1.4% error in this workspace once looked exactly
+        like discretisation and turned out to be a wrong boundary condition — the tell was
+        that halving the grid spacing halved the error instead of quartering it. If you can
+        run at two resolutions, that single fact often identifies the cause outright.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What the code produced
+      description: The number, and the smallest program that produces it.
+      render: rust
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What it should be, and where that comes from
+      description: >
+        A closed form, a limit, a published value with its source, or another tool with its
+        version. If it is another tool, say so plainly — that is still useful, it is just
+        weaker evidence than a closed form.
+    validations:
+      required: true
+
+  - type: textarea
+    id: convergence
+    attributes:
+      label: How the gap behaves as something is refined
+      description: >
+        Grid spacing, time step, sample count, particle count — whatever the relevant knob is.
+        Two or three values and the error at each. Leave blank if it does not apply.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: A commit hash, or the crate version.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and toolchain
+      description: e.g. "Linux, Rust 1.83 stable" or "wasm32-wasip1 under wasmtime".

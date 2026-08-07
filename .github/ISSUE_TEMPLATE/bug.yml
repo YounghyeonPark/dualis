@@ -1,0 +1,48 @@
+name: Something is broken
+description: A panic, a compile error, a build failure, or an API that does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a *number* that looks wrong rather than something that breaks, the other template
+        asks the questions that identify the cause faster.
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: What to run
+      description: The smallest program or command that shows it.
+      render: rust
+    validations:
+      required: true
+
+  - type: textarea
+    id: happens
+    attributes:
+      label: What happens
+      description: The output, panic message or compiler error, in full.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: A commit hash, or the crate version.
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and toolchain
+      description: e.g. "Windows, Rust 1.83 stable". The declared minimum is 1.78.

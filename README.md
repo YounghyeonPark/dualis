@@ -14,7 +14,7 @@ WebAssembly, and under sixteen threads as readily as one.
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 341 tests, all against closed forms
+cargo test --workspace                       # 344 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are six of them; the table
@@ -529,6 +529,11 @@ design, and no single `f64` state vector spans the fifteen decades from a nucleu
 a galaxy — a simulation has to declare which regime it is in.
 
 ## Development
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the conventions that are unusual enough to be worth
+stating — check against a closed form and never against another implementation, earn every
+tolerance, judge a residual against a scale, and keep the kernel ignorant of every domain.
+[`CHANGELOG.md`](CHANGELOG.md) records what was found as well as what was added.
 
 Everything CI runs, in the order it runs it:
 
