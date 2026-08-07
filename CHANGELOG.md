@@ -47,10 +47,11 @@ messages carry the full account.
 - **`Tube`'s absorbing ends** consequently needed their own step limit, `Z·dx/2ρc²`. At the
   full CFL limit the corrected boundary inverts a wave instead of absorbing it: stable, silent
   and wrong.
-- **`Bar1D`'s enthalpy reference.** Measured from absolute zero, a warm bar holds 228 kJ, so a
-  millijoule arriving is a change in the ninth significant figure and the audit's relative
-  check asked for precision the arithmetic had thrown away. Measured from the initial
-  temperature, the number being summed *is* the change.
+- **`Bar1D`'s enthalpy reference.** Measured from absolute zero, the bar in these tests holds
+  1.42 kJ, so a millijoule arriving is a change in the seventh significant figure and the
+  audit's relative check asked for precision the arithmetic had thrown away — a floor that
+  grew from 1.6e-12 J at 41 cells to 7.3e-12 J at 161. Measured from the initial temperature,
+  the number being summed *is* the change.
 - **A statistical test that passed on one seed.** The ideal-gas check asserted that doubling
   the density doubles the departure from `PV = Nk_BT`; across four seeds the ratio came out
   1.35, 1.61, 2.34 and 2.92, averaging to 2.06. It now averages over seeds, because the fix for

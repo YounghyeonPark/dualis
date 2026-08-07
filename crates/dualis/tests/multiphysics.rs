@@ -127,15 +127,73 @@ fn absorbed_light_warms_the_glass_and_the_books_balance() {
     }
     assert!((sim.time().to_si() - 600.0).abs() < 1e-9);
 
-    // The audit inside `advance` already proved conservation; this states what it
-    // proved. Everything the surface paid out is either stored in the glass or has
-    // been lost to the room.
+    // **The glass actually got warm**, which the conservation check alone cannot establish.
+    //
+    // That is not a hypothetical gap. `LumpedMass::ledger` reports `stored + lost` using the
+    // same arithmetic `step` used to move the temperature, and the surface reports what it
+    // paid out — so the residual is an accounting identity that holds whatever the physics
+    // does. Discarding every arriving joule while leaving the cooling term alone passes all
+    // 344 tests in this workspace, which is how this assertion came to be written.
+    let lens: &LumpedMass = sim
+        .domain_as("lens")
+        .expect("the lens is in the simulation");
+    let rise = lens.rise().to_si();
+
+    // Against an independent integration of the same energy balance: forward Euler at 50 ms,
+    // written here rather than called from the domain, against whatever multirate substeps
+    // the scheduler chose. Different code, different step, same physics.
+    //
+    // Not a closed form, and the reason is worth naming. `equilibrium_rise` *is* a closed
+    // form but it ignores radiation, and at room temperature a black surface radiates about
+    // as fast as still air convects — so it overstates the settling point by nearly a factor
+    // of two, which is exactly the trap it warns about in its own doc comment. The nonlinear
+    // T⁴ term has no useful closed-form transient, so the honest reference is a quadrature.
+    //
+    // What this catches: a wrong heat capacity, a wrong loss coefficient, a dropped source
+    // term, and heat that arrives on the bus and never reaches the glass. What it does not:
+    // an error inside `loss_from` itself, which is checked in the thermal crate against the
+    // exponential a purely convective body must follow.
+    let ambient = Temperature::celsius(20.0);
+    let emissivity = Substance::borosilicate_crown()
+        .thermal
+        .expect("N-BK7 has thermal properties")
+        .emissivity;
+    let environment = Environment::still_air(ambient, lens_area());
+    let capacity = lens.heat_capacity().to_si();
+    let h = 0.05;
+    let mut reference = ambient;
+    for _ in 0..(600.0 / h) as usize {
+        let loss = environment.loss_from(reference, emissivity).to_si();
+        reference += Temperature::from_si((absorbed.to_si() - loss) * h / capacity);
+    }
+    let expected = (reference - ambient).to_si();
+    assert!(
+        (rise / expected - 1.0).abs() < 0.01,
+        "the lens rose {rise} K where an independent integration gives {expected} K"
+    );
+    assert!(rise > 1.0, "and it is a real warming, not a rounding");
+    // Below the radiation-free closed form, which is the direction radiation pushes it.
+    assert!(
+        rise < lens.equilibrium_rise(absorbed).to_si(),
+        "radiation must make the glass settle lower than convection alone predicts"
+    );
+
+    // Only now does the conservation statement mean something: everything the surface paid
+    // out is either stored in the glass or has gone to the room.
+    //
+    // Judged against the joules that actually crossed, not against a bare 1e-9. The residual's
+    // correct value is exactly zero, so a tolerance on it needs a scale from outside — the
+    // same reason `Ledger` records one beside every total.
+    let crossed = sim.bus().total_consumed(quantity::ENERGY);
+    assert!(crossed > 0.0, "nothing crossed, so nothing was audited");
     let residual = sim.ledger().get(quantity::ENERGY).unwrap();
-    assert!(residual.abs() < 1e-9, "energy residual {residual}");
+    assert!(
+        residual.abs() / crossed < 1e-12,
+        "energy residual {residual} J against {crossed} J that crossed"
+    );
 
     // And nothing is left sitting on the bus unclaimed.
     assert!(sim.bus().unclaimed().next().is_none());
-    assert!(sim.bus().total_consumed(quantity::ENERGY) > 0.0);
 }
 
 /// The link that makes the coupling matter. A few tens of milliwatts absorbed warms

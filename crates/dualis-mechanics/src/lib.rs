@@ -1,6 +1,6 @@
 //! dualis-mechanics: motion under force, as a domain on the `dualis-core` kernel.
 //!
-//! Two systems, chosen for what they prove about the kernel rather than for
+//! Five systems, chosen for what they prove about the kernel rather than for
 //! completeness:
 //!
 //! - [`NBody`] is conservative and has closed-form answers. Gravity between point
@@ -367,12 +367,28 @@ impl Domain for NBody {
     }
 
     /// Momentum, per axis. Energy is deliberately absent — see the module docs.
+    /// Momentum per axis, accumulated **one body at a time**.
+    ///
+    /// The per-body `add` is the whole point and not a style choice. `Ledger` records the
+    /// largest single contribution as an entry's `scale`, and [`audit`](dualis_core::audit)
+    /// judges a change against that rather than against the total — because a correct
+    /// system's total momentum is usually exactly zero, and a relative tolerance on zero
+    /// means nothing.
+    ///
+    /// Handing the pre-summed total to one `with` call sets the scale to `|total|`, which for
+    /// a symmetric system is `0.0`. `audit` then skips the entry entirely at its
+    /// `scale < 1e-300` guard, and the momentum audit silently does not run. That is what
+    /// this did until an audit set the tolerance to `0.0` — a setting that must reject any
+    /// change at all — and the test still passed.
     fn ledger(&self) -> Ledger {
-        let p = self.momentum().to_si();
-        Ledger::new()
-            .with(conserved::MOMENTUM_X, p.x)
-            .with(conserved::MOMENTUM_Y, p.y)
-            .with(conserved::MOMENTUM_Z, p.z)
+        let mut ledger = Ledger::new();
+        for (m, v) in self.masses.iter().zip(self.velocities.0.iter()) {
+            let p = *v * *m;
+            ledger.add(conserved::MOMENTUM_X, p.x);
+            ledger.add(conserved::MOMENTUM_Y, p.y);
+            ledger.add(conserved::MOMENTUM_Z, p.z);
+        }
+        ledger
     }
 
     fn checkpoint(&mut self) {
@@ -1299,5 +1315,53 @@ mod tests {
         };
         assert_eq!(ramp.penetration(LengthVec::m(0.0, 1.0, 1.0)), Length::ZERO);
         assert!(ramp.penetration(LengthVec::m(0.0, -1.0, -1.0)).to_si() > 0.0);
+    }
+}
+
+#[cfg(test)]
+mod ledger_scale_probe {
+    use super::*;
+
+    /// **The audit has to have something to judge against.** A ledger whose entry scale is
+    /// zero is skipped entirely by `audit`, so a conserved quantity that is correctly zero
+    /// would be policed by nothing at all.
+    ///
+    /// This is the regression test for exactly that: the momentum ledger once handed the
+    /// pre-summed total to a single `with`, which set the scale to `|total|` — zero for any
+    /// symmetric system, which is every system worth checking.
+    #[test]
+    fn the_momentum_ledger_carries_a_usable_scale() {
+        let bodies = [
+            Body::new(
+                Mass::kg(2.0e30),
+                LengthVec::m(-1.0e11, 0.0, 0.0),
+                VelocityVec::m_per_s(0.0, -1.0e4, 0.0),
+            ),
+            Body::new(
+                Mass::kg(2.0e30),
+                LengthVec::m(1.0e11, 0.0, 0.0),
+                VelocityVec::m_per_s(0.0, 1.0e4, 0.0),
+            ),
+        ];
+        let system = NBody::new("pair", &bodies);
+        let ledger = system.ledger();
+
+        // The total is exactly zero, which is the correct physics and the reason the scale
+        // cannot come from it.
+        assert_eq!(ledger.get(conserved::MOMENTUM_Y), Some(0.0));
+
+        // The scale is one body's momentum, which is what a relative tolerance needs.
+        // Relative, not absolute: one ulp of 2e34 is about 4e18, so an absolute bound of 1.0
+        // would be asking for sub-ulp agreement. Written the wrong way round first, which is
+        // the "precision finer than the representation" item on this workspace's own list.
+        let scale = ledger.scale_of(conserved::MOMENTUM_Y).unwrap();
+        assert!(
+            (scale / 2.0e34 - 1.0).abs() < 1e-12,
+            "scale should be one body's 2e34 kg m/s, got {scale}"
+        );
+        assert!(
+            scale > 1e-300,
+            "below this `audit` skips the entry and polices nothing"
+        );
     }
 }

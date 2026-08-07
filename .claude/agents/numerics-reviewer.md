@@ -28,10 +28,11 @@ error or difference.
 
 ### A reference point that destroys the precision
 
-`Bar1D::stored_heat` measured enthalpy from absolute zero. A warm bar holds 228 kJ, so a
-millijoule arriving is a change in the ninth significant figure, and differencing two such
-numbers leaves a rounding floor of about 1e-11 J *whatever the transfer was*. Refining the grid
-made it worse, because there were more absolute temperatures to add up.
+`Bar1D::stored_heat` measured enthalpy from absolute zero. The bar in these tests holds
+1.42 kJ, so a millijoule arriving is a change in the seventh significant figure, and
+differencing two such numbers leaves a rounding floor of a few times 1e-12 J *whatever the
+transfer was*. Refining the grid made it worse, not better — 1.6e-12 J at 41 cells against
+7.3e-12 J at 161 — because there were more absolute temperatures to add up.
 
 An additive constant is arbitrary, so it should be chosen for precision. Look for any quantity
 computed as a difference of two much larger numbers, and check whether the reference could be

@@ -5,7 +5,14 @@
 //! ```
 //!
 //! One is the ideal gas. Above one means the structure prefers that separation, below one means
-//! it avoids it, and zero inside about `0.8σ` means atoms cannot overlap. It is the single most
+//! it avoids it, and zero inside about `0.8σ` means atoms cannot overlap.
+//!
+//! One only in the thermodynamic limit, strictly. The denominator counts `N²/2` pairs where a
+//! finite sample has `N(N−1)/2`, so a structureless system plateaus at `(N−1)/N` — 0.93% low at
+//! 108 atoms and 3.1% low at 32. That is the standard convention and almost every code uses it,
+//! but it is worth knowing before reading a small box's plateau as a discrepancy.
+//! [`RadialDistribution::coordination`] is free of the offset: it divides by `N` and doubles the
+//! pair count, so it returns neighbours per atom exactly. It is the single most
 //! useful thing to look at in a molecular simulation, because it says what *phase* you have
 //! without anyone having to decide: a crystal gives sharp spikes at the lattice shells, a liquid
 //! gives two or three broad humps that die out, and a gas gives a bump at contact and then one

@@ -36,7 +36,7 @@ README says so.
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
-| `dualis` | A facade over the other six, and where the cross-domain integration tests live |
+| `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
 
 ```text
 dualis-units       no dependencies but glam and serde
@@ -156,11 +156,11 @@ end of a mirror is exactly the bug a total-only check cannot see.
 Three things fell out of building it that are worth knowing.
 
 An enthalpy's reference point is arbitrary, so it should be chosen for precision, and the
-obvious choice is the bad one. Measured from absolute zero a warm aluminium bar holds
-228 kJ, so a millijoule arriving is a change in the ninth significant figure and
-differencing two such numbers leaves a rounding floor of about 10⁻¹¹ J whatever the
-transfer was — worse as the grid is refined, because there are more absolute temperatures
-to add up. Measured from the initial temperature, the number being summed *is* the change.
+obvious choice is the bad one. Measured from absolute zero the aluminium bar in these
+tests holds 1.42 kJ, so a millijoule arriving is a change in the seventh significant figure,
+and differencing two such numbers leaves a rounding floor of a few times 10⁻¹² J whatever
+the transfer was — worse as the grid is refined, because there are more absolute
+temperatures to add up: 1.6×10⁻¹² J at 41 cells against 7.3×10⁻¹² J at 161. Measured from the initial temperature, the number being summed *is* the change.
 
 An insulated bar under a continuous beam does not flatten out. It settles into a fixed
 shape and rides upward on a mean that climbs forever, so the hot spot is permanent and the
@@ -249,7 +249,7 @@ give none and it just checks. Nothing generated is committed.
 
 Plotting has no dependency. SVG is text, so it is a `format!` and a file write — no
 encoder, no fonts, and it opens by double-click. `examples/common/svg.rs` is about three
-hundred lines and is the right size for this job; when it stops being, the answer is
+hundred and fifty lines and is the right size for this job; when it stops being, the answer is
 `dualis-world` rather than a bigger version of it.
 
 The examples also exist to keep the library honest in a way tests cannot. `ScalarField` was
@@ -423,7 +423,7 @@ none of it shows up as anything but a plausible picture.
 
 It also catches mistakes in the *questions*. The first Airy zero is at 1.22 λ/D and
 at 0.61 λ/NA; those are the same zero and the factor of two is the numerical aperture.
-Asking for encircled energy at the wrong one of them gives 57% instead of 84%, which
+Asking for encircled energy at the wrong one of them gives 59% instead of 84%, which
 is exactly what happened the first time.
 
 ## What the audit tolerance is really measuring

@@ -576,12 +576,27 @@ impl Domain for TreeNBody {
 
     /// Momentum per axis, exactly as [`NBody`](crate::NBody) reports it — but it will
     /// not hold to the same tolerance, and the module docs say why.
+    /// Momentum per axis, accumulated **one body at a time**.
+    ///
+    /// The per-body `add` is the whole point and not a style choice. `Ledger` records the
+    /// largest single contribution as an entry's `scale`, and [`audit`](dualis_core::audit)
+    /// judges a change against that rather than against the total — because a correct
+    /// system's total momentum is usually exactly zero, and a relative tolerance on zero
+    /// means nothing.
+    ///
+    /// Handing the pre-summed total to one `with` call sets the scale to `|total|`, which for
+    /// a symmetric system is `0.0`. `audit` then skips the entry entirely at its
+    /// `scale < 1e-300` guard, and the momentum audit silently does not run. That is what
+    /// this did. See `NBody::ledger` for how it was found.
     fn ledger(&self) -> Ledger {
-        let p = self.momentum().to_si();
-        Ledger::new()
-            .with(conserved::MOMENTUM_X, p.x)
-            .with(conserved::MOMENTUM_Y, p.y)
-            .with(conserved::MOMENTUM_Z, p.z)
+        let mut ledger = Ledger::new();
+        for (m, v) in self.masses.iter().zip(self.velocities.0.iter()) {
+            let p = *v * *m;
+            ledger.add(conserved::MOMENTUM_X, p.x);
+            ledger.add(conserved::MOMENTUM_Y, p.y);
+            ledger.add(conserved::MOMENTUM_Z, p.z);
+        }
+        ledger
     }
 
     fn checkpoint(&mut self) {

@@ -384,12 +384,13 @@ impl Bar1D {
     /// Heat held, measured from the temperature the bar started at.
     ///
     /// The reference point of an enthalpy is arbitrary, so it should be chosen for
-    /// precision, and the natural-looking choice is the bad one. Against absolute zero this
-    /// bar holds 228 kJ, and a millijoule arriving is a change in the ninth significant
-    /// figure — so differencing two such numbers leaves a rounding floor of about 10⁻¹¹ J
-    /// whatever the transfer was, and the audit's *relative* check on a 1 mJ step is then
-    /// asking for precision the arithmetic threw away. Refining the grid makes it worse,
-    /// because there are more absolute temperatures to add up.
+    /// precision, and the natural-looking choice is the bad one. Against absolute zero a
+    /// 20 mm aluminium bar of 1 cm² section holds 1.42 kJ, and a millijoule arriving is a
+    /// change in the seventh significant figure — so differencing two such numbers leaves a
+    /// rounding floor of a few times 10⁻¹² J whatever the transfer was, and the audit's
+    /// *relative* check on a 1 mJ step is then asking for precision the arithmetic threw
+    /// away. Refining the grid makes it worse rather than better: 1.6×10⁻¹² J at 41 cells
+    /// against 7.3×10⁻¹² J at 161, because there are more absolute temperatures to add up.
     ///
     /// Measured from the initial temperature, the number being summed *is* the change, and
     /// the audit's precision tracks the heat that moved rather than the enthalpy it moved

@@ -1,7 +1,8 @@
 //! dualis-acoustic: sound, as a domain on the `dualis-core` kernel.
 //!
-//! The linear wave equation on a one-dimensional grid — a tube, a duct, a rod — with
-//! ends that can be open, closed, or matched to a different medium.
+//! The linear wave equation on a grid: one-dimensional in a [`Tube`] — a duct, a rod, an
+//! organ pipe — with ends that can be open, closed, or matched to a different medium; and
+//! two-dimensional in a [`Room`], where the modes stop being a harmonic series.
 //!
 //! ```text
 //! ∂²p/∂t² = c² ∂²p/∂x²
@@ -830,15 +831,29 @@ mod tests {
             collected > 0.0,
             "a matched end should have absorbed something"
         );
-        assert!(
-            (collected - tube.radiated_energy().to_si()).abs() < 1e-30,
-            "the bus and the books must agree"
-        );
-        // And the tube has lost most of what it held, since the wave left through the
-        // open end rather than bouncing forever.
+        // The bus and the books agree trivially -- `step` does `self.radiated += absorbed`
+        // and `bus.publish(..., absorbed)` from the same variable, so this is `a == a` and
+        // catches nothing. Kept because it is cheap and would notice one of the two lines
+        // being deleted, but stated as the tautology it is rather than dressed up with a
+        // 1e-30 that looks like a precision claim.
+        assert_eq!(collected, tube.radiated_energy().to_si());
+
+        // **The check that has content**: what the end published against what the tube
+        // actually lost. Nothing connected those two before, and multiplying the radiated
+        // intensity by seven passed the entire workspace suite.
         let left = tube.energy().to_si();
+        let lost = start - left;
         assert!(
-            left < start * 0.5,
+            (collected / lost - 1.0).abs() < 2e-3,
+            "published {collected:e} J against {lost:e} J that left the tube"
+        );
+        // The 2e-3 is the half-step stagger, not slack: `p·u·A` multiplies a pressure at a
+        // whole step by a wall velocity half a step later, so the intensity carries an
+        // O(omega dt) error that the time-centred energy functional does not.
+
+        // And the tube drained rather than ringing, which is what a matched end is for.
+        assert!(
+            left < start * 0.01,
             "the tube should have drained: {start:e} to {left:e}"
         );
     }

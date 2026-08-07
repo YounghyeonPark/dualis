@@ -1,7 +1,7 @@
 //! dualis: physics for simulated worlds, in one dependency.
 //!
 //! A facade over the workspace. Nothing is implemented here — the point is that a
-//! consumer writes `dualis = "0.1"` rather than naming four crates, and that the
+//! consumer writes `dualis = "0.1"` rather than naming seven crates, and that the
 //! integration tests which need two domains at once have somewhere to live.
 //!
 //! ```
@@ -21,16 +21,19 @@
 //! # The dependency rule
 //!
 //! ```text
-//! dualis-units    no dependencies but glam and serde
-//! dualis-core     depends on units
-//! dualis-optics   depends on core
-//! dualis-thermal  depends on core
-//! dualis          depends on all of them
+//! dualis-units      no dependencies but glam and serde
+//! dualis-core       depends on units
+//! dualis-optics     depends on core
+//! dualis-thermal    depends on core
+//! dualis-mechanics  depends on core
+//! dualis-acoustic   depends on core
+//! dualis-molecular  depends on core
+//! dualis            depends on all of them
 //! ```
 //!
-//! `dualis-optics` and `dualis-thermal` do not know about each other. They meet on
-//! the kernel's [`Exchange`](dualis_core::Exchange), and adding a third domain does
-//! not touch either of them.
+//! None of the five domains knows about any of the others. They meet on the kernel's
+//! [`Exchange`](dualis_core::Exchange), and each one that arrived left the others
+//! untouched — which is the claim the split was made to test, now held five times.
 
 // Every public item carries a doc comment. Denied rather than warned: a public physics API
 // whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
