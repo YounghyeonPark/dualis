@@ -20,6 +20,11 @@ cargo test --workspace                       # 345 tests, all against closed for
 Add `out.svg` to either example and it draws the result. There are five of them; the table
 is [further down](#examples).
 
+> **Reading this as an AI agent, or in a hurry?** [AGENTS.md](AGENTS.md) is the whole API on
+> one page, and `cargo run --example agents_quickstart` is a runnable version of it —
+> including a deliberate 10% energy leak, so you can see what the audit says when a model is
+> wrong. Working *on* dualis rather than with it: [CLAUDE.md](CLAUDE.md).
+
 Nothing consumes this workspace yet, and that shapes how it is written: every claim in it
 is checked against a closed form or against an independent computation rather than against
 an application that might be wrong in the same direction. Where no closed form exists, the
@@ -240,6 +245,10 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `detector_snr` | Why read noise is the first number on a datasheet, with the Poisson statistics sampled rather than asserted |
 | `room_modes` | Why a small room booms at one note, and why that note is not a note. Four mode shapes and a corner trace |
 | `melting` | A Lennard-Jones crystal melting, read off its own radial distribution rather than declared |
+
+Two more are run by CI without being in the table, because they are checks rather than
+showcases: `agents_quickstart`, the runnable form of [AGENTS.md](AGENTS.md), and
+`readme_check`, which re-runs this file's own code so the snippets above cannot rot.
 
 Each one prints its numbers and **asserts** them, so CI runs all of them on every commit.
 An example is a claim that the library works, which makes a quietly broken one worse than

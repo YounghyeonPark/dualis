@@ -32,9 +32,15 @@ messages carry the full account.
   room, with impedance boundaries.
 - **`dualis-molecular`** — Lennard-Jones fluids in periodic boxes, cell lists, a Langevin
   thermostat, virial pressure, and radial distribution functions.
-- **Five examples**, each of which asserts its numbers and is run by CI, alongside a sixth
-  that re-runs the README's own code. Give one a path and it writes an SVG; the plotting has
-  no dependency.
+- **Five examples**, each of which asserts its numbers and is run by CI. Give one a path and
+  it writes an SVG; the plotting has no dependency. Two further examples are checks rather
+  than showcases: `agents_quickstart` and `readme_check`.
+- **`AGENTS.md` and `CLAUDE.md`** — the API on one page for a consumer, and the gate and
+  conventions for a contributor. Written after an AI agent looked for dualis on `PATH`, as a
+  Python package, and in a consuming repository, found it in none of the three, and used
+  MuJoCo instead. That is a distribution failure and not a documentation one, but the
+  quickstart it now lands on is `examples/agents_quickstart.rs`, which CI runs, so it cannot
+  drift from the library the way a hand-written snippet does.
 - **CI** across Linux, macOS, Windows, two WebAssembly targets and Rust 1.78, with formatting,
   clippy at `-D warnings`, rustdoc at `-D warnings`, licence and advisory checks, and the
   examples.
