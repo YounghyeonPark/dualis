@@ -1,6 +1,8 @@
 # dualis
 
 [![CI](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml/badge.svg)](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/dualis.svg)](https://crates.io/crates/dualis)
+[![docs.rs](https://docs.rs/dualis/badge.svg)](https://docs.rs/dualis)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
 physics, and five domains built on it that do: **light, heat, motion, sound, and matter
@@ -10,6 +12,12 @@ Dimensions live in the type system, so `Length + Time` does not compile. Conserv
 audited rather than assumed, and a `Violation` names what went missing and where. Every
 result is reproducible bit for bit — across platforms, across optimisation levels, in
 WebAssembly, and under sixteen threads as readily as one.
+
+```sh
+cargo add dualis                             # one dependency, all eight crates
+```
+
+Or, in a clone of this repository:
 
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure

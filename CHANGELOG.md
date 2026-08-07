@@ -1,14 +1,28 @@
 # Changelog
 
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-This workspace follows [semantic versioning](https://semver.org/); nothing has been released
-yet, so everything below is unreleased and the API is not stable.
+This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
+explicitly not stable and a minor bump may break you — which is the honest state of a library
+whose first consumer has not been written yet.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
 ## [Unreleased]
+
+## [0.1.0] — 2026-08-07
+
+First release. All eight crates published to crates.io together.
+
+Everything below was in this release. Two notes on the publish itself, since they cost time
+and are not obvious from the outside:
+
+- crates.io requires a **verified** email address, not merely a registered one, and reports
+  its absence as a `400` at the first upload rather than at login.
+- New crates are rate limited to a burst of five, then roughly one every ten minutes. A
+  workspace of eight publishes five, stops, and has to be resumed — so `cargo publish
+  --workspace` is not atomic and a partial publish is the normal outcome, not a fault.
 
 ### Added
 
@@ -87,4 +101,5 @@ messages carry the full account.
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/commits/main
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.1.0
