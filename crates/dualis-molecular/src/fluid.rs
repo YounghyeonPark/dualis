@@ -807,33 +807,49 @@ mod tests {
     #[test]
     fn a_langevin_bath_pulls_the_fluid_to_its_target() {
         let target = kelvin(1.4);
-        let mut fluid = reduced(3, 0.6)
-            .thermalised(kelvin(0.28), 0x_BA77_0015)
-            .with_thermostat(Thermostat::Langevin {
-                target,
-                damping: 2.0,
-            });
-        let dt = fluid.max_stable_dt(Time::ZERO);
-        let mut bus = Exchange::new();
+        let one_seed = |seed: u64| {
+            let mut fluid = reduced(3, 0.6)
+                .thermalised(kelvin(0.28), seed)
+                .with_thermostat(Thermostat::Langevin {
+                    target,
+                    damping: 2.0,
+                });
+            let dt = fluid.max_stable_dt(Time::ZERO);
+            let mut bus = Exchange::new();
 
-        let mut sum = 0.0;
-        let mut samples = 0.0;
-        for k in 0..6000 {
-            fluid.step(Time::ZERO, dt, &mut bus).unwrap();
-            if k >= 3000 {
-                sum += fluid.temperature().to_si();
-                samples += 1.0;
+            let mut sum = 0.0;
+            let mut samples = 0.0;
+            for k in 0..6000 {
+                fluid.step(Time::ZERO, dt, &mut bus).unwrap();
+                if k >= 3000 {
+                    sum += fluid.temperature().to_si();
+                    samples += 1.0;
+                }
             }
-        }
-        let settled = reduced_temperature(
-            Temperature::from_si(sum / samples),
-            &LennardJones::reduced(),
-        );
-        // Five percent. The instantaneous temperature fluctuates by √(2/3N) = 8% a sample, so
-        // three thousand of them leave well under a percent of statistical error; the rest of
-        // the budget is for the thermostat's own bias and for the run not being infinite.
+            reduced_temperature(
+                Temperature::from_si(sum / samples),
+                &LennardJones::reduced(),
+            )
+        };
+
+        // Four seeds, because one is not a measurement of a noisy quantity.
+        //
+        // The old comment reasoned that √(2/3N) = 7.9% a sample over three thousand samples
+        // leaves 0.14% of error. That treats correlated samples as independent, and they are
+        // not: the velocity correlation time is 1/gamma, so the run holds tens of independent
+        // samples and not thousands. Measured rather than argued — across twelve seeds the
+        // three-thousand-sample average ran from 1.376 to 1.420, a standard deviation of 0.96%
+        // of the mean, which implies about fifty independent samples.
+        //
+        // So a single seed departs by up to 1.7%, and the 5% that stood here was five standard
+        // deviations of slack. Averaging four seeds halves the spread to a standard error of
+        // 0.48%. These four give 1.4207, 1.4170, 1.3891 and 1.4022 — a mean of 1.4072, 0.52%
+        // high, which is the one sigma it should be. Two percent is three sigma of what is
+        // left. More samples, not a wider tolerance: the tolerance got tighter, not looser.
+        let seeds = [0x_BA77_0015, 0x_BA77_0016, 0x_BA77_0017, 0x_BA77_0018];
+        let settled = seeds.iter().map(|s| one_seed(*s)).sum::<f64>() / seeds.len() as f64;
         assert!(
-            (settled / 1.4 - 1.0).abs() < 0.05,
+            (settled / 1.4 - 1.0).abs() < 0.02,
             "settled at a reduced temperature of {settled}, wanted 1.4"
         );
     }

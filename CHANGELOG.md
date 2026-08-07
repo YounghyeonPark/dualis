@@ -32,8 +32,9 @@ messages carry the full account.
   room, with impedance boundaries.
 - **`dualis-molecular`** — Lennard-Jones fluids in periodic boxes, cell lists, a Langevin
   thermostat, virial pressure, and radial distribution functions.
-- **Six examples**, each of which asserts its numbers and is run by CI. Give one a path and it
-  writes an SVG; the plotting has no dependency.
+- **Five examples**, each of which asserts its numbers and is run by CI, alongside a sixth
+  that re-runs the README's own code. Give one a path and it writes an SVG; the plotting has
+  no dependency.
 - **CI** across Linux, macOS, Windows, two WebAssembly targets and Rust 1.78, with formatting,
   clippy at `-D warnings`, rustdoc at `-D warnings`, licence and advisory checks, and the
   examples.
@@ -58,6 +59,19 @@ messages carry the full account.
   a noisy statistical test is more samples and not a wider tolerance.
 - **Licence texts** now ship inside each crate. The packages declared `MIT OR Apache-2.0` and
   contained neither, which `cargo package` does not warn about.
+- **Five tolerances that were loose rather than wrong.** A tail-correction ratio checked
+  against the `rc⁻³` power law inside 0.02, where the exact ratio differs from that law by
+  0.0188 — a known discrepancy filling 94% of the budget. It is now checked against the closed
+  form to 1e-12, with the power law asserted separately as the limit it actually is. The
+  Langevin settling test averaged one seed and allowed 5%; the seed-to-seed spread is 0.96%,
+  so it now averages four seeds and allows 2% — more samples, and a *tighter* tolerance. Two
+  gradients expected to be zero were checked with a relative comparison against zero. A
+  crystal's negative pressure was asserted as `pressure.max(0.0)`, which an identically zero
+  virial satisfies; it is now a band that excludes zero. And the bouncing ball's energy
+  handover compared the heat that crossed against `start_energy - 0.0f64.max(0.0)` — the final
+  energy was never computed, so the equality its comment promised was a one-sided bound.
+  `ContactSystem` now answers `as_any` so the equality can be checked; publishing 5% extra
+  heat fails it.
 
 ### Documented
 

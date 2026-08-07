@@ -96,11 +96,38 @@ fn a_bouncing_ball_warms_itself() {
     assert!(sim.bus().unclaimed().next().is_none());
 
     // And the joules that crossed are the mechanical energy that went missing.
-    let lost = start_energy.to_si() - 0.0f64.max(0.0);
+    //
+    // This used to read `start_energy - 0.0f64.max(0.0)`, which is start_energy: the final
+    // energy was never computed, and what remained was the one-sided claim that the dashpot
+    // cannot dissipate more than the ball began with. True, and nearly free — it would have
+    // held for any dissipation between zero and everything. The comment promised an equality
+    // and the assertion delivered a bound.
+    //
+    // `ContactSystem` now answers `as_any`, so the energy actually left is reachable and the
+    // equality can be the thing that is checked.
+    //
+    // The tolerance, from both ends. The dashpot's work is accumulated as -F·dx with the force
+    // taken at the old velocity and the displacement at the new one, which is first order, and
+    // the semi-implicit step has a first-order energy error of its own — `ContactSystem`'s doc
+    // measures that at about 2% over a second of bouncing, which is where this simulation's
+    // `conservation_tolerance(2e-2)` comes from. Measured here: 0.054617 J crossed against
+    // 0.055455 J lost, 1.51% apart. From the other end, publishing 5% more heat than the
+    // dashpot dissipated lands at 3.41% and must fail. So 2.5e-2 — the legitimate error uses
+    // 60% of it and the sabotage overruns it by a third. Both numbers are in the comment
+    // because a tolerance with only one of them written down is a tolerance nobody can revise.
+    let end_energy = sim
+        .domain_as::<ContactSystem>("ball")
+        .expect("the contact system is still in the simulation")
+        .mechanical_energy();
+    let lost = start_energy.to_si() - end_energy.to_si();
     assert!(
-        crossed < lost,
-        "it cannot have dissipated more than it started with: {crossed:.4} J of \
-         {lost:.4} J"
+        lost > 0.0,
+        "the ball must have lost mechanical energy, got {lost:.4} J"
+    );
+    assert!(
+        (crossed / lost - 1.0).abs() < 2.5e-2,
+        "the joules that crossed the bus are the joules that went missing: \
+         {crossed:.4} J crossed against {lost:.4} J lost"
     );
 }
 

@@ -310,12 +310,41 @@ mod tests {
             "got {}",
             near.energy_tail(rho)
         );
-        // The energy tail goes as rc^-3, so a cutoff 2.4x further out is 13.8x smaller.
+        // The ratio between two cutoffs, against the closed form rather than against the
+        // rc^-3 law it tends to. Those are not the same number: the exact ratio at 2.5 and 6
+        // sigma is 13.805224, and (6/2.5)^3 is 13.824, because the repulsive rc^-9 term is
+        // still worth a tenth of a percent at two and a half sigma. This assertion used to
+        // compare against the power law inside 0.02, which a known 0.0188 discrepancy filled
+        // to 94% — leaving 6% of the budget to catch anything that was actually wrong.
+        let bracket = |rc: f64| {
+            let x = (1.0f64 / rc).powi(3); // (sigma/rc)^3, with sigma = 1
+            x * x * x / 3.0 - x
+        };
         let ratio = near.energy_tail(rho) / far.energy_tail(rho);
+        let exact = bracket(2.5) / bracket(6.0);
         assert!(
-            (ratio - (6.0f64 / 2.5).powi(3)).abs() < 0.02,
-            "ratio {ratio}"
+            (ratio / exact - 1.0).abs() < 1e-12,
+            "ratio {ratio}, closed form {exact}"
         );
+        // And the rc^-3 law separately, as the limit it actually is: once the cutoff is far
+        // enough out, doubling it divides the tail by eight. It arrives quickly, because the
+        // term being neglected dies six powers faster — 7.9892 at 2.5 sigma, 7.99983 at 5,
+        // 7.999997 at 10. Stating it as a limit is the honest version of the claim the old
+        // comment made; stating it as an equality at 2.5 sigma was not.
+        for (rc, want) in [
+            (2.5, 7.989_247_771),
+            (5.0, 7.999_832_000),
+            (10.0, 7.999_997_375),
+        ] {
+            let doubled = LennardJones::reduced().with_cutoff(rc).energy_tail(rho)
+                / LennardJones::reduced()
+                    .with_cutoff(2.0 * rc)
+                    .energy_tail(rho);
+            assert!(
+                (doubled / want - 1.0).abs() < 1e-9,
+                "rc {rc}: got {doubled}"
+            );
+        }
         // And linear in density, since it counts pairs against a uniform background.
         assert!((near.energy_tail(2.0 * rho) / near.energy_tail(rho) - 2.0).abs() < 1e-12);
     }

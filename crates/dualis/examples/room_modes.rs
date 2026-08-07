@@ -215,17 +215,30 @@ fn main() {
     // node-centred grid a node sits on the wall — so it is zero to the last bit. Bar1D
     // reports a nonzero slope at *its* insulated end, because its grid is cell-centred and
     // the nearest sample is half a cell inside. Same physics, different sampling.
-    check(
+    //
+    // Judged against how large this gradient gets elsewhere in the same field, sampled a
+    // quarter wavelength in where the (1,1) mode's slope peaks. `check` cannot do this: with
+    // an expected value of zero, any nonzero result is a 100% relative error and the
+    // tolerance says nothing at all. The scale has to come from outside the comparison.
+    let peak_dx = shape
+        .gradient(LengthVec::m(WIDTH / 2.0, 1.0, 0.0), Time::ZERO, h)
+        .x
+        .abs();
+    let peak_dy = shape
+        .gradient(LengthVec::m(1.0, HEIGHT / 2.0, 0.0), Time::ZERO, h)
+        .y
+        .abs();
+    check_zero(
         "dp/dx on the left wall",
         shape.gradient(LengthVec::m(0.0, 1.0, 0.0), Time::ZERO, h).x,
-        0.0,
+        peak_dx,
         1e-12,
         "Pa/m",
     );
-    check(
+    check_zero(
         "dp/dy on the floor",
         shape.gradient(LengthVec::m(1.0, 0.0, 0.0), Time::ZERO, h).y,
-        0.0,
+        peak_dy,
         1e-12,
         "Pa/m",
     );

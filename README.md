@@ -14,10 +14,10 @@ WebAssembly, and under sixteen threads as readily as one.
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 344 tests, all against closed forms
+cargo test --workspace                       # 345 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are six of them; the table
+Add `out.svg` to either example and it draws the result. There are five of them; the table
 is [further down](#examples).
 
 Nothing consumes this workspace yet, and that shapes how it is written: every claim in it

@@ -24,7 +24,7 @@ use dualis_molecular::{fcc_shells, RadialDistribution};
 
 mod common;
 use common::svg::{document, rgb, ticks, Plot};
-use common::{check, check_between, check_zero, heading};
+use common::{check, check_between, heading};
 
 /// Reduced units throughout: `ε = σ = m = 1`, which is how the literature quotes state points.
 const DENSITY: f64 = 0.8442;
@@ -261,11 +261,22 @@ fn main() {
     check("gas: P* against rho* T*", gas.pressure, ideal, 0.06, "");
     // The cold crystal is under tension -- its neighbours sit past the well's minimum, so they
     // pull inwards and the pressure is negative. A gas can never do that.
-    check_zero(
+    //
+    // Asserted as a band that excludes zero, rather than as `pressure.max(0.0)` against a
+    // scale, which is how this was written first. That form says "the pressure is not
+    // positive", and a virial that came out identically zero -- from a cutoff that caught no
+    // pairs, say, which is a mistake this workspace has actually made -- satisfies it
+    // perfectly. The tension has to be *there*, not merely not-absent.
+    //
+    // The bounds are the physics and not the measurement: at this density every particle has
+    // twelve neighbours a little past r_min, so the tension is some units of epsilon per
+    // sigma^3, and a lattice that had melted or exploded would leave the band on one side or
+    // the other. Measured: -4.82.
+    check_between(
         "crystal: pressure is negative",
-        crystal.pressure.max(0.0),
-        gas.pressure,
-        1e-12,
+        crystal.pressure,
+        -8.0,
+        -1.0,
         "P*",
     );
     println!(

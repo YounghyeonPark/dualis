@@ -694,6 +694,16 @@ impl Domain for ContactSystem {
     fn supports_restore(&self) -> bool {
         true
     }
+
+    /// Opted in so a coupling test can ask what mechanical energy is *left*.
+    ///
+    /// Without it the only reachable number is the one the system started with, and a test
+    /// that wants to say "the joules that crossed the bus are the joules that went missing"
+    /// has to weaken itself to an inequality against the starting energy. See
+    /// `crates/dualis/tests/friction_heats.rs`, which made exactly that compromise.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// Momentum magnitude, for reporting.
