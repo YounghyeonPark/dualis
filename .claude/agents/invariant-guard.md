@@ -126,8 +126,11 @@ for d in crates/*/; do printf "%s " "$d"; ls "$d" | grep -c LICENSE; done   # ea
 New since the workspace went to crates.io, and the one invariant here that cannot be fixed after
 the fact: a published version is permanent. You may yank it, you may not replace it.
 
-`dualis` 0.1.0 is on crates.io and the tree is 0.2.0. So a change to the public API has a
+`dualis` 0.2.0 is on crates.io and the tree is 0.3.0. So a change to the public API has a
 version consequence, and `0.x` semantics mean **a breaking change needs the minor bumped**.
+
+Do not take those two numbers on trust — this line has been stale before. The two commands
+below are the check, and they are the answer to this section rather than an illustration of it.
 
 ```sh
 grep -m1 '^version' Cargo.toml                    # what the tree says

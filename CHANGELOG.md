@@ -3,16 +3,61 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found sixteen places it is awkward, eleven of which have been changed — see the
+has already found seventeen places it is awkward, twelve of which have been changed — see the
 0.2.0 entry below.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
-## [Unreleased]
+## [0.3.0] — 2026-08-09
 
 ### Added
+
+- **`ThermalNetwork`**, the third domain in `dualis-thermal`: n lumped bodies joined by
+  conductances, as *one* domain. Winding, stator, housing — and the **drop across each joint**,
+  which is the number that decides whether a motor survives and the one a `LumpedMass` cannot
+  give, because it reports the whole assembly as a single temperature. It also expresses a
+  *contact* resistance between different materials, which `Bar1D`'s uniform grid cannot.
+
+  One domain rather than a `conducting_to(peer)` on `LumpedMass`, because a conductance carries
+  `UA(T₁ − T₂)` and needs **both** temperatures — and domains here meet on an `Exchange` that
+  carries amounts rather than state, so neither side can compute the flux alone. Adding that
+  method would have broken the property the crate split exists to hold. A network is a single
+  coupled system of ODEs, which is what a thermal network physically is.
+
+  Nodes are `Node` handles rather than names, and that is the load-bearing decision. A link
+  contributes `+q` to one node and `−q` to another **in the same sum**, so they cancel
+  identically and the conservation audit is blind to links *by construction*: a sign error, a
+  transposed index or a link dropped altogether passes at machine precision, and the winding
+  simply runs at a plausible wrong temperature forever. A handle can only come from a
+  constructor, so a dangling link is not representable. `node_named` and `handles()` are the
+  bridge for callers building from a file — the JSON scene format and the Python binding both
+  resolve names once, at construction, and raise before any stepping happens.
+
+  Seven tests, six of them closed forms, every one per-node or against a formula computed in the
+  test file rather than on a total. `n = 1` reduces to `LumpedMass` bit for bit over a 4000-step
+  trajectory including `max_stable_dt`, so the new domain inherits every check the old one
+  already passes; `linearised_loss_conductance` is shared between them rather than written twice,
+  because two copies is the obvious way for that to stop being true.
+
+  Closes #2.
+
+- **`Conductance`** and **`HeatCapacity::j_per_k`** in `dualis-units`. `Conductance × Temperature
+  = Power` and `Conductance × Time = HeatCapacity` are declared, and the declarations compiling
+  is itself the check that `UA·ΔT` is watts and `C/UA` is a time.
+
+- **`ThermalNetwork` in the Python bindings**: `add_network(name, nodes=[…], links=[…],
+  absorbing=…)`, with `node_temperatures`, `node_temperature` and `heat_flow_w` to read it back.
+  A node given `ambient_k` without `area_m2` — or the reverse — is refused rather than quietly
+  becoming an interior node that looks like it is cooling and is not. `temperature()` refuses a
+  network rather than averaging it, and names the calls that answer.
+
+- **A `network` domain in the scene format**, and scene 11: 12 W into a copper winding, out
+  through electrical steel and an aluminium housing. The first scene with **nothing to draw** —
+  `as_field` declines, because nodes have capacities rather than positions and a conductance is
+  not a distance — so the scene test's "produced a panel" guard now takes an explicit list, and
+  being on it costs a named check rather than buying a pass.
 
 - **Python bindings**, in `bindings/python`, as their own cargo workspace. `pip install` the
   wheel and `import dualis`: a `Simulation`, the library's heater, bar and lumped-mass domains,
@@ -31,8 +76,33 @@ messages carry the full account.
   library's twelve external dependencies, its `deny.toml` allow-list and its WebAssembly jobs are
   promises that should not have to accommodate a Python extension. Verified rather than assumed:
   the library workspace still resolves to exactly twelve external crates. An abi3 wheel, so one
-  build serves 3.10 upward; CI builds it, installs it and runs its six tests, each against a
+  build serves 3.10 upward; CI builds it, installs it and runs its ten tests, each against a
   number computed in the test file rather than read off the simulation.
+
+### Fixed
+
+- **An `O(h)` bias in `ThermalNetwork`'s steady state that the conservation audit could not
+  see.** Heat arriving on the bus was added to the absorbing node's temperature *before* the flux
+  snapshot was taken, so that node drove its link from an already-raised value. Explicit Euler
+  otherwise reaches a steady state exactly — the fixed point is where the right-hand side
+  vanishes, with no step-size dependence — so the joint next to the source sat `K·h/C` low:
+  predicted 0.0031006, measured 0.0031005, while the far joint and the environment drop were
+  exact to six figures. Every total stayed right throughout, because the excess simply landed in
+  the neighbour. Found by the series-resistance closed form, not by the audit. The arriving heat
+  is a term of the same right-hand side as the fluxes and now joins the same sum.
+
+- **A NaN check in the Python bindings written as `!(x > 0.0)`**, which rejects NaN by the
+  negation being true rather than by saying so. The nested binding workspace is excluded from the
+  root one, so the `lint` CI job had never reached it and it had gone unlinted since it was
+  written. `cargo fmt --check` and `clippy -D warnings` now run in the bindings CI job.
+
+### Changed
+
+- `FRICTION.md`'s header and footer disagreed on how many findings were fixed, and both
+  disagreed with the file. Counted: twelve of seventeen. `AGENTS.md` gained a heat-model
+  selection table and quotes a CI-run example function rather than a hand-written snippet, with
+  the number it prints pinned by an assertion — prose stating a figure that nothing checks is
+  how a document goes stale.
 
 ## [0.2.0] — 2026-08-08
 
@@ -320,6 +390,7 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.3.0
 [0.2.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.2.0
 [0.1.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.1.0

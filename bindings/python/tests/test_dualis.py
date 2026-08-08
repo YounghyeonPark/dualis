@@ -12,7 +12,18 @@ import dualis
 
 def test_units_crossed_intact():
     assert dualis.one_joule() == 1.0
-    assert dualis.__version__ == "0.2.0"
+
+    # `__version__` comes from Rust's CARGO_PKG_VERSION; the wheel's metadata comes from
+    # pyproject.toml. They are two hand-maintained files that nothing forces to agree, and a
+    # release where they disagree ships a module that reports a version it is not. Comparing
+    # them checks that, and — unlike the hardcoded "0.2.0" this replaces — does not need
+    # editing every time the version moves, which is the thing that made it a stale literal
+    # rather than a check.
+    from importlib.metadata import version
+
+    assert dualis.__version__ == version("dualis"), (
+        f"Cargo.toml says {dualis.__version__}, pyproject.toml says {version('dualis')}"
+    )
 
 
 def coupled():
