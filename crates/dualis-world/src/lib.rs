@@ -19,7 +19,10 @@ use serde::{Deserialize, Serialize};
 // one on both sides. That collision is the app's problem and not the library's.
 use dualis::prelude::Room as AcousticRoom;
 
+pub mod heater;
 pub mod render;
+
+use heater::Heater;
 
 /// What to simulate, in a form that can be written down rather than compiled in.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -90,6 +93,18 @@ pub enum DomainSpec {
         /// How loud, in pascals.
         amplitude_pa: f64,
     },
+    /// A heat source with a finite tank, defined in this crate rather than the library.
+    ///
+    /// The publisher half of a coupled scene. See [`heater::Heater`] for why it is written
+    /// here: a domain the library already provides tests the constructors and nothing else.
+    Heater {
+        /// Domain name.
+        name: String,
+        /// Element power.
+        watts: f64,
+        /// Joules it has to spend before it goes quiet.
+        reserve_j: f64,
+    },
     /// A one-dimensional conducting bar.
     Bar {
         /// Domain name, and the handle the renderer uses to find it again.
@@ -109,7 +124,9 @@ impl DomainSpec {
     /// The name this domain will answer to.
     pub fn name(&self) -> &str {
         match self {
-            DomainSpec::Room { name, .. } | DomainSpec::Bar { name, .. } => name,
+            DomainSpec::Room { name, .. }
+            | DomainSpec::Bar { name, .. }
+            | DomainSpec::Heater { name, .. } => name,
         }
     }
 
@@ -141,6 +158,11 @@ impl DomainSpec {
                     Pressure::from_si(*amplitude_pa),
                 ),
             ),
+            DomainSpec::Heater {
+                name,
+                watts,
+                reserve_j,
+            } => Box::new(Heater::new(name.clone(), *watts, *reserve_j)),
             DomainSpec::Bar {
                 name,
                 length_mm,
@@ -207,6 +229,12 @@ impl World {
         &self.scene
     }
 
+    /// The simulation underneath, for a caller that wants the kernel's own accessors —
+    /// `bus`, `ledger`, `domain_as`, `field`.
+    pub fn simulation(&self) -> &Simulation {
+        &self.sim
+    }
+
     /// Where the clock is.
     pub fn time(&self) -> Time {
         self.sim.time()
@@ -270,6 +298,10 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
             let ny = ((height_m / width_m) * (nx - 1) as f64).round() as usize + 1;
             (nx, ny.max(3), *width_m, *height_m, "Pa", 0.0)
         }
+        // A heater has no field, so `Domain::as_field` returns `None` and `capture` never
+        // reaches here with one. Matching on it anyway rather than an `unreachable!`, because
+        // a panic reachable only through a future edit is worse than a panel nobody draws.
+        DomainSpec::Heater { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
         DomainSpec::Bar {
             cells, length_mm, ..
         } => (

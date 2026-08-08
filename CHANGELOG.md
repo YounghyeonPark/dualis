@@ -36,16 +36,29 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   the workspace's own visualiser downcast to concrete types instead — precisely what the
   interface existed to avoid. It no longer names a single domain type.
 - **`Room` is in the prelude**, which it should always have been; `Tube` already was.
+- **`Bar1D::exposing` takes `impl Into<String>`.** The sweep behind `Domain::name` had matched
+  on the parameter being called `name` and missed this one, so a boundary name — the thing two
+  domains have to agree on, and therefore exactly the kind of thing that comes from a file —
+  was still compile-time only. The kernel's own worked examples were also still teaching
+  `fn name(&self) -> &'static str`.
 
 ### Added
 
 - **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
   into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
   the SDK from outside rather than to be a good application, and it reports what that was like
-  in `crates/dualis-world/FRICTION.md`: five places the API was awkward and one real defect.
-  Five of the six are fixed; the sixth — sharing the examples' SVG plotting — is declined in
-  writing, because it means committing to a public drawing API in a workspace whose scope
-  excludes rendering. The report also says what it did *not* cover, which is the coupling.
+  in `crates/dualis-world/FRICTION.md`: eight findings, six fixed. Two are declined in
+  writing rather than actioned — sharing the examples' SVG plotting, which would mean
+  committing to a public drawing API in a workspace whose scope excludes rendering, and
+  validating a scene's schedule against its domains at build time, which an application can
+  already do with `Domain::max_stable_dt`. The report also says what it does *not* cover.
+
+  The scene format now couples: a heater defined **in the application** publishes joules and
+  a bar takes them, with the kernel auditing the crossing at 1e-9 and the bar's rise checked
+  against `6 J / ρVc_p` computed outside the library. That closes the gap the report itself
+  had flagged — until then no `publish`, `take` or `Exchange` appeared anywhere in the
+  consumer, so the part of the API this workspace exists for had only ever been driven from
+  inside. Writing a `Domain` from outside needed nothing beyond `dualis::prelude`.
   Excluded from the wasm, determinism and 1.78 jobs, which are promises the *library* makes to
   the people who depend on it.
 

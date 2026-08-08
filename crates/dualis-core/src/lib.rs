@@ -53,7 +53,7 @@
 //! /// A source that pays out a watt, and says so in its books.
 //! struct Lamp { paid: f64 }
 //! impl Domain for Lamp {
-//!     fn name(&self) -> &'static str { "lamp" }
+//!     fn name(&self) -> &str { "lamp" }
 //!     fn kind(&self) -> Kind { Kind::QuasiStatic }
 //!     fn step(&mut self, _t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
 //!         let joules = 1.0 * dt.to_si();
@@ -68,7 +68,7 @@
 //! /// A sink that takes whatever is offered and keeps it.
 //! struct Block { held: f64 }
 //! impl Domain for Block {
-//!     fn name(&self) -> &'static str { "block" }
+//!     fn name(&self) -> &str { "block" }
 //!     fn step(&mut self, _t: Time, _dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
 //!         self.held += bus.take(quantity::ENERGY);
 //!         Ok(())

@@ -142,3 +142,134 @@ fn a_scene_can_hold_more_than_one_domain() {
         assert!((v - 20.0).abs() < 1e-9, "bar drifted to {v} C");
     }
 }
+
+/// **Two domains that actually talk**, driven entirely from data.
+///
+/// Everything before this ran domains side by side: they stepped, they were drawn, and none
+/// of them ever put anything on the bus. So the part of the library the whole architecture
+/// exists for — domains meeting on `Exchange` and the kernel auditing the crossing — had only
+/// ever been exercised by tests written inside the workspace, which is the condition that
+/// produced the API frictions in the first place.
+///
+/// A heater pays joules onto the channel; a bar takes them and warms. Neither names the
+/// other, and the scene names neither: it says "heater" and "bar" and the coupling is the
+/// channel they happen to share.
+///
+/// The heater is defined in *this* crate, which is the other half of the point. A consumer
+/// implementing `Domain` from outside needs the trait, `Exchange`, `Ledger`, `Kind`,
+/// `Violation` and a channel constant, and all six come out of `dualis::prelude`. Nothing
+/// private was required.
+///
+/// `multirate` and not `staggered`, and the difference is not cosmetic: half a second is
+/// thirty-eight times the bar's diffusion limit, so a staggered scene diverges. See
+/// `a_schedule_a_scene_cannot_survive_is_named_and_refused` — the kernel catches it, but
+/// only when the step is taken, which is a thing a scene format could check earlier.
+#[test]
+fn a_heater_and_a_bar_meet_on_the_bus() {
+    let scene: Scene = serde_json::from_str(
+        r#"{
+          "title": "coupled", "schedule": "multirate",
+          "duration_s": 4.0, "frames": 8,
+          "conservation_tolerance": 1e-9,
+          "domains": [
+            { "kind": "heater", "name": "element", "watts": 2.0, "reserve_j": 6.0 },
+            { "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": 21,
+              "area_mm2": 100.0, "initial_c": 20.0 }
+          ]
+        }"#,
+    )
+    .expect("the coupled scene parses");
+
+    let mut world = World::build(scene).expect("it builds");
+    // The audit is the assertion. At 1e-9 nothing may appear or vanish between the tank and
+    // the bar, and anything left unclaimed on the channel at the end of a step is refused.
+    let frames = world.run().expect("the books close across the bus");
+
+    // The heater has no field, so it contributes no panel: one domain, one drawing.
+    assert_eq!(frames[0].panels.len(), 1);
+    assert_eq!(frames[0].panels[0].name, "bar");
+
+    // 2 W for 4 s is 8 J of capacity against a 6 J tank, so it runs dry and the bar receives
+    // exactly the tank — which is the number to check, because it is set by the scene rather
+    // than by the physics.
+    let heater = world
+        .simulation()
+        .domain_as::<dualis_world::heater::Heater>("element")
+        .expect("the heater is still there");
+    assert!(
+        heater.reserve().to_si() < 1e-12,
+        "the tank should be empty, {} J left",
+        heater.reserve().to_si()
+    );
+    let crossed = world.simulation().bus().total_consumed(quantity::ENERGY);
+    assert!(
+        (crossed - 6.0).abs() < 1e-9,
+        "every joule in the tank should have crossed, got {crossed}"
+    );
+
+    // And the bar is warmer by the amount those joules buy. An independent number: 6 J into
+    // 20 mm x 1 cm^2 of aluminium is 6 / (rho V c_p), and the bar is insulated so none of it
+    // leaves. Computed here from the substance rather than read off the bar.
+    let al = Substance::aluminium_6061();
+    let volume = Volume::from_si(20e-3 * 100e-6);
+    let capacity = al
+        .heat_capacity(volume)
+        .expect("aluminium has a specific heat");
+    let expected_rise = 6.0 / capacity.to_si();
+    let mean_rise = frames[frames.len() - 1].panels[0]
+        .values
+        .iter()
+        .sum::<f64>()
+        / frames[0].panels[0].values.len() as f64
+        - 20.0;
+    assert!(
+        (mean_rise / expected_rise - 1.0).abs() < 1e-6,
+        "the bar should have risen {expected_rise:.4} K, got {mean_rise:.4}"
+    );
+}
+
+/// A scene can ask for a schedule its domains cannot survive, and the refusal says which.
+///
+/// The same scene as above with `staggered` in place of `multirate`. Half a second is
+/// thirty-eight times the bar's explicit-diffusion limit, and without subcycling the bar
+/// would fill with oscillating nonsense — the classic silently-wrong result.
+///
+/// It does not. The step is refused, and the refusal names the quantity (`Fourier number`),
+/// the site (`bar (explicit conduction)`), the limit and the value. That is the difference
+/// this library is for: an application that chose the wrong schedule from a config file is
+/// told which domain broke and by how much, rather than drawing something plausible.
+///
+/// **Also a finding.** Nothing checks this until the first step is taken. A scene format
+/// could ask every domain for its `max_stable_dt` at build time and refuse there, where the
+/// message could name the file. `Domain::max_stable_dt` is public, so an application can do
+/// it; this one does not yet.
+#[test]
+fn a_schedule_a_scene_cannot_survive_is_named_and_refused() {
+    let scene: Scene = serde_json::from_str(
+        r#"{
+          "title": "too big a step", "schedule": "staggered",
+          "duration_s": 4.0, "frames": 8,
+          "domains": [
+            { "kind": "heater", "name": "element", "watts": 2.0, "reserve_j": 6.0 },
+            { "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": 21,
+              "area_mm2": 100.0, "initial_c": 20.0 }
+          ]
+        }"#,
+    )
+    .unwrap();
+
+    let violation = World::build(scene)
+        .expect("it builds; the trouble only shows when it runs")
+        .run()
+        .expect_err("half a second is far past the bar's diffusion limit");
+
+    assert_eq!(violation.quantity, "Fourier number");
+    assert!(
+        violation.site.starts_with("bar"),
+        "the refusal should name the domain, got {:?}",
+        violation.site
+    );
+    // 0.5 is the explicit limit and the scene asked for about 38.
+    assert!((violation.before - 0.5).abs() < 1e-12);
+    assert!(violation.after > 30.0, "got {}", violation.after);
+}

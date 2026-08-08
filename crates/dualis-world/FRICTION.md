@@ -5,12 +5,12 @@ library with no consumers is a library whose ergonomics nobody has measured, and
 345 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
-Everything below was hit while building the smallest thing that loads a scene, runs it and
-draws it. None of it is a bug in the physics except finding 6, which is — and which no test inside the
+Everything below was hit while building the smallest thing that loads a scene, runs it,
+couples two domains over the bus and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Five of the six are fixed.** The entries are kept rather than deleted, because what the
-API used to be is the argument for what it is — and because the next consumer should be able
+**Six of the eight are fixed**, and two are recorded rather than actioned. The entries are
+kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
 around it. Each fixed entry says what was done.
 
@@ -163,35 +163,68 @@ Two things the fix turned up that were not visible from the outside:
 
 ---
 
-## What this says about the exercise
+## 7. The name change had missed `Bar1D::exposing`
 
-Five ergonomic frictions and one real defect, from about three hundred lines of application
-code, five of the six now fixed. Findings 1, 2 and 3 were the same shape: **the API was comfortable when the set of
-domains was known at compile time and awkward the moment it was not.** That was never a
-decision anybody made — it was the shape that falls out of writing a library with no consumer,
-where `&'static str` is free because every name is a literal in a test.
+Found by going looking, after the coupling scene needed a boundary. `Domain::name` and every
+constructor took `impl Into<String>` after finding 2, but `exposing(boundary: &'static str, ..)`
+did not — the sweep had matched on the parameter being called `name`. A boundary name is data
+in exactly the same way and for exactly the same reason: two domains agree on it, and what they
+agree on can come from a file.
 
-It has been made deliberately now, in the other direction, and the cost was smaller than the
-argument for keeping it: no existing call site changed, five test comparisons did, and the
-application lost its leak, both of its downcast matches and about forty lines.
+**Fixed.** One signature. Worth its own entry because it is what an incomplete refactor looks
+like from outside: the API is *mostly* consistent, and the one place it is not is the place
+nobody had reached yet.
 
-That is the case for building a consumer early. None of this was visible from inside.
+The crate-level documentation in `dualis-core` was also still teaching
+`fn name(&self) -> &'static str` in both of its worked examples. They compiled, so nothing
+failed; they were simply showing the reader the idiom that had just been removed.
+
+## 8. Nothing checks a schedule against the domains until the first step
+
+A scene picks its schedule by name. `staggered` with a half-second frame is thirty-eight times
+the bar's explicit-diffusion limit, and the run is refused — correctly, by name, with the
+limit and the value, which is the whole argument for this library and it works.
+
+But it is refused *when the step is taken*, not when the scene is built. `Domain::max_stable_dt`
+is public, so an application can ask every domain what it can survive and refuse at build time
+where the message can name the file and the line. This one does not yet.
+
+Not a library defect. A note about where the natural seam is, and the sort of thing only
+somebody loading scenes from disk would think to want.
 
 ---
 
+## What this says about the exercise
+
+Eight findings from about four hundred lines of application code: six ergonomic, one a real
+defect in the physics, one a note about where a check belongs. Six are fixed.
+
+Findings 1, 2, 3 and 7 were the same shape. **The API was comfortable when the set of domains
+was known at compile time and awkward the moment it was not** — and that was never a decision
+anybody made. It is the shape that falls out of writing a library with no consumer, where
+`&'static str` costs nothing because every name is a literal in a test.
+
+It has been made deliberately now, in the other direction, and the cost was a tenth of the
+argument for keeping it: **no existing call site changed**, five test comparisons did, and the
+application lost its leak, both of its downcast matches and about forty lines.
+
+Finding 6 is the one that matters most, and the one nothing inside could have produced. A
+first-order startup error survived a second-order interior, a second-order wall fix, exact
+energy conservation and 345 passing tests — two of which had turned the bug into the
+specification by asserting what the implementation did. It took an outside program comparing a
+released mode against `|cos(2 pi f t)|` at four grid resolutions. Nothing in the library was
+checking a *rate*.
+
+That is the case for building a consumer early, and it is stronger than the ergonomic half.
+None of this was visible from inside.
+
 ## What this report does not cover
 
-**Coupling.** `dualis-world` runs its domains side by side and they never speak to each other:
-there is no `publish`, no `take`, no `Exchange` in the whole crate. So the part of the API this
-workspace exists for — domains meeting on a bus, audited face by face — has been exercised only
-by tests written from the inside, which is the exact condition that produced findings 1, 2
-and 3.
+**Spatial coupling.** The scene above meets on a plain channel. `Interface` and `Flux` — a
+boundary cut into faces that both sides address, audited face by face — are the newest part of
+the kernel and still have no consumer outside the workspace. `Bar1D::exposing` now takes a
+name from data, which is the first step toward one.
 
-Nothing here should be read as "the coupling API was checked from outside and found fine". It
-was not checked. A scene where a lamp warms a bar, or a bar and a room share a boundary through
-`Interface`, is the obvious next thing for this crate to do, and it is where the next batch of
-findings will come from if there is one.
-
-**Any domain but two.** Optics, mechanics and molecular have no `DomainSpec` variant, so their
-constructors have not been driven from data. `Fluid::lattice` alone takes five arguments of
-four different kinds; whether that survives contact with a scene file is untested.
+**Three of the five domains.** Optics, mechanics and molecular have no `DomainSpec` variant, so
+their constructors have not been driven from data at all. `Fluid::lattice` alone takes five
+arguments of four different kinds; whether that survives contact with a scene file is untested.

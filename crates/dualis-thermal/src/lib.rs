@@ -342,7 +342,7 @@ impl Bar1D {
     /// cross-section — a bar conducts along its length and is illuminated across it. It is
     /// only used to turn a lumped total into a distribution, so it does not enter the
     /// conduction at all.
-    pub fn exposing(mut self, boundary: &'static str, face_area: Area) -> Bar1D {
+    pub fn exposing(mut self, boundary: impl Into<String>, face_area: Area) -> Bar1D {
         self.boundary = Some(Interface::uniform(boundary, self.cells.len(), face_area));
         self
     }
