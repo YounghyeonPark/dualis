@@ -144,6 +144,43 @@ of them are commentary.
 order), `Iterative { max_iter, tol }` for strong coupling, `Multirate` for domains with very
 different stability limits.
 
+### Picking a heat model
+
+Three shapes, and choosing wrong is the most common way to get a plausible number that answers
+the wrong question:
+
+| you want | use | cost |
+| --- | --- | --- |
+| one body, one temperature | `LumpedMass` | one step per frame; check `biot_number() < 0.1` first |
+| a gradient along one thing | `Bar1D` | pays `dt < dx²/2α`; milliseconds in aluminium |
+| several bodies and the **drop between them** | `ThermalNetwork` | one step per frame per node |
+
+The third is the one people reach for too late. A motor, a laser diode on a submount, a die in a
+package: what fails is the winding or the junction, and what you can measure is the case. A
+`LumpedMass` gives you one number for both, and it is the case's.
+
+```rust
+let mut motor = ThermalNetwork::new("motor");
+let winding = motor.node("winding", Substance::copper(), Volume::from_si(18e-6),
+                         Length::mm(2.0), Temperature::celsius(25.0));
+let case = motor.node_losing_to("case", Substance::aluminium_6061(), Volume::from_si(220e-6),
+                                Length::mm(4.0), Temperature::celsius(25.0),
+                                Environment::still_air(Temperature::celsius(25.0),
+                                                       Area::from_si(0.042)));
+motor.link(winding, case, Conductance::w_per_k(0.9))?;
+motor.absorbing(winding)?;                  // where heat off the bus lands
+
+// after stepping — 6 W in, and the joint carries a 6.2 K drop at fifteen minutes:
+motor.temperature(winding);                 // the number that decides survival
+motor.heat_flow(winding, case);
+```
+
+That is `junction_to_case` in `examples/agents_quickstart.rs`, which CI runs — so it is a
+snippet that compiled and produced that number, not one written into a document by hand.
+
+Nodes are `Node` handles rather than names on purpose — see below. `node_named` is the way in if
+you are building from a file, and `handles()` walks a network you did not build.
+
 ---
 
 ## Rules you will otherwise break
@@ -176,6 +213,17 @@ exactly this reason, and `Violation` carries it.
 **A conservation check that passes is necessary and nowhere near sufficient.** A flux
 redistributed to the wrong part of a boundary keeps the total exactly right. Ask what class of
 error your check is blind to.
+
+The clearest case in this library is `ThermalNetwork`. A link adds `+q` to one node and `−q` to
+another *in the same sum*, so they cancel identically: a sign error, a transposed index, or a
+link you forgot to add passes the conservation audit at machine precision, and the winding just
+runs at a plausible wrong temperature forever. That is why nodes are handles you cannot forge
+and why every test for it is per node or against a closed form. It is also not hypothetical —
+building it surfaced an `O(h)` bias on the joint next to the heat source that the audit never
+saw, and a series-resistance formula found in one run.
+
+The habit that generalises: after your audit passes, write down one wrong program that would
+also pass it, then go and check *that*.
 
 ---
 
