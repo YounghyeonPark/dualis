@@ -138,7 +138,7 @@ What has actually been exercised, since a release pipeline you have not run is a
 | dispatch, `publish=false` | build only | six artefacts, both gates skipped |
 | dispatch, `publish=true` | 0.3.0 to PyPI | five wheels and an sdist, installed from PyPI and tested |
 | tag, version mismatch | `v9.9.9` | refused at `check-version`; nothing built, nothing uploaded |
-| tag, version match | — | **not yet run.** Differs from the proven dispatch path only in that `check-version` succeeds instead of skipping, and `startsWith(github.ref, 'refs/tags/v')` is true instead of the input comparison |
+| tag, version match | `v0.4.0` to PyPI | all four paths now run. `check-version` passed for the first time; five wheels, an sdist, and `pip install dualis==0.4.0` verified from a clean venv |
 
 The publish job's `if` needs `always()` and the two results named. A skipped job propagates
 **transitively**, and `wheels`/`sdist` opting out with their own `always()` does not opt out for
