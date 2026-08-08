@@ -145,11 +145,24 @@ jobs:
     # re-pushing a tag that marks already-published crates, or burning a version number on a
     # release whose only change is CI configuration. Both are worse than a checkbox.
     #
-    # `github.event.inputs.publish == 'true'` and not `inputs.publish`. The typed `inputs`
-    # context did not evaluate truthy for a run dispatched through the REST API, and the job
-    # silently skipped after building all six artefacts — a gate that fails closed, but a
-    # confusing twenty minutes. `github.event.inputs.*` is a string for a dispatch, always.
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true'
+    # The `always()` is load-bearing and was the actual reason this skipped twice. A skipped job
+    # propagates **transitively**: `check-version` is skipped on a dispatch, `wheels` and `sdist`
+    # opt out of that with their own `always()` and run — but they cannot opt out on behalf of a
+    # job downstream of them, so `publish` inherited the skip. The condition itself was fine both
+    # times; a diagnostic step in `sdist` prints it resolving to `true` while this job did not
+    # run, which is what finally separated the two.
+    #
+    # So the results are named explicitly, which is what `always()` obliges you to do: nothing
+    # here is implied by the graph any more.
+    # `check-version` is not named here and does not need to be: it is not in this job's `needs`,
+    # so the context would be null. A failed version check skips `wheels` and `sdist`, whose
+    # results are checked, so it is already covered — transitively, but in the direction that
+    # works.
+    if: >-
+      always()
+      && needs.wheels.result == 'success'
+      && needs.sdist.result == 'success'
+      && (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true')
     runs-on: ubuntu-latest
     environment:
       name: pypi
