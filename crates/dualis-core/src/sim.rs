@@ -220,6 +220,12 @@ pub struct Exchange {
     /// `(interface name, channel)` so the audit reports them in a fixed order.
     spatial: BTreeMap<(String, &'static str), Flux>,
     spatial_consumed: BTreeMap<(String, &'static str), f64>,
+    /// The outer step the current sweep is covering, in seconds. Zero when nobody has said —
+    /// a bare `Exchange` in a test — and [`Exchange::take_share`] falls back to taking
+    /// everything, which is the honest answer when the interval is unknown.
+    interval: f64,
+    /// How much of `interval` is still unclaimed, per channel. See `take_share`.
+    unclaimed_time: BTreeMap<&'static str, f64>,
 }
 
 impl Exchange {
@@ -245,6 +251,55 @@ impl Exchange {
     /// Look without taking.
     pub fn peek(&self, channel: &'static str) -> f64 {
         self.published.get(channel).copied().unwrap_or(0.0)
+    }
+
+    /// Take the share of a channel that belongs to a substep of length `dt`.
+    ///
+    /// For a domain that subcycles. [`Exchange::take`] empties the channel, which is right for
+    /// a domain stepping once per interval and wrong for one stepping many times: a publisher
+    /// offers a whole outer step's worth at once, so the first substep would take all of it and
+    /// the rest would find the channel dark. Every joule of the interval then lands at its
+    /// beginning, and **refining the substep stops improving the answer** — see
+    /// [`Schedule::Multirate`], where the measured error is 26% at a 300 s outer step whatever
+    /// the substep count.
+    ///
+    /// The share is taken against the time *remaining*, not against the whole interval. That is
+    /// what makes it exact: after handing out `A·dt/T` and reducing both, `A/T` is unchanged, so
+    /// the last substep — which asks for at least what is left — receives the remainder and the
+    /// channel ends empty to the last bit. Apportioning against the whole interval instead
+    /// leaves `O(n·ε·A)` stranded, and [`Exchange::audit_transfers`] uses an absolute tolerance
+    /// that would eventually refuse it.
+    ///
+    /// Falls back to [`Exchange::take`] when the interval is unknown, so a domain written
+    /// against this works unchanged under a bare `Exchange` and under
+    /// [`Schedule::Staggered`], where it steps once and the share is the whole.
+    pub fn take_share(&mut self, channel: &'static str, dt: Time) -> f64 {
+        let h = dt.to_si();
+        if self.interval <= 0.0 || !h.is_finite() || h <= 0.0 {
+            return self.take(channel);
+        }
+        let left = *self.unclaimed_time.entry(channel).or_insert(self.interval);
+        // The last substep asks for everything that is left, and gets it. Compared with a
+        // slack of `1e-12` of the interval rather than exactly, because `n` substeps of `dt/n`
+        // do not sum to `dt` in binary: three of a third leave a residue one ulp wide, and an
+        // exact comparison misses the final share and strands it on the channel.
+        if h >= left || left - h <= self.interval * 1e-12 {
+            self.unclaimed_time.insert(channel, 0.0);
+            return self.take(channel);
+        }
+        let amount = self.published.get(channel).copied().unwrap_or(0.0);
+        let share = amount * h / left;
+        self.unclaimed_time.insert(channel, left - h);
+        *self.published.entry(channel).or_insert(0.0) -= share;
+        *self.consumed.entry(channel).or_insert(0.0) += share;
+        share
+    }
+
+    /// Tell the bus what interval the current sweep covers, so [`Exchange::take_share`] can
+    /// apportion. Called by [`Simulation::advance`]; a standalone `Exchange` need not.
+    pub fn covering(&mut self, dt: Time) {
+        self.interval = dt.to_si().max(0.0);
+        self.unclaimed_time.clear();
     }
 
     /// Offer an amount that knows where on a boundary it landed.
@@ -397,6 +452,7 @@ impl Exchange {
     pub fn clear_offers(&mut self) {
         self.published.clear();
         self.spatial.clear();
+        self.unclaimed_time.clear();
     }
 }
 
@@ -583,6 +639,9 @@ impl Simulation {
     /// ledgers moved by more than the conservation tolerance.
     pub fn advance(&mut self, dt: Time) -> Result<Report, Violation> {
         let before = self.ledger();
+        // What a substep's share is measured against. Set here rather than in `sweep`, because
+        // `iterate` sweeps repeatedly over the same interval.
+        self.bus.covering(dt);
         let report = match self.schedule {
             Schedule::OneWay | Schedule::Staggered => self.sweep(dt, false)?,
             Schedule::Multirate => self.sweep(dt, true)?,

@@ -228,8 +228,11 @@ impl Domain for LumpedMass {
             ));
         }
 
-        // Everything offered on the channel this step.
-        let gained = bus.take(HEAT);
+        // This step's share of the channel, not all of it. A lumped mass is subcycled under
+        // `Schedule::Multirate`, and taking the whole outer step's joules on the first substep
+        // deposits them all at its beginning — which stops the substep count from improving
+        // anything. See `Exchange::take_share`.
+        let gained = bus.take_share(HEAT, dt);
         self.absorbed += gained;
 
         let lost = self
@@ -448,8 +451,10 @@ impl Domain for Bar1D {
         let capacity = self.cell_capacity();
 
         // Lumped heat has no place, so it goes into the first cell — where a surface
-        // absorbing light would put it, if the bar knew where the surface was.
-        let gained = bus.take(HEAT);
+        // absorbing light would put it, if the bar knew where the surface was. This step's
+        // share of it: the bar subcycles hard under `Schedule::Multirate`, and taking the whole
+        // interval at once would put every joule of it in the first substep.
+        let gained = bus.take_share(HEAT, dt);
         self.absorbed += gained;
         self.cells[0] += gained / capacity;
 

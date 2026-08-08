@@ -22,7 +22,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 359 tests, all against closed forms
+cargo test --workspace                       # 361 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -40,11 +40,13 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good application
 but to use the SDK the way a stranger would.
 [`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
-**sixteen findings, ten fixed and six argued down in writing.** The first twelve came from
+**sixteen findings, eleven fixed and five argued down in writing.** The first twelve came from
 writing the application. The last four came from running the subagents that were built out of
 what the first twelve taught — and one of those is a first-order accuracy defect in the
 kernel's own scheduler, in the schedule chosen *for* accuracy, which the conservation audit
-reports as clean to 1e-12 the entire time.
+reported as clean to 1e-12 the entire time. That one is fixed: a subcycling consumer asks the
+bus for its substep's share instead of the whole interval, and multirate went from the worse of
+the two schedules to fourteen times better than the alternative.
 
 Not one of the library's own tests could have found any of them. The ergonomic ones because a
 test is written by somebody who already knows the shape; the two real defects because nothing

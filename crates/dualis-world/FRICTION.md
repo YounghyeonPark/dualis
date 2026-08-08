@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Ten of the sixteen are fixed**, and six are recorded rather than actioned. The reasons
+**Eleven of the sixteen are fixed**, and five are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -300,16 +300,36 @@ crossed is exactly right and only its distribution in time is wrong, and a `Ledg
 representation for *when*. This is the time-domain twin of the reason `audit_transfers` had to
 become a per-face check in space.
 
-**Documented, not fixed.** `Schedule::Multirate`'s doc now carries the mechanism, the measured
-numbers and the conclusion — choose it for stability, choose the outer step for accuracy — and
-`crates/dualis/tests/multirate_timing.rs` pins the consequence, asserting that multirate is the
-worse of the two at 300 s and that the error is first order in the outer step.
+**Fixed.** The recommendation was to document it and wait for a second consumer, and the
+argument changed on inspection: a *shipped* scene already had it. `04-heater-and-bar` runs a
+quasi-static heater beside a bar that subcycles hard, so this was not a speculative API.
 
-The fix, when a second consumer needs it, is `Exchange::take_share(channel, dt)`: `Simulation`
-knows the outer step, so the bus can return `amount · dt/dt_outer` and deduct proportionally.
-About thirty lines in the kernel and one in each subcycling consumer. One thing to check rather
-than assume: `n` substeps of `dt/n` need not sum to `dt` to the last bit, and `audit_transfers`
-uses an *absolute* 1e-12, so the residue left on the channel wants measuring.
+`Exchange::take_share(channel, dt)` is the fix. `Simulation::advance` tells the bus what interval
+the sweep covers, and a subcycling consumer asks for its substep's share instead of the lot.
+`Bar1D` and `LumpedMass` use it. At a 300 s outer step multirate went from 1.89 K of error to
+0.304 K — from the worse of the two schedules to fourteen times better than the alternative.
+
+The share is apportioned against the time **remaining**, not against the whole interval, and that
+is what makes it exact: handing out `A·dt/T` and reducing both leaves `A/T` unchanged, so the last
+substep receives the remainder and the channel ends empty. Against the whole interval instead,
+`n` shares leave `O(n·ε·A)` stranded, and `audit_transfers` uses an *absolute* tolerance that
+would eventually refuse a run that was arithmetically fine. Even so the comparison needs a slack
+of `1e-12` of the interval, because three substeps of a third do not sum to one in binary and an
+exact test misses the final share.
+
+Two things the fix exposed, both mine:
+
+- **My first reference was wrong, and refining the step made the disagreement worse.** I compared
+  against `T_a + (P/hA)(1 − e^(−t/τ))`, which is the closed form of *linear* loss, on a plate whose
+  `Environment` also radiates. So the real equilibrium was lower, the run sat below the reference,
+  and finer steps moved *away* from it. Explicit Euler must overshoot, so a scheme sitting below
+  a reference and diverging from it on refinement is a reference that is wrong. Fixed by setting
+  the emissivity to zero — which is buildable from the prelude only because of finding 15.
+- **A test of mine was averaging the render panel again.** `a_heater_and_a_bar_meet_on_the_bus`
+  measured the bar's mean from the sampled field rather than from the cells, and passed at 1e-6
+  only because the field was nearly uniform by the end. Changing *when* the heat arrives changed
+  the profile enough to expose it at 4.1e-6. That is finding 10, in a test written after finding
+  10 was written down.
 
 ## 14. `Report` cannot be named without going through a module
 

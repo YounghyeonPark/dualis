@@ -271,21 +271,26 @@ fn a_heater_and_a_bar_meet_on_the_bus() {
     // And the bar is warmer by the amount those joules buy. An independent number: 6 J into
     // 20 mm x 1 cm^2 of aluminium is 6 / (rho V c_p), and the bar is insulated so none of it
     // leaves. Computed here from the substance rather than read off the bar.
-    let al = Substance::aluminium_6061();
-    let volume = Volume::from_si(20e-3 * 100e-6);
-    let capacity = al
-        .heat_capacity(volume)
+    //
+    // **Read from the domain, not from the panel.** This assertion used to average the render
+    // panel, which is `ScalarField` *sampled* at evenly spaced points including both ends — and
+    // the bar's grid is cell-centred, so the end samples sit half a cell outside the outermost
+    // centres and the average is not the state. It passed at 1e-6 only because the field was
+    // nearly uniform by the end of the run; changing *when* the heat arrives changed the
+    // profile enough to expose it at 4.1e-6. That is `FRICTION.md` finding 10, in a test
+    // written after finding 10 was documented.
+    let capacity = Substance::aluminium_6061()
+        .heat_capacity(Volume::from_si(20e-3 * 100e-6))
         .expect("aluminium has a specific heat");
     let expected_rise = 6.0 / capacity.to_si();
-    let mean_rise = frames[frames.len() - 1].panels[0]
-        .values()
-        .iter()
-        .sum::<f64>()
-        / frames[0].panels[0].values().len() as f64
-        - 20.0;
+    let bar = world
+        .simulation()
+        .domain_as::<Bar1D>("bar")
+        .expect("the bar is still there");
+    let mean_rise = bar.mean_temperature().to_si() - Temperature::celsius(20.0).to_si();
     assert!(
-        (mean_rise / expected_rise - 1.0).abs() < 1e-6,
-        "the bar should have risen {expected_rise:.4} K, got {mean_rise:.4}"
+        (mean_rise / expected_rise - 1.0).abs() < 1e-9,
+        "the bar should have risen {expected_rise:.6} K, got {mean_rise:.6}"
     );
 }
 

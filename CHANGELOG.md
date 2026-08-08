@@ -3,7 +3,7 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found sixteen places it is awkward, ten of which have been changed — see
+has already found sixteen places it is awkward, eleven of which have been changed — see
 `dualis-world` below.
 
 Entries record what was *found* as well as what was added, because several of the more useful
@@ -15,7 +15,7 @@ messages carry the full account.
 Version bumped to 0.2.0 in the tree; **not yet published**. crates.io still carries 0.1.0, so
 `dualis = "0.1"` is what a consumer gets and none of the changes below are in it.
 
-### Found and documented
+### Fixed — the kernel scheduler
 
 - **`Schedule::Multirate` does not refine a coupled quantity.** `sweep` steps one domain to
   completion before the next, so a quasi-static publisher puts a whole outer step's joules on the
@@ -29,10 +29,19 @@ Version bumped to 0.2.0 in the tree; **not yet published**. crates.io still carr
   exactly right; only its distribution in time is wrong, and a `Ledger` has no representation for
   *when*. The time-domain twin of the reason `audit_transfers` became a per-face check.
 
-  Documented in `Schedule::Multirate` with the numbers and the conclusion — choose it for
-  stability, choose the outer step for accuracy — and pinned by
-  `crates/dualis/tests/multirate_timing.rs`. Not fixed: the fix is `Exchange::take_share`, worth
-  building when a second consumer subcycles across a coupling.
+  **Fixed** by `Exchange::take_share(channel, dt)`, new in the kernel: `advance` tells the bus
+  what interval the sweep covers and a subcycling consumer asks for its substep's share instead
+  of the lot. `Bar1D` and `LumpedMass` use it. Error at a 300 s outer step went from 1.89 K to
+  0.304 K — from the worse of the two schedules to fourteen times better than the alternative.
+
+  The share is apportioned against the time *remaining* rather than the whole interval, which is
+  what leaves the channel exactly empty: `A·dt/T` with both reduced keeps `A/T`, so the last
+  substep takes the remainder. Against the whole interval, `n` shares strand `O(n·ε·A)` where
+  `audit_transfers` uses an absolute tolerance.
+
+  Built rather than deferred because the recommendation to wait for a second consumer did not
+  survive checking: `04-heater-and-bar` already pairs a quasi-static heater with a bar that
+  subcycles hard, so a shipped scene had the defect.
 
 ### Fixed — what the two new subagents found
 
