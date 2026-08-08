@@ -250,6 +250,70 @@ pub enum DomainSpec {
         #[serde(default)]
         exposes: Option<Boundary>,
     },
+    /// Several lumped bodies joined by conductances: junction, case, ambient.
+    ///
+    /// The one shape a `lump` cannot express. A `lump` reports the temperature of the whole
+    /// thing, and the number a designer needs is the *winding*, which is hotter than the case by
+    /// however much the joint between them resists. A network carries that drop explicitly.
+    ///
+    /// This is also the only spec whose parts refer to each other by name, so it is where the
+    /// library's handle-based API meets a file. [`ThermalNetwork`] deliberately does not accept
+    /// names for links — a link naming a node that does not exist balances the books perfectly
+    /// while modelling something else — so the resolution happens here, once, where the error can
+    /// quote the file's own vocabulary back.
+    Network {
+        /// Domain name.
+        name: String,
+        /// The bodies. Declared before the links, which refer to them by `name`.
+        nodes: Vec<NetworkNode>,
+        /// The conductances between them, in W/K.
+        links: Vec<NetworkLink>,
+        /// Which node heat arriving on the bus lands in — a winding, usually.
+        absorbing: String,
+    },
+}
+
+/// One body in a [`DomainSpec::Network`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkNode {
+    /// What the links call it. Unique within the network.
+    pub name: String,
+    /// One of `copper`, `aluminium`, `electrical_steel`, `fr4`, `pla`. Mixing them is the
+    /// point: a motor is not a billet of its main metal.
+    pub material: String,
+    /// Volume of this body.
+    pub volume_cm3: f64,
+    /// Conduction path length within the body, for its Biot number.
+    pub thickness_mm: f64,
+    /// Starting temperature.
+    pub initial_c: f64,
+    /// If absent, the body is interior: it conducts to its neighbours and loses to nothing.
+    #[serde(default)]
+    pub loses_to: Option<NetworkAmbient>,
+}
+
+/// Still air a node loses heat to.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkAmbient {
+    /// Air temperature.
+    pub ambient_c: f64,
+    /// Surface area exposed to it.
+    pub area_cm2: f64,
+}
+
+/// A conductance between two nodes of a [`DomainSpec::Network`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkLink {
+    /// Name of one node.
+    pub from: String,
+    /// Name of the other. Order does not matter; a conductance is symmetric.
+    pub to: String,
+    /// The conductance, in watts per kelvin. Repeats between the same pair add, as parallel
+    /// paths do.
+    pub w_per_k: f64,
 }
 
 /// How a room's field is set up before the clock starts.
@@ -317,6 +381,7 @@ impl DomainSpec {
             | DomainSpec::Bounce { name, .. }
             | DomainSpec::Atoms { name, .. }
             | DomainSpec::Lump { name, .. }
+            | DomainSpec::Network { name, .. }
             | DomainSpec::Light { name, .. } => name,
         }
     }
@@ -511,6 +576,83 @@ impl DomainSpec {
                     Area::from_si(area_cm2 * 1e-4),
                 ),
             )),
+            DomainSpec::Network {
+                name,
+                nodes,
+                links,
+                absorbing,
+            } => {
+                let mut network = ThermalNetwork::new(name.clone());
+                for n in nodes {
+                    let substance = match n.material.as_str() {
+                        "copper" => Substance::copper(),
+                        "aluminium" => Substance::aluminium_6061(),
+                        "electrical_steel" => Substance::electrical_steel(),
+                        "fr4" => Substance::fr4(),
+                        "pla" => Substance::pla(),
+                        other => {
+                            return Err(format!(
+                                "{name}/{}: unknown material {other:?}; known materials are \
+                                 \"copper\", \"aluminium\", \"electrical_steel\", \"fr4\", \"pla\"",
+                                n.name
+                            ))
+                        }
+                    };
+                    let volume = Volume::from_si(n.volume_cm3 * 1e-6);
+                    let thickness = Length::mm(n.thickness_mm);
+                    let initial = Temperature::celsius(n.initial_c);
+                    match &n.loses_to {
+                        Some(air) => network.node_losing_to(
+                            n.name.clone(),
+                            substance,
+                            volume,
+                            thickness,
+                            initial,
+                            Environment::still_air(
+                                Temperature::celsius(air.ambient_c),
+                                Area::from_si(air.area_cm2 * 1e-4),
+                            ),
+                        ),
+                        None => {
+                            network.node(n.name.clone(), substance, volume, thickness, initial)
+                        }
+                    };
+                }
+
+                // The resolver the library declines to provide, and the reason it declines: here
+                // a name that is not a node is a *file* mistake, so the message can list what the
+                // file did define. Inside the library the same lookup would have to fail silently
+                // or invent an error vocabulary out of strings it did not choose.
+                let find = |who: &str| -> Result<_, String> {
+                    network.node_named(who).ok_or_else(|| {
+                        let known: Vec<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
+                        format!(
+                            "{name}: no node named {who:?}; this network defines {}",
+                            known.join(", ")
+                        )
+                    })
+                };
+                let mut resolved = Vec::with_capacity(links.len());
+                for l in links {
+                    resolved.push((find(&l.from)?, find(&l.to)?, l.w_per_k));
+                }
+                let sink = find(absorbing)?;
+
+                // Applied after resolution, so a bad name is reported before a half-built network
+                // exists. `link` and `absorbing` both return `Violation`, which is not this
+                // function's error type — a self-link, a negative conductance or a node from
+                // another network. All three are file mistakes too, so they are worth the same
+                // treatment rather than an `unwrap`.
+                for (a, b, w) in resolved {
+                    network
+                        .link(a, b, Conductance::w_per_k(w))
+                        .map_err(|e| format!("{name}: {e}"))?;
+                }
+                network
+                    .absorbing(sink)
+                    .map_err(|e| format!("{name}: {e}"))?;
+                Box::new(network)
+            }
             DomainSpec::Bar {
                 name,
                 length_mm,
@@ -743,6 +885,9 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
         | DomainSpec::Bounce { .. }
         | DomainSpec::Atoms { .. }
         | DomainSpec::Lump { .. }
+        // A network declines a field on purpose: its nodes have capacities, not positions, and
+        // a conductance is not a distance. See `ThermalNetwork::as_field`.
+        | DomainSpec::Network { .. }
         | DomainSpec::Light { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
         DomainSpec::Bar {
             cells, length_mm, ..

@@ -1,6 +1,6 @@
 //! dualis-thermal: heat, as a domain built on the `dualis-core` kernel.
 //!
-//! Two domains, chosen because they sit either side of the line that matters to a
+//! Three domains. The first two sit either side of the line that matters to a
 //! scheduler:
 //!
 //! - [`LumpedMass`] has one temperature and no internal structure. Its stability
@@ -11,6 +11,16 @@
 //!   seven milliseconds in aluminium, and *that* two-orders-of-magnitude gap between
 //!   two parts of the same instrument is what
 //!   [`Schedule::Multirate`](dualis_core::Schedule::Multirate) exists for.
+//!
+//! The third answers a different question. Both of the above report *one* body:
+//!
+//! - [`ThermalNetwork`] is n lumped bodies joined by conductances — winding, stator,
+//!   housing — and it carries the **drop across each joint**, which is the number a
+//!   designer actually needs and the one a single lumped mass cannot give: it reports
+//!   the temperature of the skin and the winding together. It also expresses a *contact*
+//!   resistance between different materials, which [`Bar1D`]'s uniform grid cannot.
+//!   A network of one node reduces to a [`LumpedMass`] bit for bit, so it inherits every
+//!   check that domain already passes.
 //!
 //! # Where the heat comes from
 //!
@@ -33,6 +43,9 @@
 // whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
 // paragraph exists somewhere, and not in the sense a reader needs.
 #![deny(missing_docs)]
+
+pub mod network;
+
 use dualis_core::conserved::quantity;
 use dualis_core::{Domain, Exchange, Interface, Kind, Ledger, ScalarField, Substance, Violation};
 use dualis_units::{
@@ -40,6 +53,7 @@ use dualis_units::{
     STEFAN_BOLTZMANN,
 };
 use glam::DVec3;
+pub use network::{Node, ThermalNetwork};
 
 /// The bus channel heat arrives on, in joules.
 ///
@@ -219,10 +233,7 @@ impl LumpedMass {
 
     /// `d(loss)/dT` at a temperature: convection plus the linearised radiative term.
     fn loss_conductance(&self, at: Temperature) -> f64 {
-        let area = self.environment.area.to_si();
-        let t = at.to_si().max(0.0);
-        self.environment.convection_w_per_m2_k * area
-            + 4.0 * self.emissivity() * STEFAN_BOLTZMANN.to_si() * area * t * t * t
+        linearised_loss_conductance(&self.environment, at, self.emissivity())
     }
 
     /// Steady-state rise for a constant absorbed power, **with radiation**.
@@ -725,6 +736,27 @@ impl Bar1D {
             self.cells[(i + 1).min(last)],
         )
     }
+}
+
+/// `d(loss)/dT` for an environment at a temperature: convection plus the linearised radiative
+/// term `4εσAT³`.
+///
+/// Shared by [`LumpedMass::time_constant`] and [`ThermalNetwork`] rather than written out twice,
+/// so the two cannot drift apart. A network of one node has to reduce to a lumped mass *exactly*
+/// — [`one_node_is_a_lumped_mass_bit_for_bit`] compares the two bit for bit over a whole
+/// trajectory including the step limit — and a second copy of this expression is the obvious way
+/// for that to quietly stop being true.
+///
+/// [`one_node_is_a_lumped_mass_bit_for_bit`]: https://github.com/YounghyeonPark/dualis-core/blob/main/crates/dualis-thermal/tests/network_closed_forms.rs
+pub(crate) fn linearised_loss_conductance(
+    environment: &Environment,
+    at: Temperature,
+    emissivity: f64,
+) -> f64 {
+    let area = environment.area.to_si();
+    let t = at.to_si().max(0.0);
+    environment.convection_w_per_m2_k * area
+        + 4.0 * emissivity * STEFAN_BOLTZMANN.to_si() * area * t * t * t
 }
 
 #[cfg(test)]

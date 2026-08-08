@@ -2,14 +2,14 @@
 
 `dualis-world` exists to use the SDK from outside and write down where that is awkward. A
 library with no consumers is a library whose ergonomics nobody has measured, and none of the
-357 tests inside the workspace can answer this question about themselves — they are written by
+378 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it, couples
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Eleven of the sixteen are fixed**, and five are recorded rather than actioned. The reasons
+**Twelve of the seventeen are fixed**, and five are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -366,12 +366,39 @@ Correct use of the constructor, correct field, unreadable sentence.
 
 ---
 
+## 17. `ThermalNetwork::nodes()` returned a count that could not be turned into anything
+
+A `Node` handle can only come from `node` or `node_losing_to`. That is deliberate and it is the
+reason a link naming a node that does not exist is unrepresentable — the case the conservation
+audit is structurally blind to, since a link's `+q` and `−q` cancel identically.
+
+But it also meant a caller holding a network it did not build had no way in. `nodes()` gave a
+count, `label` and `temperature` both needed a handle, and there was no way to obtain one except
+`node_named`, which needs a name you do not have. The count was information you could not act on.
+
+Found the first time this application tried to print a network's node temperatures — the one
+thing the domain exists to produce.
+
+**Fixed.** `handles() -> impl Iterator<Item = (Node, &str)>`. A dozen lines, and it makes `nodes()`
+mean something.
+
+The same shape as findings 4, 8, 9 and 10: **the API is comfortable when the parts are known at
+compile time and awkward the moment they are not.** A caller writing `let winding = net.node(…)`
+never noticed, because they were holding the handles already. That is now five of seventeen
+findings with one underlying cause, and the count is the argument.
+
+---
+
 ## What this says about the exercise
 
-Sixteen findings, and the source has shifted. The first twelve came from writing the
-application; the last four came from **running the two subagents built out of what the first
-twelve taught** — one hunting outcomes that come out empty, one building against the *published*
-0.1.0 rather than the working tree. Ten are fixed.
+Seventeen findings, and the source has shifted twice. The first twelve came from writing the
+application; four came from **running the two subagents built out of what the first twelve
+taught** — one hunting outcomes that come out empty, one building against the *published* 0.1.0
+rather than the working tree. The seventeenth came from a third source again: adding a domain the
+library did not have, and finding that the *new* API had the old shape.
+
+Twelve are fixed. That line said "ten" until this edit counted them, which is the failure
+`prose-auditor` exists for and the second time this file has been the one carrying it.
 
 Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was
 ergonomic or a defect in a domain; that one is a first-order accuracy defect in the *kernel's*

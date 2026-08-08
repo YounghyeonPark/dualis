@@ -520,20 +520,71 @@ fn every_scene_that_ships_runs_and_says_something_true() {
             .unwrap_or_else(|v| panic!("{name} ({title}) stopped conserving: {v}"));
 
         let last = frames.last().expect("a run produces frames");
-        // The crate's only guard against a scene that draws nothing. It used to be an
+        // The crate's only guard against a scene that checks nothing. It used to be an
         // out-of-bounds panic inside a loop over ten files, naming neither the scene nor the
         // domain; a shipped scene whose every domain lacked a field would have reported that.
-        assert!(
-            !last.panels.is_empty(),
-            "{name} ({title}): no domain produced a panel, so there is nothing to draw              and nothing to check"
-        );
-        let peak = last.panels[0]
-            .values()
-            .iter()
-            .fold(0.0f64, |m, v| m.max(v.abs()));
-        assert!(peak.is_finite(), "{name}: the field went to {peak}");
+        //
+        // A scene may legitimately draw nothing — a thermal network's nodes have capacities and
+        // not positions, so `as_field` declines — but then it owes an arm in the match below,
+        // and this list is how it says so. Adding a name here without an arm reintroduces
+        // exactly the hole: a scene that runs, draws nothing, checks nothing, and passes.
+        const NOTHING_TO_DRAW: [&str; 1] = ["11-motor-thermal-network.json"];
+        // Zero for a scene with no panel, which never reads it — the arms below that do are all
+        // in the drawn branch.
+        let peak = last.panels.first().map_or(0.0, |p| {
+            p.values().iter().fold(0.0f64, |m, v| m.max(v.abs()))
+        });
+        if NOTHING_TO_DRAW.contains(&name.as_str()) {
+            assert!(
+                last.panels.is_empty(),
+                "{name}: listed as undrawable but it produced a panel — drop it from the list"
+            );
+        } else {
+            assert!(
+                !last.panels.is_empty(),
+                "{name} ({title}): no domain produced a panel, so there is nothing to draw \
+                 and nothing to check"
+            );
+            assert!(peak.is_finite(), "{name}: the field went to {peak}");
+        }
 
         match name.as_str() {
+            // The ordering a network exists to produce, and the reason a `lump` will not do:
+            // heat enters the winding and leaves through the housing, so the temperatures must
+            // fall along the chain and every drop must be positive. A transposed index or a
+            // one-sided link keeps the ledger exact and breaks this.
+            "11-motor-thermal-network.json" => {
+                let net = world
+                    .simulation()
+                    .domain_as::<ThermalNetwork>("motor")
+                    .expect("the motor is a thermal network");
+                let temps: Vec<(&str, f64)> = net
+                    .handles()
+                    .map(|(n, label)| (label, net.temperature(n).to_si()))
+                    .collect();
+                assert_eq!(temps.len(), 3);
+                for pair in temps.windows(2) {
+                    assert!(
+                        pair[0].1 > pair[1].1,
+                        "{}: {} at {:.2} K is not above {} at {:.2} K",
+                        name,
+                        pair[0].0,
+                        pair[0].1,
+                        pair[1].0,
+                        pair[1].1
+                    );
+                }
+
+                // And the winding is meaningfully hotter than the housing, not hotter by a
+                // rounding error — 12 W across 0.9 and 2.4 W/K is 13.3 + 5.0 K at steady state,
+                // and this run stops around half a time constant in, so a good part of it.
+                let (hot, cold) = (temps[0].1, temps[2].1);
+                assert!(
+                    hot - cold > 10.0,
+                    "{name}: the winding is only {:.2} K above the housing",
+                    hot - cold
+                );
+            }
             // A standing mode keeps its shape and rides |cos|, so it can never exceed the
             // amplitude it was released at. A scheme going unstable shows up here first.
             "01-room-mode.json" | "02-room-higher-mode.json" => {

@@ -6,6 +6,7 @@
 //! dualis-world --emit-default s.json  # write the built-in scene out to start from
 //! ```
 
+use dualis::prelude::ThermalNetwork;
 use dualis_world::{render, Scene, World};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,6 +57,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let last = &frames[frames.len() - 1];
     for spec in &world.scene().domains {
         let Some(panel) = last.panels.iter().find(|p| p.name == spec.name()) else {
+            // A network has no field on purpose — a conductance is not a distance — but the
+            // number it exists to produce is the *drop across a joint*, and "not drawn" reports
+            // none of it. The picture is not the only output.
+            if let Some(net) = world.simulation().domain_as::<ThermalNetwork>(spec.name()) {
+                let nodes: Vec<_> = net.handles().collect();
+                println!("  {:<14} {:<12} node temperatures", spec.name(), "network");
+                for (i, (node, label)) in nodes.iter().enumerate() {
+                    // The drop against the previous node, which is the number a network exists
+                    // to give and the one a single lumped mass cannot: it reports the housing
+                    // and the winding as one temperature.
+                    let drop = match i.checked_sub(1).map(|j| nodes[j]) {
+                        Some((up, up_label)) => format!(
+                            ",  {:.2} K below {up_label}",
+                            net.temperature(up).to_si() - net.temperature(*node).to_si()
+                        ),
+                        None => String::new(),
+                    };
+                    println!(
+                        "    {:<12} {:>8.2} C{}",
+                        label,
+                        net.temperature(*node).to_si() - 273.15,
+                        drop
+                    );
+                }
+                continue;
+            }
             println!(
                 "  {:<14} {:<12} no field and no bodies — not drawn",
                 spec.name(),

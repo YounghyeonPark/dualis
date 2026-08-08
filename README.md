@@ -61,13 +61,13 @@ its own scheme. There are tests for those rates now.
 | `dualis-units` | Dimensional analysis. SI quantities and vectors whose dimension lives in the type, so `Length + Time` does not compile |
 | `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, closed-form rigid motion |
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
-| `dualis-thermal` | Heat: lumped masses, explicit conduction, radiative and convective loss |
+| `dualis-thermal` | Heat: lumped masses, explicit conduction, networks of bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and not on PyPI. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with ten scenes across all five domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with eleven scenes across all five domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
 dualis-units       no dependencies but glam and serde

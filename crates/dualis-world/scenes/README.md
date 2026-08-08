@@ -34,6 +34,19 @@ Those two are the same physics told twice, and the difference between them is th
 argument for `Interface` and `Flux`. A conservation audit passes either way; only the picture
 tells them apart.
 
+| Scene | What it shows |
+| --- | --- |
+| `11-motor-thermal-network` | 12 W into a copper winding, out through electrical steel and an aluminium housing. Three materials, two joints, and the drop across each |
+
+The one scene with **nothing to draw**. A network's nodes have capacities, not positions, so
+`as_field` declines to invent a continuum and the renderer has no panel to make — the numbers
+are the output. That is also the point: a `lump` would report the motor as one temperature, and
+the winding runs 13 K above the housing at half a time constant in. The thing that fails is not
+the thing you can measure.
+
+The scene test carries a matching list, so an undrawable scene has to earn its place with an
+explicit check rather than passing by having nothing to check.
+
 ## Motion — `dualis-mechanics`
 
 | Scene | What it shows |

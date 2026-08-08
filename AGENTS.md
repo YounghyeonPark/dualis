@@ -135,7 +135,7 @@ of them are commentary.
 | `dualis-units` | `Length`, `Time`, `Mass`, `Energy`, `Power`, … and the vector forms. Dimensions in the type |
 | `dualis-core` | The kernel: `Domain`, `Exchange`, `Simulation`, `Schedule`, `Ledger`, `Violation`, `Interface`, `Flux`, `Rng`, integrators, fields |
 | `dualis-optics` | Radiometry, Fresnel and coatings, dispersion, rays, Airy diffraction, MTF, Zernike, PSFs, detector noise |
-| `dualis-thermal` | `LumpedMass`, `Bar1D` conduction, radiative and convective loss |
+| `dualis-thermal` | `LumpedMass`, `Bar1D` conduction, `ThermalNetwork` of n bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
 | `dualis-acoustic` | The wave equation on a staggered grid: `Tube`, `Room`, impedance boundaries |
 | `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |

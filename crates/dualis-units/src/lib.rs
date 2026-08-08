@@ -363,6 +363,13 @@ pub type Frequency = Qty<0, 0, -1, 0, 0, 0, 0>;
 pub type Irradiance = Qty<0, 1, -3, 0, 0, 0, 0>;
 /// W·m⁻¹·K⁻¹ — the `k` of Fourier's law.
 pub type ThermalConductivity = Qty<1, 1, -3, 0, -1, 0, 0>;
+/// W·K⁻¹ — how fast heat crosses a joint, `UA`.
+///
+/// Dimensionally [`Power`] per [`Temperature`], and equivalently [`ThermalConductivity`] times
+/// a [`Length`], which is the physically meaningful reading: `kA/L`. It is what a *contact*
+/// resistance is measured in — a bolted joint, a winding pressed into a stator — and those have
+/// no bulk conductivity to be derived from, which is why the quantity exists in its own right.
+pub type Conductance = Qty<2, 1, -3, 0, -1, 0, 0>;
 /// J·kg⁻¹·K⁻¹ — the `c_p` that says how much heat a gram of glass can hide.
 pub type SpecificHeat = Qty<2, 0, -2, 0, -1, 0, 0>;
 /// m²·s⁻¹ — thermal diffusivity `α = k/(ρ c_p)`, and also mass diffusivity.
@@ -466,6 +473,10 @@ product!(MomentOfInertia, Frequency => AngularMomentum);
 product!(Stiffness, Length => Force);
 product!(Damping, Velocity => Force);
 product!(Mass, SpecificHeat => HeatCapacity);
+// UA·ΔT is watts, and C/UA is a time — the two identities a thermal network is built out of,
+// so the type system checks them rather than a comment claiming them.
+product!(Conductance, Temperature => Power);
+product!(Conductance, Time => HeatCapacity);
 product!(HeatCapacity, Temperature => Energy);
 product!(Frequency, Time => Dimensionless);
 
@@ -659,6 +670,21 @@ impl ThermalConductivity {
 impl SpecificHeat {
     /// J·kg⁻¹·K⁻¹, the unit a materials table uses.
     pub fn j_per_kg_k(v: f64) -> SpecificHeat {
+        Qty(v)
+    }
+}
+
+impl Conductance {
+    /// Watts per kelvin.
+    pub fn w_per_k(v: f64) -> Conductance {
+        Qty(v)
+    }
+}
+
+impl HeatCapacity {
+    /// Joules per kelvin. The companion to [`Conductance::w_per_k`]: their ratio is a time
+    /// constant, and the type system says so.
+    pub fn j_per_k(v: f64) -> HeatCapacity {
         Qty(v)
     }
 }
