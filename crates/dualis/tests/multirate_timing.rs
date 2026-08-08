@@ -10,6 +10,7 @@ use dualis::prelude::*;
 struct Lamp {
     watts: f64,
     reserve: f64,
+    saved: Option<f64>,
 }
 
 impl Domain for Lamp {
@@ -27,6 +28,17 @@ impl Domain for Lamp {
     }
     fn ledger(&self) -> Ledger {
         Ledger::new().with(quantity::ENERGY, self.reserve)
+    }
+    fn checkpoint(&mut self) {
+        self.saved = Some(self.reserve);
+    }
+    fn restore(&mut self) {
+        if let Some(r) = self.saved {
+            self.reserve = r;
+        }
+    }
+    fn supports_restore(&self) -> bool {
+        true
     }
 }
 
@@ -72,6 +84,7 @@ fn rise_after(schedule: Schedule, outer: Time, steps: usize) -> f64 {
         .with(Lamp {
             watts: 2.0,
             reserve: f64::INFINITY,
+            saved: None,
         })
         .with(plate());
     for _ in 0..steps {
@@ -197,4 +210,27 @@ fn an_unknown_interval_hands_over_everything() {
     bus.publish(HEAT, 42.0);
     assert_eq!(bus.take_share(HEAT, Time::from_si(0.1)), 42.0);
     assert_eq!(bus.peek(HEAT), 0.0);
+}
+
+/// **A hypothesis from a design review, tested.**  saves only the
+/// temperature, and  reports . Under  the
+/// simulation restores before each sweep after the first, so a second sweep would add its
+/// losses on top of the first while the temperature is rewound.
+#[test]
+fn a_lumped_mass_survives_an_iterative_sweep() {
+    let mut sim = Simulation::new(Schedule::Iterative {
+        max_iter: 3,
+        tol: 0.0,
+    })
+    .conservation_tolerance(1e-9)
+    .with(Lamp {
+        watts: 2.0,
+        reserve: 1e9,
+        saved: None,
+    })
+    .with(plate());
+    for _ in 0..4 {
+        sim.advance(Time::from_si(10.0))
+            .expect("an iterative sweep must not create energy");
+    }
 }
