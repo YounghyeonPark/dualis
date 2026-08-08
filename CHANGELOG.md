@@ -3,7 +3,7 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found twelve places it is awkward, seven of which have been changed — see
+has already found sixteen places it is awkward, ten of which have been changed — see
 `dualis-world` below.
 
 Entries record what was *found* as well as what was added, because several of the more useful
@@ -14,6 +14,61 @@ messages carry the full account.
 
 Version bumped to 0.2.0 in the tree; **not yet published**. crates.io still carries 0.1.0, so
 `dualis = "0.1"` is what a consumer gets and none of the changes below are in it.
+
+### Found and documented
+
+- **`Schedule::Multirate` does not refine a coupled quantity.** `sweep` steps one domain to
+  completion before the next, so a quasi-static publisher puts a whole outer step's joules on the
+  bus at once and a subcycling consumer takes all of them on its *first* substep. Refining the
+  substep therefore does not move the answer: the error is first order in the **outer** step and
+  independent of the substep. Measured on a lumped plate under a lamp — 26.2% low at a 300 s
+  outer step, 13.8% at 150 s, 7.1% at 75 s, whatever the substep count — and at 300 s the
+  schedule chosen *for* accuracy is worse than `Staggered`, with the errors on opposite sides.
+
+  Every one of those runs passes the conservation audit at ~1e-12. The total that crossed is
+  exactly right; only its distribution in time is wrong, and a `Ledger` has no representation for
+  *when*. The time-domain twin of the reason `audit_transfers` became a per-face check.
+
+  Documented in `Schedule::Multirate` with the numbers and the conclusion — choose it for
+  stability, choose the outer step for accuracy — and pinned by
+  `crates/dualis/tests/multirate_timing.rs`. Not fixed: the fix is `Exchange::take_share`, worth
+  building when a second consumer subcycles across a coupling.
+
+### Fixed — what the two new subagents found
+
+- **`Violation::at`'s cases printed an ungrammatical sentence.** They carry a *message* in
+  `quantity` and `Display` had no branch for them, so the first error a consumer ever saw read
+  "substance has no heat capacity is not conserved at plate: inf". A third branch.
+- **`Report` could not be named without a module path**, though it is what `advance` returns.
+  Added to `dualis-core`'s root and the prelude.
+- **`Substance` was in the prelude and unbuildable from it**: `bulk` leaves `thermal: None`,
+  which `LumpedMass` refuses to step, and the three types needed to supply one were not exported.
+  `ThermalProps`, `MechanicalProps`, `AcousticProps`, `ThermalConductivity` and
+  `ThermalExpansion` now are.
+- **The scene format discarded unknown keys.** `serde` does that by default, which is right for
+  a wire protocol and wrong for a saved document: `main.rs`'s own built-in scene kept the
+  pre-`release` spelling for two commits and nothing failed, because the keys were dropped and
+  the field fell back to its `Default`. Editing them was a no-op that reported success.
+  `deny_unknown_fields` on `Scene`, `DomainSpec`, `Release`, `ScheduleSpec` and `Boundary`.
+- **The round-trip test could not have caught that.** Both sides of its byte assertion were
+  serialiser output, so the hand-written spelling never entered any comparison. It now parses the
+  text a person would type and requires each stated value to survive.
+- **An unrecognised `finish` produced a silent zero-watt lamp.** The early return also skipped
+  `with_reserve`, so the reserve stayed infinite, so `Light::ledger` reported nothing, so the
+  audit had nothing to compare — and the scene ran green at `conservation_tolerance(0.0)`, the
+  strictest setting expressible, with the lamp doing nothing. One character, `aluminium` against
+  `aluminum`. `DomainSpec::build` is fallible now and names the finishes it knows.
+- **Two domains could share a name.** `Simulation::domain` takes the first match, so the second
+  was never sampled and the first was drawn twice under the second's label and geometry — a
+  500 °C bar reported as 20 °C, twice. `World::build` refuses it.
+- **A scene whose every domain lacked a field wrote a zero-byte SVG and exited 0**, and "0 KiB"
+  could not distinguish that from a legitimate 937-byte strip. The report is a row per *domain*
+  now, naming the ones with nothing to draw, with the run-wide extremum beside the final value —
+  because a ball that bounced half a metre and one that never moved both end at zero. An empty
+  picture is refused rather than written.
+- **One colour scale spanned panels of different units**, so a 1 Pa room beside a 7546 m/s orbit
+  rendered as an empty bordered square while the numbers beside it looked fine. One extent per
+  panel now, still shared across frames.
 
 ### Changed — breaking
 

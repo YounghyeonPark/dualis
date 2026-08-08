@@ -22,7 +22,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 357 tests, all against closed forms
+cargo test --workspace                       # 359 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -37,15 +37,19 @@ Every claim in this workspace is checked against a closed form or against an ind
 computation rather than against an application that might be wrong in the same direction.
 Where no closed form exists, the README says so.
 
-There is now one consumer, `dualis-world`, and its first job was not to be a good
-application but to use the SDK the way a stranger would. It came back with five places the
-API is awkward and one real defect in the acoustic startup, all in
-[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) — twelve of them now,
-seven fixed and five argued down in writing, one of those because the kernel already refuses
-the mistake it describes. Not
-one of the library's own tests could have found them — the ergonomic ones because a test is
-written by somebody who already knows the shape, and the defect because nothing here was
-checking a *rate*. There are two tests for that rate now.
+There is now one consumer, `dualis-world`, and its first job was not to be a good application
+but to use the SDK the way a stranger would.
+[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
+**sixteen findings, ten fixed and six argued down in writing.** The first twelve came from
+writing the application. The last four came from running the subagents that were built out of
+what the first twelve taught — and one of those is a first-order accuracy defect in the
+kernel's own scheduler, in the schedule chosen *for* accuracy, which the conservation audit
+reports as clean to 1e-12 the entire time.
+
+Not one of the library's own tests could have found any of them. The ergonomic ones because a
+test is written by somebody who already knows the shape; the two real defects because nothing
+here was checking a *rate*, and both were caught by comparing a run against the closed form of
+its own scheme. There are tests for those rates now.
 
 ## The crates
 

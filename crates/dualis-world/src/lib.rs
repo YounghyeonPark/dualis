@@ -30,7 +30,19 @@ use heater::Heater;
 use light::Light;
 
 /// What to simulate, in a form that can be written down rather than compiled in.
+///
+/// `deny_unknown_fields`, on this and on every type below it, and the reason is worth stating.
+/// `serde` discards unknown keys by default, which is right for a wire protocol that must
+/// tolerate a newer peer and wrong for a document somebody saved. A key this format does not
+/// know is a typo or a version skew, and either way discarding it makes the file say something
+/// the code will not do — silently, with the field falling back to its `Default`.
+///
+/// That happened. `main.rs`'s own built-in scene kept the pre-`release` spelling for two
+/// commits after the format changed, and nothing failed: `mode` and `amplitude_pa` were
+/// dropped, `Release::default()` filled in the same (1,1) mode at 1 Pa, and the output was
+/// byte-identical. Editing those keys was a no-op that reported success.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Scene {
     /// Shown in the output; has no effect on the physics.
     pub title: String,
@@ -58,7 +70,7 @@ fn default_tolerance() -> f64 {
 
 /// Which coupling scheme to run the domains under.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ScheduleSpec {
     /// One pass, no feedback expected.
     OneWay,
@@ -81,7 +93,7 @@ pub enum ScheduleSpec {
 /// so `DomainSpec::build` is the only place that knows the types, and it hands back a
 /// `Box<dyn Domain>` like anything else would.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum DomainSpec {
     /// A two-dimensional box of air with rigid walls, released in a standing mode.
     Room {
@@ -246,7 +258,7 @@ pub enum DomainSpec {
 /// pulse is the case worth looking at: it has no standing shape, so it travels, reflects off
 /// the walls and interferes with itself, which is what a room actually does to a sound.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "as", rename_all = "kebab-case")]
+#[serde(tag = "as", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Release {
     /// One standing mode, exactly. `cos(nx πx/Lx) cos(ny πy/Ly)`.
     Mode {
@@ -285,6 +297,7 @@ impl Default for Release {
 
 /// A boundary a bar offers for something else to publish onto.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Boundary {
     /// Both sides have to use the same name.
     pub name: String,
@@ -314,8 +327,16 @@ impl DomainSpec {
     /// `Simulation::with_boxed` takes one. The names go straight through: they are `String`s
     /// out of a file and the constructors take `impl Into<String>`, so nothing is leaked and
     /// nothing is pretending to be `'static`.
-    pub fn build(&self) -> Box<dyn Domain> {
-        match self {
+    ///
+    /// Fallible, and it has to be. An unrecognised `finish` used to return a lamp of zero watts
+    /// with the mistake written into its *name* — which nothing printed, because a lamp has no
+    /// panel. Worse, the early return skipped `with_reserve`, so the reserve stayed infinite,
+    /// so `Light::ledger` reported nothing, so the audit had nothing to compare: the scene ran
+    /// green at `conservation_tolerance(0.0)`, the strictest setting expressible, with the lamp
+    /// doing nothing at all. One character — `aluminium` against `aluminum` — turned off the
+    /// check this library exists for.
+    pub fn build(&self) -> Result<Box<dyn Domain>, String> {
+        let domain: Box<dyn Domain> = match self {
             DomainSpec::Room {
                 name,
                 width_m,
@@ -460,16 +481,12 @@ impl DomainSpec {
                     *watts,
                     *colour_k,
                     // One surface so far, and the scene names it anyway: a field that can
-                    // hold only one value today is a field that says what would change, and
-                    // the alternative is a scene format that has to grow a key later.
+                    // hold only one value today is a field that says what would change.
                     match finish.as_str() {
                         "aluminium" => light::aluminium_mirror(),
                         other => {
-                            return Box::new(Light::new(
-                                format!("{name} (unknown finish {other:?})"),
-                                0.0,
-                                *colour_k,
-                                light::aluminium_mirror(),
+                            return Err(format!(
+                                "{name}: unknown finish {other:?}; known finishes are                                  \"aluminium\""
                             ))
                         }
                     },
@@ -515,7 +532,8 @@ impl DomainSpec {
                     None => bar,
                 })
             }
-        }
+        };
+        Ok(domain)
     }
 }
 
@@ -555,8 +573,21 @@ impl World {
         })
         .conservation_tolerance(scene.conservation_tolerance);
 
+        // Two domains under one name is a scene that cannot describe a simulation, which is
+        // what this function is for. `Simulation::domain` takes the *first* match, so without
+        // this the second domain is never sampled and the first is drawn twice under the
+        // second's geometry and label — a 500 C bar reported as 20 C, twice, with no warning.
+        for (i, spec) in scene.domains.iter().enumerate() {
+            if let Some(earlier) = scene.domains[..i].iter().find(|d| d.name() == spec.name()) {
+                return Err(format!(
+                    "two domains are both called {:?}; names are how they are looked up,                      so the second would be invisible",
+                    earlier.name()
+                ));
+            }
+        }
+
         for spec in &scene.domains {
-            sim = sim.with_boxed(spec.build());
+            sim = sim.with_boxed(spec.build()?);
         }
 
         Ok(World { scene, sim })

@@ -27,20 +27,29 @@ pub fn filmstrip(title: &str, frames: &[Frame], columns: usize) -> String {
         escape(title)
     );
 
-    // One scale for the whole strip, so frames are comparable with each other. Rescaling per
-    // frame would make a decaying wave look like it never decays.
-    let extent = frames
-        .iter()
-        .flat_map(|f| f.panels.iter())
-        .flat_map(|p| p.values().iter())
-        .fold(0.0f64, |m, v| m.max(v.abs()))
-        .max(f64::MIN_POSITIVE);
+    // One scale per panel *name*, across all frames. Shared across frames is the point — a
+    // decaying wave must be seen to decay — but shared across panels was a mistake: a 1 Pa room
+    // beside a 7546 m/s orbit quantised every one of the room's cells to the same colour, so the
+    // room rendered as an empty bordered square while the numbers beside it said the physics was
+    // fine. The units are not even the same; there was never a scale that could serve both.
+    let mut extents: std::collections::BTreeMap<&str, f64> = std::collections::BTreeMap::new();
+    for f in frames {
+        for p in &f.panels {
+            let peak = p.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            let e = extents.entry(p.name.as_str()).or_insert(f64::MIN_POSITIVE);
+            *e = e.max(peak);
+        }
+    }
 
     for (k, frame) in frames.iter().enumerate() {
         let (col, row) = (k % columns, k / columns);
         let x0 = pad + col as f64 * (cell + pad);
         for (pi, panel) in frame.panels.iter().enumerate() {
             let y0 = top + (row * panels + pi) as f64 * (cell + pad + 14.0);
+            let extent = extents
+                .get(panel.name.as_str())
+                .copied()
+                .unwrap_or(f64::MIN_POSITIVE);
             s.push_str(&draw(panel, x0, y0, cell, extent));
             s.push_str(&format!(
                 "<text x='{x0:.1}' y='{:.1}' font-family='sans-serif' font-size='9' \

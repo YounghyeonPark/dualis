@@ -21,20 +21,81 @@ fn room_scene(duration_s: f64, frames: usize, cells: usize) -> Scene {
 ///
 /// The point of a scene format is that it leaves the process. If a round trip loses a field,
 /// every saved world is quietly a different world.
+/// **Asserted from the hand-written text, not from the serialiser's own output.**
+///
+/// The previous version compared `to_string(parse(hand_written))` against
+/// `to_string(parse(to_string(parse(hand_written))))` — both sides serialiser output, so the
+/// hand-written spelling never entered any comparison. A key the parser silently dropped was
+/// already gone before the first `to_string`, and the assertion could not see it. Regressing
+/// the helper to the pre-`release` spelling left all ten tests passing.
+///
+/// This goes the other way: parse the text a person would type, serialise it, and require
+/// specific substrings to be present. A dropped key then shows as a missing key in the bytes.
+/// `deny_unknown_fields` on the scene types is the real guard; this is the test that would
+/// have noticed before it existed.
 #[test]
-fn a_scene_round_trips_through_json() {
-    let scene = room_scene(0.01, 4, 41);
-    let text = serde_json::to_string(&scene).unwrap();
-    let back: Scene = serde_json::from_str(&text).unwrap();
+fn a_hand_written_scene_survives_being_parsed() {
+    let text = r#"{
+      "title": "round trip", "schedule": "staggered",
+      "duration_s": 0.25, "frames": 4, "conservation_tolerance": 1e-7,
+      "domains": [
+        { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1,
+          "cells_across": 41,
+          "release": { "as": "pulse", "x_m": 1.0, "y_m": 0.8,
+                       "radius_m": 0.2, "amplitude_pa": 3.0 } },
+        { "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": 21,
+          "area_mm2": 100.0, "initial_c": 20.0,
+          "exposes": { "name": "face", "face_area_mm2": 0.5 } }
+      ]
+    }"#;
+    let scene: Scene = serde_json::from_str(text).expect("the hand-written scene parses");
+    let out = serde_json::to_string(&scene).unwrap();
 
-    assert_eq!(back.title, scene.title);
-    assert_eq!(back.frames, scene.frames);
-    assert_eq!(back.domains.len(), 1);
-    assert_eq!(back.domains[0].name(), "room");
-    assert!((back.duration_s - scene.duration_s).abs() < 1e-15);
-    // Serialising the deserialised copy must give the same bytes, which catches a field that
-    // round trips into a *default* rather than into itself.
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    // Every value the text states must come back out. A `#[serde(default)]` field that was
+    // dropped and refilled would fail here on the value, not merely on the key.
+    for want in [
+        r#""title":"round trip""#,
+        r#""schedule":"staggered""#,
+        r#""conservation_tolerance":1e-7"#,
+        r#""as":"pulse""#,
+        r#""amplitude_pa":3.0"#,
+        r#""radius_m":0.2"#,
+        r#""exposes":{"name":"face""#,
+    ] {
+        assert!(
+            out.contains(want),
+            "{want} did not survive the round trip:
+{out}"
+        );
+    }
+    assert_eq!(scene.domains.len(), 2);
+    assert!((scene.duration_s - 0.25).abs() < 1e-15);
+
+    // And a second pass is byte-stable, which is what catches a field that serialises to
+    // something it cannot read back.
+    let again: Scene = serde_json::from_str(&out).unwrap();
+    assert_eq!(serde_json::to_string(&again).unwrap(), out);
+}
+
+/// A key this format does not know is refused, not discarded.
+///
+/// The pre-`release` spelling, which used to parse into the default and produce a
+/// byte-identical run — so editing it was a no-op that reported success.
+#[test]
+fn an_unknown_key_is_refused_rather_than_dropped() {
+    let stale = r#"{
+      "title": "the old spelling", "duration_s": 0.01, "frames": 2,
+      "domains": [
+        { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1,
+          "cells_across": 41, "mode": [3, 2], "amplitude_pa": 7.0 }
+      ]
+    }"#;
+    let err = serde_json::from_str::<Scene>(stale).expect_err("`mode` is not a field any more");
+    let message = err.to_string();
+    assert!(
+        message.contains("mode") && message.contains("release"),
+        "the refusal should name the key and what is expected: {message}"
+    );
 }
 
 /// The standing mode oscillates at the frequency the closed form gives, and the gap
@@ -454,6 +515,13 @@ fn every_scene_that_ships_runs_and_says_something_true() {
             .unwrap_or_else(|v| panic!("{name} ({title}) stopped conserving: {v}"));
 
         let last = frames.last().expect("a run produces frames");
+        // The crate's only guard against a scene that draws nothing. It used to be an
+        // out-of-bounds panic inside a loop over ten files, naming neither the scene nor the
+        // domain; a shipped scene whose every domain lacked a field would have reported that.
+        assert!(
+            !last.panels.is_empty(),
+            "{name} ({title}): no domain produced a panel, so there is nothing to draw              and nothing to check"
+        );
         let peak = last.panels[0]
             .values()
             .iter()

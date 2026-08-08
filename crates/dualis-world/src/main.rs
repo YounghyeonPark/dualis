@@ -49,23 +49,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    for panel in &frames[frames.len() - 1].panels {
-        let peak = panel.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    // A row per *domain*, not per panel. A domain with nothing to draw used to print no line
+    // at all, so a scene of two coupled domains reported one row and looked complete — and a
+    // scene where every domain was undrawable printed a header, a zero-byte SVG and exit 0.
+    // A gap a reader can see beats an absence they cannot.
+    let last = &frames[frames.len() - 1];
+    for spec in &world.scene().domains {
+        let Some(panel) = last.panels.iter().find(|p| p.name == spec.name()) else {
+            println!(
+                "  {:<14} {:<12} no field and no bodies — not drawn",
+                spec.name(),
+                "—"
+            );
+            continue;
+        };
         let shape = match panel.grid() {
             Some((nx, ny)) => format!("{nx} x {ny}"),
             None => format!("{} bodies", panel.values().len()),
         };
+        // The run-wide extremum beside the final value. The final value alone cannot tell a
+        // ball that bounced half a metre from one that never moved: both end at zero.
+        let now = panel.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let over_run = frames
+            .iter()
+            .flat_map(|f| f.panels.iter().filter(|p| p.name == spec.name()))
+            .flat_map(|p| p.values().iter())
+            .fold(0.0f64, |m, v| m.max(v.abs()));
         println!(
-            "  {:<14} {:<12} peak |{}| = {:.4}",
-            panel.name, shape, panel.unit, peak
+            "  {:<14} {:<12} |{}| {:.4} now, {:.4} peak over the run",
+            panel.name, shape, panel.unit, now, over_run
         );
     }
 
     match out {
         Some(path) => {
             let svg = render::filmstrip(&world.scene().title, &frames, 6);
+            // A zero-byte file used to be written and reported as "0 KiB" — which a legitimate
+            // 937-byte strip also reports, so the one number on the line could not tell them
+            // apart. Bytes now, and an empty picture is refused rather than saved.
+            if svg.is_empty() {
+                eprintln!(
+                    "
+nothing to draw: none of the {} domain(s) has a field or bodies,                      so {path} was not written",
+                    world.scene().domains.len()
+                );
+                std::process::exit(1);
+            }
             std::fs::write(path, &svg)?;
-            println!("  wrote {path} ({} KiB)", svg.len() / 1024);
+            println!("  wrote {path} ({} bytes)", svg.len());
         }
         None => println!("  give a second argument to write an SVG"),
     }
@@ -83,7 +114,8 @@ fn default_scene() -> Scene {
   "conservation_tolerance": 1e-6,
   "domains": [
     { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1,
-      "cells_across": 61, "mode": [1, 1], "amplitude_pa": 1.0 }
+      "cells_across": 61,
+      "release": { "as": "mode", "nx": 1, "ny": 1, "amplitude_pa": 1.0 } }
   ]
 }"#,
     )

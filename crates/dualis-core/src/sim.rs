@@ -425,6 +425,36 @@ pub enum Schedule {
     },
     /// As [`Schedule::Staggered`], but each evolving domain takes as many equal
     /// substeps as its own stability limit needs.
+    ///
+    /// # It does not refine a coupled quantity, and the audit cannot tell you
+    ///
+    /// Read this before choosing it for accuracy, because that is the obvious reason to and it
+    /// is the wrong one.
+    ///
+    /// One domain is stepped to completion before the next. A quasi-static publisher is never
+    /// subcycled, so it puts a whole outer step's worth on the bus once; a subcycling consumer
+    /// then calls [`Exchange::take`] on its **first** substep and takes all of it. So every
+    /// joule of the interval is deposited at its beginning and decays for the rest of it, and
+    /// refining the substep does not move the answer toward the truth. Taking the limit of
+    /// `u ← u·gⁿ + (P·dt/C)·g^(n−1)` with `g = 1 − h/τ` as `n → ∞` gives
+    /// `u·e^(−dt/τ) + (P·dt/C)·e^(−dt/τ)`, which is not the solution: the error is first order
+    /// in the **outer** step and independent of the substep entirely.
+    ///
+    /// Measured on a lumped plate under a steady lamp, against the closed form: 26.2% low at a
+    /// 300 s outer step, 13.8% at 150 s, 7.1% at 75 s — *whatever* the substep count. At the
+    /// same outer step it is not reliably better than [`Schedule::Staggered`] and at a coarse
+    /// one it is worse, with the errors on opposite sides.
+    ///
+    /// **Every one of those runs passes the conservation audit at around 1e-12.** The total
+    /// that crossed is exactly right; only its distribution in time is wrong, and a [`Ledger`]
+    /// has no representation for *when*. This is the time-domain twin of the reason
+    /// [`Exchange::audit_transfers`] had to become a per-face check in space — a quantity moved
+    /// to the wrong part of an interval keeps its total, and conservation is blind to it.
+    ///
+    /// So: choose this for **stability**, which is what it delivers — a domain whose limit is a
+    /// hundredth of the frame no longer forces the frame to shrink. Choose the outer step for
+    /// **accuracy**, because that is what sets it. `crates/dualis/tests/multirate_timing.rs`
+    /// pins the consequence.
     Multirate,
 }
 

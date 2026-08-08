@@ -88,9 +88,14 @@ pub mod prelude {
     pub use dualis_core::conserved::quantity;
     pub use dualis_core::{
         audit, basis_for, oriented_against, reflect, velocity_verlet, Domain, Dynamics, Exchange,
-        Flux, Integrator, Interface, Kind, Ledger, Motion, Newtonian, Rng, ScalarField, Schedule,
-        Simulation, State, Strobe, Substance, VectorField, Violation,
+        Flux, Integrator, Interface, Kind, Ledger, Motion, Newtonian, Report, Rng, ScalarField,
+        Schedule, Simulation, State, Strobe, Substance, VectorField, Violation,
     };
+    // `Substance` was in the prelude and could not be *built* from it: `Substance::bulk` leaves
+    // `thermal: None`, which `LumpedMass` rightly refuses to step, and the three types needed to
+    // supply one were not exported. A consumer wanting a material the catalogue does not carry
+    // had to reach through two module paths to say so.
+    pub use dualis_core::substance::{AcousticProps, MechanicalProps, ThermalProps};
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,
     };
@@ -108,6 +113,7 @@ pub mod prelude {
     pub use dualis_units::{
         AccelerationVec, Area, Damping, Density, Energy, Force, ForceVec, Frequency, HeatCapacity,
         Irradiance, Length, LengthVec, Mass, Momentum, MomentumVec, Power, Pressure, SpecificHeat,
-        Stiffness, Temperature, Time, Velocity, VelocityVec, Volume, G0,
+        Stiffness, Temperature, ThermalConductivity, ThermalExpansion, Time, Velocity, VelocityVec,
+        Volume, G0,
     };
 }

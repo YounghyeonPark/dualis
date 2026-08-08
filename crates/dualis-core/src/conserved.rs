@@ -179,6 +179,14 @@ impl Violation {
 
 impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `Violation::at` builds the cases that are not a before/after comparison — a surface
+        // specified to reflect more than it receives, a substance with no heat capacity, an
+        // iteration that never converged. Those carry a *message* in `quantity`, not a
+        // quantity, and reading it as one produced the first error a consumer ever saw from
+        // this library: "substance has no heat capacity is not conserved at plate: inf".
+        if self.tolerance == 0.0 && self.before == self.after {
+            return write!(f, "at {}: {} ({})", self.site, self.quantity, self.before);
+        }
         if self.before == self.after {
             return write!(
                 f,

@@ -9,8 +9,9 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Seven of the twelve are fixed**, and five are recorded rather than actioned — one of
-those because the kernel already refuses the mistake it describes. The entries are
+**Ten of the sixteen are fixed**, and six are recorded rather than actioned. The reasons
+differ and are given in each: one because the kernel already refuses the mistake it describes,
+one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
 around it. Each fixed entry says what was done.
@@ -271,13 +272,92 @@ Worth noticing how it failed. Not a compile error and not a violation — a pict
 in it. A renderer that skips what it cannot read is reasonable on its own and produces the
 least debuggable outcome there is.
 
+## 13. `Schedule::Multirate` front-loads a coupled quantity, and the audit cannot see it
+
+**The most serious finding in this file, and it is in the kernel.** Found by building a lumped
+plate under a lamp against the *published* 0.1.0 and comparing it to the closed form of its own
+scheme — not by reading the code.
+
+`Simulation::sweep` steps one domain to completion before the next. A quasi-static publisher is
+never subcycled, so it puts a whole outer step's joules on the bus once; a subcycling consumer
+then calls `Exchange::take` on its **first** substep and takes all of them. Every joule of the
+interval is deposited at its beginning and decays for the rest of it.
+
+So subcycling does not refine the answer. The limit of `u ← u·gⁿ + (P·dt/C)·g^(n−1)` with
+`g = 1 − h/τ` as `n → ∞` is `u·e^(−dt/τ) + (P·dt/C)·e^(−dt/τ)`, which is not the solution: the
+error is first order in the **outer** step and independent of the substep entirely.
+
+```text
+  outer dt   staggered   multirate    analytic    stag err   multi err
+    300 s    303.670     300.033      301.920      1.75       1.89
+    150 s    302.678     301.257      301.920      0.758      0.663
+     75 s    302.276     301.758      301.920      0.356      0.163
+```
+
+At 300 s the schedule chosen *for* accuracy is the worse of the two, with the errors on opposite
+sides. And every one of those runs passed the conservation audit at around 1e-12: the total that
+crossed is exactly right and only its distribution in time is wrong, and a `Ledger` has no
+representation for *when*. This is the time-domain twin of the reason `audit_transfers` had to
+become a per-face check in space.
+
+**Documented, not fixed.** `Schedule::Multirate`'s doc now carries the mechanism, the measured
+numbers and the conclusion — choose it for stability, choose the outer step for accuracy — and
+`crates/dualis/tests/multirate_timing.rs` pins the consequence, asserting that multirate is the
+worse of the two at 300 s and that the error is first order in the outer step.
+
+The fix, when a second consumer needs it, is `Exchange::take_share(channel, dt)`: `Simulation`
+knows the outer step, so the bus can return `amount · dt/dt_outer` and deduct proportionally.
+About thirty lines in the kernel and one in each subcycling consumer. One thing to check rather
+than assume: `n` substeps of `dt/n` need not sum to `dt` to the last bit, and `audit_transfers`
+uses an *absolute* 1e-12, so the residue left on the channel wants measuring.
+
+## 14. `Report` cannot be named without going through a module
+
+`Report` is the return type of `Simulation::advance`, the most-called method in the library, and
+it was reachable only as `dualis::core::sim::Report`. You could use it inferred; you could not
+write a function signature over it. Found by a consumer wanting a helper that takes one.
+
+**Fixed.** Added to `dualis-core`'s root re-export and to the prelude. Two lines.
+
+## 15. `Substance` was in the prelude and could not be built from it
+
+`Substance::bulk` leaves `thermal: None`, which `LumpedMass` rightly refuses to step. Supplying
+one needs `ThermalProps` and two unit types, and the prelude exported twenty-five unit types
+without those two. So the material set reachable from the prelude was the three catalogue entries
+and one that cannot be used.
+
+**Fixed.** `ThermalProps`, `MechanicalProps`, `AcousticProps`, `ThermalConductivity` and
+`ThermalExpansion` are in the prelude.
+
+## 16. The first error a consumer ever saw was ungrammatical
+
+`Violation::at` builds the cases that are not a before/after comparison — a substance with no
+heat capacity, an iteration that never converged — and carries a *message* in `quantity`. `Display`
+had no branch for them, so it read the message as a quantity name:
+
+```text
+substance has no heat capacity is not conserved at plate: inf
+```
+
+Correct use of the constructor, correct field, unreadable sentence.
+
+**Fixed.** A third `Display` branch for the `tolerance == 0.0 && before == after` case:
+`at {site}: {quantity} ({before})`.
+
 ---
 
 ## What this says about the exercise
 
-Twelve findings from about eight hundred lines of application code: eight ergonomic, one a real
-defect in the physics, and three notes about where a check belongs or why one is already in the
-right place. Seven are fixed.
+Sixteen findings, and the source has shifted. The first twelve came from writing the
+application; the last four came from **running the two subagents built out of what the first
+twelve taught** — one hunting outcomes that come out empty, one building against the *published*
+0.1.0 rather than the working tree. Ten are fixed.
+
+Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was
+ergonomic or a defect in a domain; that one is a first-order accuracy defect in the *kernel's*
+scheduler, in the schedule whose whole purpose is accuracy, invisible to the audit, and it was
+found by comparing a coupled run against the closed form of its own recursion. Not by reading
+the code — the code is doing exactly what it documents.
 
 Findings 1, 2, 3 and 7 were the same shape. **The API was comfortable when the set of domains
 was known at compile time and awkward the moment it was not** — and that was never a decision
