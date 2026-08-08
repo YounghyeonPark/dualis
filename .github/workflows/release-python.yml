@@ -124,6 +124,15 @@ jobs:
         with:
           name: sdist
           path: bindings/python/dist/*.tar.gz
+      # Says out loud whether this run will publish, in a job that always runs. The alternative
+      # is reading it off whether a later job skipped, which is what made the first attempt
+      # confusing.
+      - name: will this run publish
+        run: |
+          echo "event:              ${{ github.event_name }}"
+          echo "github.event.inputs: '${{ github.event.inputs.publish }}'"
+          echo "inputs:              '${{ inputs.publish }}'"
+          echo "publish job will run: ${{ startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true' }}"
 
   publish:
     name: publish to PyPI
@@ -135,7 +144,12 @@ jobs:
     # workflow existed, so nothing will ever fire on it — and the alternatives were deleting and
     # re-pushing a tag that marks already-published crates, or burning a version number on a
     # release whose only change is CI configuration. Both are worse than a checkbox.
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    #
+    # `github.event.inputs.publish == 'true'` and not `inputs.publish`. The typed `inputs`
+    # context did not evaluate truthy for a run dispatched through the REST API, and the job
+    # silently skipped after building all six artefacts — a gate that fails closed, but a
+    # confusing twenty minutes. `github.event.inputs.*` is a string for a dispatch, always.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
