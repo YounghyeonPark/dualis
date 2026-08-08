@@ -53,6 +53,7 @@ use std::collections::BTreeMap;
 use dualis_units::Time;
 
 use crate::conserved::{audit, Ledger, Violation};
+use crate::field::ScalarField;
 use crate::integrator::substeps_for;
 use crate::scene::{mismatch, Flux, Interface};
 
@@ -74,7 +75,12 @@ pub enum Kind {
 /// books to keep.
 pub trait Domain {
     /// What this domain is called. Used to look it up and to name it in a violation.
-    fn name(&self) -> &'static str;
+    ///
+    /// Borrowed rather than `&'static str`, so a name can come from a scene file. That was
+    /// the first thing the workspace's own application could not do: every constructor
+    /// wanted a compile-time name and the name it had was a `String` read off disk, so it
+    /// leaked one per domain to get past the signature.
+    fn name(&self) -> &str;
 
     /// Whether it has state to roll forward. Defaults to [`Kind::Evolving`].
     fn kind(&self) -> Kind {
@@ -142,6 +148,63 @@ pub trait Domain {
     fn as_any(&self) -> Option<&dyn Any> {
         None
     }
+
+    /// This domain as a [`ScalarField`], if it has one to show.
+    ///
+    /// Opt-in and `None` by default, in the same style as [`Domain::as_any`] and for a
+    /// sharper reason than that one. `ScalarField` was written as the interface a visualiser
+    /// would read a simulation through, and then a visualiser found it unreachable: it holds
+    /// `&dyn Domain`, and there was no way to ask that for a field. So it downcast to
+    /// concrete types instead and knew every domain by name — precisely what the interface
+    /// existed to avoid.
+    ///
+    /// A domain with a field writes `fn as_field(&self) -> Option<&dyn ScalarField>
+    /// { Some(self) }`. See [`Simulation::field`].
+    fn as_field(&self) -> Option<&dyn ScalarField> {
+        None
+    }
+}
+
+/// Delegation, so a domain chosen at run time can be added like any other.
+///
+/// Without this a caller holding `Box<dyn Domain>` — which is what building from data
+/// produces — could not hand it to [`Simulation::with`], even though the simulation stores
+/// exactly that internally. Prefer [`Simulation::with_boxed`], which avoids boxing the box;
+/// this impl is here so that generic code over `impl Domain` works on a boxed one too.
+impl Domain for Box<dyn Domain> {
+    fn name(&self) -> &str {
+        (**self).name()
+    }
+    fn kind(&self) -> Kind {
+        (**self).kind()
+    }
+    fn max_stable_dt(&self, now: Time) -> Time {
+        (**self).max_stable_dt(now)
+    }
+    fn step(&mut self, t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
+        (**self).step(t, dt, bus)
+    }
+    fn residual(&self) -> f64 {
+        (**self).residual()
+    }
+    fn ledger(&self) -> Ledger {
+        (**self).ledger()
+    }
+    fn checkpoint(&mut self) {
+        (**self).checkpoint()
+    }
+    fn restore(&mut self) {
+        (**self).restore()
+    }
+    fn supports_restore(&self) -> bool {
+        (**self).supports_restore()
+    }
+    fn as_any(&self) -> Option<&dyn Any> {
+        (**self).as_any()
+    }
+    fn as_field(&self) -> Option<&dyn ScalarField> {
+        (**self).as_field()
+    }
 }
 
 /// The channel between domains: named quantities, in SI base units.
@@ -155,8 +218,8 @@ pub struct Exchange {
     consumed: BTreeMap<&'static str, f64>,
     /// Channels that carry a place as well as an amount, keyed by
     /// `(interface name, channel)` so the audit reports them in a fixed order.
-    spatial: BTreeMap<(&'static str, &'static str), Flux>,
-    spatial_consumed: BTreeMap<(&'static str, &'static str), f64>,
+    spatial: BTreeMap<(String, &'static str), Flux>,
+    spatial_consumed: BTreeMap<(String, &'static str), f64>,
 }
 
 impl Exchange {
@@ -207,7 +270,7 @@ impl Exchange {
                 flux.faces(),
             ));
         }
-        let key = (interface.name(), channel);
+        let key = (interface.name().to_string(), channel);
         match self.spatial.get_mut(&key) {
             Some(existing) => existing.add(flux),
             None => {
@@ -228,7 +291,7 @@ impl Exchange {
         interface: &Interface,
         channel: &'static str,
     ) -> Result<Flux, Violation> {
-        let key = (interface.name(), channel);
+        let key = (interface.name().to_string(), channel);
         // Removed rather than zeroed. A drained channel is empty, and an empty channel
         // should not go on pinning a face count for the rest of the step — the next
         // publisher on that boundary is entitled to its own discretisation.
@@ -252,7 +315,7 @@ impl Exchange {
 
     /// Look at a spatial channel without taking it.
     pub fn peek_on(&self, interface: &Interface, channel: &'static str) -> Option<&Flux> {
-        self.spatial.get(&(interface.name(), channel))
+        self.spatial.get(&(interface.name().to_string(), channel))
     }
 
     /// Channels that were published to but never taken from, with what is left on
@@ -325,7 +388,7 @@ impl Exchange {
     /// Total taken from a spatial channel over the run, summed over its faces.
     pub fn total_consumed_on(&self, interface: &Interface, channel: &'static str) -> f64 {
         self.spatial_consumed
-            .get(&(interface.name(), channel))
+            .get(&(interface.name().to_string(), channel))
             .copied()
             .unwrap_or(0.0)
     }
@@ -369,7 +432,11 @@ pub enum Schedule {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Report {
     /// Substeps taken, per domain, in declared order.
-    pub substeps: Vec<(&'static str, u32)>,
+    ///
+    /// Owned names, because [`Domain::name`] is borrowed from the domain and this report
+    /// outlives the borrow — the same consequence of names being data rather than
+    /// constants that shows up everywhere else in this module.
+    pub substeps: Vec<(String, u32)>,
     /// Coupling iterations used. One for every schedule but `Iterative`.
     pub iterations: u32,
     /// Largest residual left at the end.
@@ -400,6 +467,16 @@ impl Simulation {
             transfer_tol: 1e-12,
             conservation_tol: 1e-9,
         }
+    }
+
+    /// Add a domain whose type was chosen at run time.
+    ///
+    /// What [`Simulation::with`] cannot do: building a domain from a scene file produces a
+    /// `Box<dyn Domain>`, and `with` wants a concrete type. The simulation has always stored
+    /// boxes internally, so this is the shorter path and not a wider one.
+    pub fn with_boxed(mut self, domain: Box<dyn Domain>) -> Simulation {
+        self.domains.push(domain);
+        self
     }
 
     /// Add a domain. Order matters for [`Schedule::Staggered`] and its relatives: a domain
@@ -443,13 +520,21 @@ impl Simulation {
             .map(|d| d.as_ref())
     }
 
+    /// A domain's [`ScalarField`], if it has one and opted in.
+    ///
+    /// The domain-agnostic counterpart of [`Simulation::domain_as`]: a renderer can sample
+    /// every field in a simulation without knowing what any of them are. That was the whole
+    /// point of `ScalarField` and it was not reachable until [`Domain::as_field`] existed.
+    pub fn field(&self, name: &str) -> Option<&dyn ScalarField> {
+        self.domain(name)?.as_field()
+    }
+
     /// A domain by name and concrete type, for a caller that needs more than the
     /// [`Domain`] trait exposes — a temperature profile, a body's position.
     ///
     /// Returns `None` if the name is not here, if the type is wrong, or if that domain did
-    /// not implement [`Domain::as_any`]. Three different reasons for the same answer, which
-    /// is a wart; the alternative was a required method on every implementor of a trait whose
-    /// value is being cheap to implement.
+    /// not implement [`Domain::as_any`]. Prefer [`Simulation::field`] when what is wanted is
+    /// a field to sample: that one does not need the concrete type at all.
     pub fn domain_as<T: Any>(&self, name: &str) -> Option<&T> {
         self.domain(name)?.as_any()?.downcast_ref::<T>()
     }
@@ -501,7 +586,7 @@ impl Simulation {
                 domain.step(t, h, &mut self.bus)?;
                 t += h;
             }
-            substeps.push((domain.name(), n));
+            substeps.push((domain.name().to_string(), n));
         }
         let residual = self
             .domains
@@ -681,7 +766,7 @@ mod tests {
         let report = sim.advance(Time::s(1.0)).unwrap();
         assert_eq!(
             report.substeps,
-            vec![("lamp", 1), ("block", 4)],
+            vec![("lamp".to_string(), 1), ("block".to_string(), 4)],
             "the block needs ceil(1.0/0.3) = 4 substeps; the lamp needs none"
         );
         // Subcycling must not change the total that crossed.
@@ -694,7 +779,10 @@ mod tests {
     fn an_unlimited_domain_takes_one_step() {
         let mut sim = lamp_and_block(Schedule::Multirate, Time::from_si(f64::INFINITY));
         let report = sim.advance(Time::s(1e6)).unwrap();
-        assert_eq!(report.substeps, vec![("lamp", 1), ("block", 1)]);
+        assert_eq!(
+            report.substeps,
+            vec![("lamp".to_string(), 1), ("block".to_string(), 1)]
+        );
     }
 
     /// Iterative coupling converges and reports how many passes it took.
@@ -804,7 +892,10 @@ mod tests {
         let (b, eb) = run();
         assert_eq!(a, b);
         assert_eq!(ea.to_bits(), eb.to_bits(), "not bit-identical");
-        assert_eq!(a[0].substeps, vec![("lamp", 1), ("block", 4)]);
+        assert_eq!(
+            a[0].substeps,
+            vec![("lamp".to_string(), 1), ("block".to_string(), 4)]
+        );
     }
 
     /// Taking from a channel empties it, so an amount cannot be consumed twice.

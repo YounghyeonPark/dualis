@@ -37,7 +37,7 @@ use glam::DVec3;
 
 /// A rectangular room, discretised on a uniform grid with rigid walls.
 pub struct Room {
-    name: &'static str,
+    name: String,
     /// Pressure at cell centres, row-major.
     pressure: Vec<f64>,
     /// Pressure one whole step earlier, kept only so that [`Room::energy`] can be the
@@ -64,7 +64,7 @@ impl Room {
     /// whole number of the same cells, so the cells stay square and the CFL limit stays
     /// isotropic.
     pub fn new(
-        name: &'static str,
+        name: impl Into<String>,
         width: Length,
         height: Length,
         cells_across: usize,
@@ -76,7 +76,7 @@ impl Room {
         let dx = width.to_si() / (nx - 1) as f64;
         let ny = ((height.to_si() / dx).round() as usize + 1).max(3);
         Room {
-            name,
+            name: name.into(),
             pressure: vec![0.0; nx * ny],
             pressure_prev: vec![0.0; nx * ny],
             vx: vec![0.0; (nx - 1) * ny],
@@ -92,7 +92,12 @@ impl Room {
     }
 
     /// A room of air at 20 °C, one metre deep.
-    pub fn of_air(name: &'static str, width: Length, height: Length, cells_across: usize) -> Room {
+    pub fn of_air(
+        name: impl Into<String>,
+        width: Length,
+        height: Length,
+        cells_across: usize,
+    ) -> Room {
         Room::new(
             name,
             width,
@@ -282,8 +287,8 @@ impl Room {
 }
 
 impl Domain for Room {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {
@@ -398,6 +403,11 @@ impl Domain for Room {
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    /// The room reads as a pressure field, so a renderer never has to know it is a room.
+    fn as_field(&self) -> Option<&dyn dualis_core::ScalarField> {
         Some(self)
     }
 }

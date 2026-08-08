@@ -93,7 +93,7 @@ impl Environment {
 /// same piece in flowing water it does not, and [`Bar1D`] is the honest choice.
 /// [`LumpedMass::biot_number`] says which situation you are in.
 pub struct LumpedMass {
-    name: &'static str,
+    name: String,
     substance: Substance,
     volume: Volume,
     /// Characteristic length for the Biot number — volume over surface area.
@@ -115,7 +115,7 @@ impl LumpedMass {
     /// [`LumpedMass::biot_number`], which is how you find out whether the lumped
     /// approximation was honest here.
     pub fn new(
-        name: &'static str,
+        name: impl Into<String>,
         substance: Substance,
         volume: Volume,
         thickness: Length,
@@ -123,7 +123,7 @@ impl LumpedMass {
         environment: Environment,
     ) -> LumpedMass {
         LumpedMass {
-            name,
+            name: name.into(),
             substance,
             volume,
             thickness,
@@ -202,8 +202,8 @@ impl LumpedMass {
 }
 
 impl Domain for LumpedMass {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {
@@ -222,7 +222,7 @@ impl Domain for LumpedMass {
         let capacity = self.heat_capacity();
         if !capacity.to_si().is_finite() || capacity.to_si() <= 0.0 {
             return Err(Violation::at(
-                self.name,
+                &self.name,
                 "substance has no heat capacity",
                 capacity.to_si(),
             ));
@@ -285,7 +285,7 @@ impl Domain for LumpedMass {
 /// Ends are insulated, so the total heat is conserved exactly and the audit has
 /// something sharp to check.
 pub struct Bar1D {
-    name: &'static str,
+    name: String,
     substance: Substance,
     /// Temperatures at the cell centres.
     cells: Vec<f64>,
@@ -303,7 +303,7 @@ pub struct Bar1D {
 impl Bar1D {
     /// A bar of `cells` cells, each `dx` long, all starting at `initial`.
     pub fn new(
-        name: &'static str,
+        name: impl Into<String>,
         substance: Substance,
         cells: usize,
         dx: Length,
@@ -313,7 +313,7 @@ impl Bar1D {
         let cells = cells.max(2);
         let temps = vec![initial.to_si(); cells];
         Bar1D {
-            name,
+            name: name.into(),
             substance,
             cells: temps.clone(),
             saved: temps,
@@ -414,8 +414,8 @@ impl Bar1D {
 }
 
 impl Domain for Bar1D {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     /// `dx²/(2α)` — the explicit diffusion limit, exactly.
@@ -429,7 +429,7 @@ impl Domain for Bar1D {
     fn step(&mut self, _t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
         let f = self.fourier_number(dt);
         if !f.is_finite() {
-            return Err(Violation::at(self.name, "substance has no diffusivity", f));
+            return Err(Violation::at(&self.name, "substance has no diffusivity", f));
         }
         // Refuse rather than diverge. A scheduler honouring `max_stable_dt` never
         // sees this; one that ignores it gets told which limit it broke and by how
@@ -499,6 +499,11 @@ impl Domain for Bar1D {
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    /// The bar reads as a temperature field, so a renderer never has to know it is a bar.
+    fn as_field(&self) -> Option<&dyn dualis_core::ScalarField> {
         Some(self)
     }
 }

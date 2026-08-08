@@ -11,6 +11,32 @@ messages carry the full account.
 
 ## [Unreleased]
 
+Version bumped to 0.2.0 in the tree; **not yet published**. crates.io still carries 0.1.0, so
+`dualis = "0.1"` is what a consumer gets and none of the changes below are in it.
+
+### Changed — breaking
+
+The first consumer went looking for the API's shape and found the same decision three times:
+`&'static str` and `impl Domain` are free when every name is a literal in a test and every
+domain type is known when you compile. They are not free for an application. All three are
+reversed, and the cost was one order of magnitude smaller than the argument for keeping them —
+**no existing call site changed**, because `&str: Into<String>`.
+
+- **`Domain::name` returns `&str`.** Domains store a `String`; constructors take
+  `impl Into<String>`, so `Bar1D::new("bar", ..)` and a name read out of a scene file both
+  work. `Interface` followed, and `Exchange`'s spatial channel map is keyed by an owned
+  interface name.
+- **`Report::substeps` is `Vec<(String, u32)>`.** The only breakage across 349 tests: five
+  comparisons against string literals. A report outlives the borrow it would otherwise hold.
+- **`Simulation::with_boxed(Box<dyn Domain>)`**, plus `impl Domain for Box<dyn Domain>`. The
+  simulation always stored boxes; now a caller who built one at run time can hand it over.
+- **`Domain::as_field() -> Option<&dyn ScalarField>`** and `Simulation::field(name)`, both
+  opt-in and `None` by default, in the style of `as_any`. `ScalarField` was written as the
+  interface a visualiser reads a simulation through and was unreachable from `&dyn Domain`, so
+  the workspace's own visualiser downcast to concrete types instead — precisely what the
+  interface existed to avoid. It no longer names a single domain type.
+- **`Room` is in the prelude**, which it should always have been; `Tube` already was.
+
 ### Added
 
 - **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built

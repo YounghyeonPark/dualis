@@ -55,32 +55,32 @@ use crate::conserved::Violation;
 /// this implementation does not.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Interface {
-    name: &'static str,
+    name: String,
     areas: Vec<f64>,
 }
 
 impl Interface {
     /// A boundary cut into equal faces.
-    pub fn uniform(name: &'static str, faces: usize, face_area: Area) -> Interface {
+    pub fn uniform(name: impl Into<String>, faces: usize, face_area: Area) -> Interface {
         Interface {
-            name,
+            name: name.into(),
             areas: vec![face_area.to_si().max(0.0); faces.max(1)],
         }
     }
 
     /// A boundary whose faces have their own areas.
-    pub fn from_areas(name: &'static str, areas: Vec<Area>) -> Interface {
+    pub fn from_areas(name: impl Into<String>, areas: Vec<Area>) -> Interface {
         let areas: Vec<f64> = areas.into_iter().map(|a| a.to_si().max(0.0)).collect();
         Interface {
-            name,
+            name: name.into(),
             areas: if areas.is_empty() { vec![0.0] } else { areas },
         }
     }
 
     /// What this boundary is called. Both sides of a coupling must agree on it, and a
     /// mismatch is how they discover they meant different surfaces.
-    pub fn name(&self) -> &'static str {
-        self.name
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// How many faces it is cut into. This is the number both sides have to agree on.

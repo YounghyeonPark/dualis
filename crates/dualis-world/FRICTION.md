@@ -8,6 +8,11 @@ someone who already knows the shape.
 Everything below was hit while building the smallest thing that loads a scene, runs it and
 draws it. None of it is a bug in the physics except finding 6, which is.
 
+**Five of the six are now fixed.** The entries are kept rather than deleted, because what the
+API used to be is the argument for what it is — and because the next consumer should be able
+to see that the answer to "this is awkward" was to change the library rather than to work
+around it. Each fixed entry says what was done.
+
 ---
 
 ## 1. A domain cannot be built behind a `dyn`
@@ -31,8 +36,11 @@ That works and is what `World::build` does. What it forecloses is a *registry*: 
 cannot add a domain type to the scene format without editing this match. For a physics SDK
 whose central claim is that domains are pluggable, the plug is only available at compile time.
 
-**Fix, if wanted:** `impl Domain for Box<dyn Domain>` in the kernel, delegating every method.
-Six lines, no change to any existing caller, and it makes `with(boxed)` work.
+**Fixed.** The kernel gained `Simulation::with_boxed(Box<dyn Domain>)` and an
+`impl Domain for Box<dyn Domain>` that delegates every method. `DomainSpec::build` now returns
+a box and `World::build` is a three-line loop. The `match` over domain types still exists, but
+it is confined to one function and is the *scene format's* business rather than the kernel's —
+an out-of-tree domain can be boxed and added without this crate knowing.
 
 ## 2. Domain names are `&'static str`, so they cannot come from data
 
@@ -46,9 +54,15 @@ application they are exactly the opposite: they are what the user typed.
 This is the friction that felt worst in practice, because it is unavoidable and it appears at
 the very first thing an application does.
 
-**Fix, if wanted:** `name(&self) -> &str` and `name: impl Into<String>` on the constructors.
-It is a breaking change to eight crates and it removes a `Copy` from a hot path that does not
-need one — the name is only read for reporting and lookup.
+**Fixed, and it cost less than expected.** `Domain::name` returns `&str`, every domain stores
+a `String`, and every constructor takes `impl Into<String>`. Because `&str: Into<String>`,
+**not one existing call site changed** — `Bar1D::new("bar", ..)` still compiles. The only
+breakage in 349 tests was five comparisons against `Report::substeps`, which had to become
+owned for the same reason. `Interface` followed, and `Exchange`'s spatial map is keyed by an
+owned interface name now.
+
+The `Copy` that was lost was never in a hot path: a name is read to report a violation and to
+look a domain up, a handful of times per step.
 
 ## 3. Reading state back needs the concrete type
 
@@ -60,9 +74,15 @@ draw it, never ask what it is — but there is no way to get a `&dyn ScalarField
 The result is a second `match` over the same enum, in `World::capture`, for no reason other
 than downcasting.
 
-**Fix, if wanted:** an optional `fn as_field(&self) -> Option<&dyn ScalarField>` on `Domain`,
-defaulting to `None`, in the same style as the existing `as_any`. Domains that have a field
-implement it in one line and a renderer becomes domain-agnostic.
+**Fixed.** `Domain::as_field` returns `Option<&dyn ScalarField>` and defaults to `None`;
+`Bar1D` and `Room` implement it in one line each; `Simulation::field(name)` returns one.
+`World::capture` no longer mentions `Room` or `Bar1D` at all — it asks each domain for a field
+and samples it. That is what `ScalarField` was written for.
+
+One thing the fix does not give away: a `ScalarField` is a function of position and does not
+know where it stops, so the *extent* to sample over still comes from the caller. That is the
+right division — a field that knew its own bounds would be a mesh — and the scene has the
+bounds already.
 
 ## 4. The examples' plotting is not reachable
 
@@ -79,7 +99,7 @@ something the workspace already solved and cannot share.
 `dualis::prelude` re-exports `Tube` but not `Room`, though they are the two headline types of
 the same crate. Reached through `dualis::acoustic::Room` instead.
 
-Almost certainly an oversight rather than a decision. A one-line change.
+**Fixed.** One line. It was an oversight, as suspected.
 
 ## 6. `Room` has a first-order startup error — a real defect
 
@@ -116,7 +136,13 @@ fixing it will fail that test — which is correct, since the table above would 
 ## What this says about the exercise
 
 Five ergonomic frictions and one real defect, from about three hundred lines of application
-code. Findings 1, 2 and 3 are the same shape: **the API is comfortable when the set of domains
-is known at compile time and awkward the moment it is not.** That is a coherent position for a
-library to take, and it may even be the right one — but it was not a decision anybody made,
-and it is worth making deliberately now rather than discovering it again in a year.
+code. Findings 1, 2 and 3 were the same shape: **the API was comfortable when the set of
+domains was known at compile time and awkward the moment it was not.** That was never a
+decision anybody made — it was the shape that falls out of writing a library with no consumer,
+where `&'static str` is free because every name is a literal in a test.
+
+It has been made deliberately now, in the other direction, and the cost was smaller than the
+argument for keeping it: no existing call site changed, five test comparisons did, and the
+application lost its leak, both of its downcast matches and about forty lines.
+
+That is the case for building a consumer early. None of this was visible from inside.

@@ -66,7 +66,7 @@ pub enum Thermostat {
 
 /// A box of atoms interacting through a pair potential.
 pub struct Fluid {
-    name: &'static str,
+    name: String,
     potential: LennardJones,
     bounds: PeriodicBox,
     mass: f64,
@@ -102,7 +102,7 @@ impl Fluid {
     /// `4·cells³` — 32, 108, 256, 500, 864 for two through six. Those are the numbers
     /// molecular-dynamics papers quote, and this is why.
     pub fn lattice(
-        name: &'static str,
+        name: impl Into<String>,
         potential: LennardJones,
         mass: Mass,
         cells: usize,
@@ -132,7 +132,7 @@ impl Fluid {
         }
         let n = positions.len();
         let mut fluid = Fluid {
-            name,
+            name: name.into(),
             potential,
             bounds,
             mass: mass.to_si(),
@@ -368,8 +368,8 @@ impl Fluid {
 }
 
 impl Domain for Fluid {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {

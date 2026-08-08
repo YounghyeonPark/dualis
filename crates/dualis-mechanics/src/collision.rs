@@ -270,7 +270,7 @@ pub fn resolve(a: &mut Sphere, b: &mut Sphere, surface: Surface) -> Energy {
 /// One body and one plane, which is enough for the closed forms that make this module
 /// worth having and no more than that.
 pub struct Rolling {
-    name: &'static str,
+    name: String,
     ball: Sphere,
     /// Incline angle from horizontal, radians.
     slope: f64,
@@ -288,9 +288,14 @@ impl Rolling {
     /// The coordinate is one-dimensional: `x` runs down the slope and the ball's spin is
     /// about the horizontal axis across it. Gravity's component along the slope is
     /// `g sinθ` and the normal load is `mg cosθ`, which is all the geometry there is.
-    pub fn new(name: &'static str, ball: Sphere, slope_radians: f64, surface: Surface) -> Rolling {
+    pub fn new(
+        name: impl Into<String>,
+        ball: Sphere,
+        slope_radians: f64,
+        surface: Surface,
+    ) -> Rolling {
         Rolling {
-            name,
+            name: name.into(),
             ball,
             slope: slope_radians,
             surface,
@@ -366,8 +371,8 @@ impl Rolling {
 }
 
 impl Domain for Rolling {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {

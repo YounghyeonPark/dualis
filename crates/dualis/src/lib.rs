@@ -84,7 +84,7 @@ pub use dualis_units as units;
 
 /// Everything most simulations need, in one `use`.
 pub mod prelude {
-    pub use dualis_acoustic::{impedance, reflection_coefficient, End, Impedance, Tube};
+    pub use dualis_acoustic::{impedance, reflection_coefficient, End, Impedance, Room, Tube};
     pub use dualis_core::conserved::quantity;
     pub use dualis_core::{
         audit, basis_for, oriented_against, reflect, velocity_verlet, Domain, Dynamics, Exchange,

@@ -69,7 +69,7 @@ Two methods are required. Everything else has a default.
 
 ```rust
 impl Domain for MyThing {
-    fn name(&self) -> &'static str { "my-thing" }
+    fn name(&self) -> &str { &self.name }
 
     fn step(&mut self, t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
         // advance your state by dt, publish or take on the bus
@@ -80,7 +80,12 @@ impl Domain for MyThing {
 
 Worth overriding: `ledger()` (your books — without it the audit has nothing to check),
 `max_stable_dt()` (so a scheduler can subcycle you), `kind()` (`Kind::QuasiStatic` if you have
-no state to march), `as_any()` (so callers can downcast back to your concrete type).
+no state to march), `as_field()` (so a renderer can sample you without knowing what you are),
+`as_any()` (so callers can downcast back to your concrete type).
+
+Names are data, not constants. Constructors take `impl Into<String>`, so `"my-thing"` and a
+`String` read out of a scene file both work, and `Simulation::with_boxed` takes a
+`Box<dyn Domain>` for when the type is chosen at run time.
 
 ### 3. Domains never call each other
 

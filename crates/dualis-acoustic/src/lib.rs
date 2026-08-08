@@ -122,7 +122,7 @@ pub enum End {
 /// and the power it absorbs is `p·u·A`, which is the definition of acoustic intensity
 /// rather than an approximation of it.
 pub struct Tube {
-    name: &'static str,
+    name: String,
     /// Pressure at cell centres.
     pressure: Vec<f64>,
     /// Pressure one whole step earlier, so [`Tube::energy`] can report the quantity the
@@ -145,7 +145,7 @@ pub struct Tube {
 impl Tube {
     /// A tube of the given length, at rest.
     pub fn new(
-        name: &'static str,
+        name: impl Into<String>,
         length: Length,
         cells: usize,
         area: Area,
@@ -154,7 +154,7 @@ impl Tube {
     ) -> Tube {
         let cells = cells.max(3);
         Tube {
-            name,
+            name: name.into(),
             pressure: vec![0.0; cells],
             pressure_prev: vec![0.0; cells],
             velocity: vec![0.0; cells - 1],
@@ -170,7 +170,7 @@ impl Tube {
     }
 
     /// Air at 20 °C: 343 m/s and 1.204 kg/m³.
-    pub fn of_air(name: &'static str, length: Length, cells: usize, area: Area) -> Tube {
+    pub fn of_air(name: impl Into<String>, length: Length, cells: usize, area: Area) -> Tube {
         Tube::new(
             name,
             length,
@@ -397,8 +397,8 @@ impl Tube {
 }
 
 impl Domain for Tube {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {

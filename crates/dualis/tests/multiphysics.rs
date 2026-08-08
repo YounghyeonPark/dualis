@@ -286,8 +286,12 @@ fn optics_never_subcycles_and_the_thermal_domain_does() {
     let short = sim.advance(Time::s(1.0)).unwrap();
     let long = sim.advance(Time::s(120.0)).unwrap();
 
-    assert_eq!(short.substeps[0], ("optics", 1));
-    assert_eq!(long.substeps[0], ("optics", 1), "a solve is a solve");
+    assert_eq!(short.substeps[0], ("optics".to_string(), 1));
+    assert_eq!(
+        long.substeps[0],
+        ("optics".to_string(), 1),
+        "a solve is a solve"
+    );
 
     // The lens's time constant is a couple of minutes, and the reported limit is a
     // tenth of that — so a one-second window needs one substep and a two-minute

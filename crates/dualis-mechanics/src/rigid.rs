@@ -164,7 +164,7 @@ impl Inertia {
 
 /// A body with an orientation as well as a place.
 pub struct RigidBody {
-    name: &'static str,
+    name: String,
     inertia: DVec3,
     /// Angular velocity in the **body** frame, rad/s.
     omega_body: DVec3,
@@ -223,9 +223,9 @@ impl State for Spin {
 
 impl RigidBody {
     /// A body with the given inertia, at rest in its authored orientation.
-    pub fn new(name: &'static str, inertia: Inertia) -> RigidBody {
+    pub fn new(name: impl Into<String>, inertia: Inertia) -> RigidBody {
         RigidBody {
-            name,
+            name: name.into(),
             inertia: inertia.principal,
             omega_body: DVec3::ZERO,
             orientation: DQuat::IDENTITY,
@@ -372,8 +372,8 @@ impl Dynamics for RigidBody {
 }
 
 impl Domain for RigidBody {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {

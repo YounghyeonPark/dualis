@@ -362,7 +362,7 @@ impl Octree {
 /// The approximate, parallel counterpart to [`NBody`](crate::NBody). Read the module
 /// documentation before using it for anything whose momentum matters.
 pub struct TreeNBody {
-    name: &'static str,
+    name: String,
     masses: Vec<f64>,
     positions: Coords,
     velocities: Coords,
@@ -379,9 +379,9 @@ impl TreeNBody {
     /// Approximate in a way worth knowing before using it — each body sees its own truncated
     /// expansion of the rest, so their mutual forces no longer cancel and momentum drifts.
     /// The drift is set by [`TreeNBody::with_theta`] and vanishes at zero.
-    pub fn new(name: &'static str, bodies: &[Body]) -> TreeNBody {
+    pub fn new(name: impl Into<String>, bodies: &[Body]) -> TreeNBody {
         TreeNBody {
-            name,
+            name: name.into(),
             masses: bodies.iter().map(|b| b.mass.to_si()).collect(),
             positions: Coords(bodies.iter().map(|b| b.position.to_si()).collect()),
             velocities: Coords(bodies.iter().map(|b| b.velocity.to_si()).collect()),
@@ -537,8 +537,8 @@ impl Newtonian for TreeNBody {
 }
 
 impl Domain for TreeNBody {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {

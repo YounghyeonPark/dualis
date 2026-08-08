@@ -139,7 +139,7 @@ impl State for Coords {
 /// drains the system, which the kernel's integrator tests demonstrate on a harmonic
 /// oscillator and which matters far more here, where a drifting orbit is the answer.
 pub struct NBody {
-    name: &'static str,
+    name: String,
     masses: Vec<f64>,
     positions: Coords,
     velocities: Coords,
@@ -155,9 +155,9 @@ pub struct NBody {
 
 impl NBody {
     /// Every body attracting every other, summed exactly.
-    pub fn new(name: &'static str, bodies: &[Body]) -> NBody {
+    pub fn new(name: impl Into<String>, bodies: &[Body]) -> NBody {
         NBody {
-            name,
+            name: name.into(),
             masses: bodies.iter().map(|b| b.mass.to_si()).collect(),
             positions: Coords(bodies.iter().map(|b| b.position.to_si()).collect()),
             velocities: Coords(bodies.iter().map(|b| b.velocity.to_si()).collect()),
@@ -321,8 +321,8 @@ impl Newtonian for NBody {
 }
 
 impl Domain for NBody {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     fn kind(&self) -> Kind {
@@ -452,7 +452,7 @@ impl Ground {
 /// - It **dissipates**, and says where the energy went. The dashpot's work is
 ///   published as [`HEAT`], so the books close and a thermal domain can pick it up.
 pub struct ContactSystem {
-    name: &'static str,
+    name: String,
     masses: Vec<f64>,
     positions: Coords,
     velocities: Coords,
@@ -469,7 +469,7 @@ impl ContactSystem {
     /// Bodies falling under gravity onto a ground plane, meeting it through a penalty
     /// contact.
     pub fn new(
-        name: &'static str,
+        name: impl Into<String>,
         bodies: &[Body],
         gravity: dualis_units::AccelerationVec,
         ground: Ground,
@@ -477,7 +477,7 @@ impl ContactSystem {
         damping: Damping,
     ) -> ContactSystem {
         ContactSystem {
-            name,
+            name: name.into(),
             masses: bodies.iter().map(|b| b.mass.to_si()).collect(),
             positions: Coords(bodies.iter().map(|b| b.position.to_si()).collect()),
             velocities: Coords(bodies.iter().map(|b| b.velocity.to_si()).collect()),
@@ -586,8 +586,8 @@ impl ContactSystem {
 }
 
 impl Domain for ContactSystem {
-    fn name(&self) -> &'static str {
-        self.name
+    fn name(&self) -> &str {
+        &self.name
     }
 
     /// A hundredth of the contact spring's period.
