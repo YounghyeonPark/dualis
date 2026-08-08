@@ -50,6 +50,24 @@ pub struct Substance {
 }
 
 /// What it does with heat.
+///
+/// # The two fields worth checking against the real part
+///
+/// `specific_heat` and `emissivity` are where a wrong number does the most damage, and they are
+/// the two a user is most likely to carry over from something that looked close enough.
+///
+/// **A composite assembly is not a billet of its main metal.** A BLDC motor is copper, electrical
+/// steel, magnets and air; its bulk `c_p` is nearer 450 J/kg/K than aluminium's 896. Reaching for
+/// [`Substance::aluminium_6061`] because it is the metal in the catalogue **doubles the thermal
+/// time constant** and changes the conclusion, with nothing to warn you — the answer stays
+/// plausible, it is just for a different object. Use [`Substance::with_specific_heat`] on
+/// whichever entry is closest and put the real figure in.
+///
+/// **Emissivity is a surface, not a substance.** The same 6061 is 0.09 polished and about 0.9
+/// anodised, a factor of ten in the radiative path — which
+/// [`Environment::loss_from`](../../dualis_thermal/struct.Environment.html) says is the same order
+/// as still-air convection at room temperature. [`Substance::with_emissivity`] exists so a finish
+/// does not have to become a new material.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThermalProps {
     /// Fourier's `k`: how fast heat moves through it.
@@ -182,6 +200,159 @@ impl Substance {
             acoustic: Some(AcousticProps {
                 sound_speed: Velocity::m_per_s(6_320.0),
             }),
+        }
+    }
+
+    /// The same substance with a different surface finish.
+    ///
+    /// Emissivity is a property of the surface and not of the material, so anodised aluminium is
+    /// not a new entry in the catalogue — it is `aluminium_6061().with_emissivity(0.9)`. The
+    /// factor of ten between polished and anodised 6061 lands squarely on the radiative loss
+    /// path, which is the same order as still-air convection at room temperature.
+    ///
+    /// Clamped to `0..=1`: a surface cannot radiate more than a blackbody, and a negative
+    /// emissivity would make a body warm itself.
+    ///
+    /// Does nothing to a substance whose thermal properties are unknown, because `None` means
+    /// unknown rather than zero and inventing three of the four fields to set the fourth would
+    /// be worse than declining.
+    pub fn with_emissivity(mut self, emissivity: f64) -> Substance {
+        if let Some(t) = self.thermal.as_mut() {
+            t.emissivity = emissivity.clamp(0.0, 1.0);
+        }
+        self
+    }
+
+    /// The same substance with a different heat capacity.
+    ///
+    /// For the assembly case: a motor, a populated board, a printed part with infill. The bulk
+    /// `c_p` of a mixture is not the `c_p` of its main constituent, and this is the field where
+    /// that difference is worth a factor of two.
+    ///
+    /// Does nothing to a substance whose thermal properties are unknown, for the reason in
+    /// [`Substance::with_emissivity`].
+    pub fn with_specific_heat(mut self, specific_heat: SpecificHeat) -> Substance {
+        if let Some(t) = self.thermal.as_mut() {
+            t.specific_heat = specific_heat;
+        }
+        self
+    }
+
+    /// Electrolytic tough-pitch copper: windings, heat spreaders, planes.
+    ///
+    /// The values are uncontroversial to three figures. The emissivity is not: this is **bright
+    /// polished** copper at 0.04, and copper oxidises — a tarnished surface runs 0.4 to 0.8, a
+    /// factor of fifteen on the radiative path. If the part has been in air for a week, say so
+    /// with [`Substance::with_emissivity`].
+    pub fn copper() -> Substance {
+        Substance {
+            name: "Cu ETP".to_string(),
+            density: Density::g_per_cm3(8.96),
+            thermal: Some(ThermalProps {
+                conductivity: ThermalConductivity::w_per_m_k(401.0),
+                specific_heat: SpecificHeat::j_per_kg_k(385.0),
+                expansion: ThermalExpansion::ppm_per_k(16.5),
+                emissivity: 0.04,
+            }),
+            mechanical: Some(MechanicalProps {
+                youngs_modulus: Pressure::from_si(117.0e9),
+                poisson_ratio: 0.34,
+                yield_strength: Pressure::from_si(70.0e6),
+            }),
+            acoustic: Some(AcousticProps {
+                sound_speed: Velocity::m_per_s(4_760.0),
+            }),
+        }
+    }
+
+    /// FR-4 glass-epoxy laminate: the board a driver sits on.
+    ///
+    /// **The conductivity is the through-plane one**, 0.3 W/m/K, and that is the number a
+    /// designer wants because it is the one heat has to cross to reach the far side. In-plane it
+    /// is nearer 0.8, because the copper-free glass weave conducts better along its fibres —
+    /// a factor of about three, and `ThermalProps` carries one scalar, so the choice has to be
+    /// stated rather than averaged. Any real board is dominated by its copper pour anyway, which
+    /// is not laminate at all.
+    ///
+    /// The expansion is likewise in-plane, 14 ppm/K. Through-thickness FR-4 expands four to five
+    /// times faster and goes higher again above its glass transition, which is what breaks
+    /// plated through-holes; that regime is not modelled here.
+    pub fn fr4() -> Substance {
+        Substance {
+            name: "FR-4".to_string(),
+            density: Density::g_per_cm3(1.85),
+            thermal: Some(ThermalProps {
+                conductivity: ThermalConductivity::w_per_m_k(0.30),
+                specific_heat: SpecificHeat::j_per_kg_k(1_100.0),
+                expansion: ThermalExpansion::ppm_per_k(14.0),
+                emissivity: 0.90,
+            }),
+            mechanical: Some(MechanicalProps {
+                youngs_modulus: Pressure::from_si(22.0e9),
+                poisson_ratio: 0.16,
+                yield_strength: Pressure::from_si(300.0e6),
+            }),
+            acoustic: None,
+        }
+    }
+
+    /// Non-oriented silicon electrical steel: motor and transformer laminations.
+    ///
+    /// **Grade-dependent, and the spread is wide.** Silicon content trades core loss against
+    /// conductivity: 25 W/m/K here is mid-range for non-oriented sheet, and grades run from about
+    /// 20 to 30. Stacked laminations conduct far worse *across* the stack than the sheet does,
+    /// because the interlaminar varnish dominates — a stack is not this substance at all, and
+    /// treating it as one overstates the conduction out of a motor.
+    ///
+    /// Emissivity 0.3 is varnished sheet; bare mill finish is lower and rusty is much higher.
+    pub fn electrical_steel() -> Substance {
+        Substance {
+            name: "electrical steel (non-oriented)".to_string(),
+            density: Density::g_per_cm3(7.65),
+            thermal: Some(ThermalProps {
+                conductivity: ThermalConductivity::w_per_m_k(25.0),
+                specific_heat: SpecificHeat::j_per_kg_k(460.0),
+                expansion: ThermalExpansion::ppm_per_k(12.0),
+                emissivity: 0.30,
+            }),
+            mechanical: Some(MechanicalProps {
+                youngs_modulus: Pressure::from_si(200.0e9),
+                poisson_ratio: 0.29,
+                yield_strength: Pressure::from_si(350.0e6),
+            }),
+            acoustic: Some(AcousticProps {
+                sound_speed: Velocity::m_per_s(5_100.0),
+            }),
+        }
+    }
+
+    /// Solid cast PLA: printed structure, if it were solid, which it is not.
+    ///
+    /// **A printed part is not this substance.** Infill and layer adhesion move the effective
+    /// conductivity and density more than the polymer chemistry does: at 20% infill the density
+    /// is a fifth of this and the through-layer conductivity is lower again, because the path
+    /// crosses voids and weld lines rather than bulk. Scale the density by the infill fraction
+    /// at the very least, and treat the conductivity as an upper bound.
+    ///
+    /// That is not a caveat about precision. It is the difference between a part that survives
+    /// and one that creeps: PLA softens around 60 °C, and [`Substance::survives`] is checking
+    /// against a number the print may not reach in practice.
+    pub fn pla() -> Substance {
+        Substance {
+            name: "PLA (solid)".to_string(),
+            density: Density::g_per_cm3(1.24),
+            thermal: Some(ThermalProps {
+                conductivity: ThermalConductivity::w_per_m_k(0.13),
+                specific_heat: SpecificHeat::j_per_kg_k(1_800.0),
+                expansion: ThermalExpansion::ppm_per_k(70.0),
+                emissivity: 0.90,
+            }),
+            mechanical: Some(MechanicalProps {
+                youngs_modulus: Pressure::from_si(3.5e9),
+                poisson_ratio: 0.36,
+                yield_strength: Pressure::from_si(50.0e6),
+            }),
+            acoustic: None,
         }
     }
 
@@ -324,5 +495,113 @@ mod tests {
         let plain = Substance::bulk("x", Density::kg_per_m3(1.0));
         let json = serde_json::to_string(&plain).unwrap();
         assert!(!json.contains("thermal"), "{json}");
+    }
+    /// The builders change one field and leave the rest alone.
+    ///
+    /// Emissivity is a surface and not a substance, so anodised 6061 has to be reachable without
+    /// a second catalogue entry — that was the reported friction, and the workaround was reaching
+    /// into `thermal.as_mut()` by hand.
+    #[test]
+    fn a_finish_is_not_a_new_material() {
+        let polished = Substance::aluminium_6061();
+        let anodised = Substance::aluminium_6061().with_emissivity(0.9);
+        let (p, a) = (polished.thermal.unwrap(), anodised.thermal.unwrap());
+
+        assert_eq!(p.emissivity, 0.09);
+        assert_eq!(a.emissivity, 0.9);
+        // Everything else survives, including the name: it is the same alloy.
+        assert_eq!(p.conductivity, a.conductivity);
+        assert_eq!(p.specific_heat, a.specific_heat);
+        assert_eq!(p.expansion, a.expansion);
+        assert_eq!(polished.density, anodised.density);
+        assert_eq!(polished.name, anodised.name);
+
+        // A surface cannot out-radiate a blackbody, nor warm itself.
+        assert_eq!(
+            Substance::aluminium_6061()
+                .with_emissivity(4.0)
+                .thermal
+                .unwrap()
+                .emissivity,
+            1.0
+        );
+        assert_eq!(
+            Substance::aluminium_6061()
+                .with_emissivity(-1.0)
+                .thermal
+                .unwrap()
+                .emissivity,
+            0.0
+        );
+    }
+
+    /// **The trap the docs now warn about, as a number.**
+    ///
+    /// A lumped time constant is `C/(hA)` and `C` is `rho V c_p`, so reaching for aluminium's
+    /// 896 J/kg/K to stand in for a motor's ~450 doubles it. That was the reported failure: the
+    /// catalogue offered exactly one metal, reaching for it was the reasonable thing to do, and
+    /// it changed a conclusion with nothing to say so.
+    ///
+    /// Asserted on the ratio rather than on either value, because the ratio is the claim.
+    #[test]
+    fn the_specific_heat_a_user_borrows_is_worth_a_factor_of_two() {
+        let volume = Volume::from_si(3.456e-4);
+        let billet = Substance::aluminium_6061();
+        let assembly =
+            Substance::aluminium_6061().with_specific_heat(SpecificHeat::j_per_kg_k(450.0));
+
+        let c_billet = billet.heat_capacity(volume).unwrap().to_si();
+        let c_assembly = assembly.heat_capacity(volume).unwrap().to_si();
+        let ratio = c_billet / c_assembly;
+        assert!(
+            (ratio - 896.0 / 450.0).abs() < 1e-12,
+            "the capacity ratio is the specific-heat ratio: {ratio}"
+        );
+        assert!(ratio > 1.9, "a borrowed c_p is worth about two: {ratio}");
+    }
+
+    /// The new entries carry heat capacity and expansion, and their ordering is the physics.
+    ///
+    /// Not asserting the values against themselves — that would check nothing. The orderings
+    /// are the claims: copper conducts far better than steel and steel far better than laminate
+    /// and plastic; a polymer expands several times faster than a metal; and copper stores less
+    /// heat per kilogram than aluminium while storing more per unit volume, which is why a heat
+    /// spreader is copper and a heatsink is aluminium.
+    #[test]
+    fn the_new_entries_are_ordered_the_way_the_physics_is() {
+        let cu = Substance::copper().thermal.unwrap();
+        let steel = Substance::electrical_steel().thermal.unwrap();
+        let fr4 = Substance::fr4().thermal.unwrap();
+        let pla = Substance::pla().thermal.unwrap();
+        let al = Substance::aluminium_6061().thermal.unwrap();
+
+        // Conduction, over four orders of magnitude.
+        assert!(cu.conductivity > al.conductivity);
+        assert!(al.conductivity > steel.conductivity);
+        assert!(steel.conductivity.to_si() > 50.0 * fr4.conductivity.to_si());
+        assert!(fr4.conductivity > pla.conductivity);
+
+        // Expansion: a polymer moves about three times faster than the fastest metal here.
+        // 70 ppm/K against 6061's 23.6 is 2.97, and the first version of this asserted 3.0 --
+        // a claim written from the adjective rather than from the numbers.
+        let ratio = pla.expansion.to_si() / al.expansion.to_si();
+        assert!(
+            (2.5..3.5).contains(&ratio),
+            "PLA against 6061 is {ratio:.2}x"
+        );
+        assert!(al.expansion > cu.expansion && cu.expansion > steel.expansion);
+
+        // Per kilogram copper stores less than aluminium; per unit volume it stores more.
+        let v = Volume::from_si(1e-3);
+        assert!(cu.specific_heat < al.specific_heat);
+        assert!(
+            Substance::copper().heat_capacity(v).unwrap()
+                > Substance::aluminium_6061().heat_capacity(v).unwrap()
+        );
+
+        // The insulators are the emitters, which is why a black plastic case sheds heat a bare
+        // metal one does not.
+        assert!(fr4.emissivity > 0.8 && pla.emissivity > 0.8);
+        assert!(cu.emissivity < 0.1);
     }
 }
