@@ -6,9 +6,10 @@ library with no consumers is a library whose ergonomics nobody has measured, and
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it and
-draws it. None of it is a bug in the physics except finding 6, which is.
+draws it. None of it is a bug in the physics except finding 6, which is — and which no test inside the
+library could have found, because none of them was checking a rate.
 
-**Five of the six are now fixed.** The entries are kept rather than deleted, because what the
+**All six are now fixed.** The entries are kept rather than deleted, because what the
 API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
 around it. Each fixed entry says what was done.
@@ -126,17 +127,38 @@ This is the same shape as the wall-weighting defect the workspace already found 
 second-order interior dragged to first order by how the boundary — here the boundary in
 *time* — is handled. It was found the same way too, by the rate rather than the size.
 
-**Not fixed here.** A half-step kick at release would change the numbers in every acoustic
-test, and `Tube` very likely has the same startup, so it deserves its own pass rather than
-being smuggled in with an application. `tests/scene.rs` pins the rate at first order, so
-fixing it will fail that test — which is correct, since the table above would then be wrong.
+**Fixed, and `Tube` had it too.** The first velocity update now travels half a step; every
+one after it travels a whole one. Second order, and the error at 31 cells fell by a factor of
+22 — 0.0528 to 0.00238. `tests/scene.rs` and a new pair in `dualis-acoustic` pin the rate.
+
+Two things the fix turned up that were not visible from the outside:
+
+- **A test had turned the bug into the specification.** `one_step_from_rest_is_the_laplacian_the_field_reports`
+  asserted that one step from rest moves the pressure by `h²c²∇²p`. From rest `ṗ(0) = 0`, so
+  Taylor gives `½h²c²∇²p` — the test was missing the half, and it passed because the scheme
+  was missing it too. `Tube` had the matching test with the matching error. Both were written
+  by reading the implementation, which is the failure mode a test written from the closed form
+  does not have.
+- **The old startup conserved energy *exactly*, and the fix does not.** Not a regression: with
+  `v = 0` treated as the half-step value, `Σ∇·(p∇p) = 0` at a rigid wall makes the first step's
+  energy change cancel to the last bit. Starting correctly breaks that cancellation by
+  `−h²Σ(∇p)²/8ρ` — 0.42% of the total at 31 cells, quartering on refinement, and *only at the
+  first step*; from there the invariant holds to 1e-15.
+
+  So the old code bought exact bookkeeping by making the scheme first order. That is the
+  workspace's own documented trap — "the energy functional and the update were consistent with
+  each other and both wrong" — appearing a second time in the same crate.
+
+  The energy is now reported against the released state as its datum, with the one-off
+  difference kept in `Room::startup_adjustment` where it can be asked for, and bounded at 25%
+  so a real first-step bug cannot hide in it.
 
 ---
 
 ## What this says about the exercise
 
 Five ergonomic frictions and one real defect, from about three hundred lines of application
-code. Findings 1, 2 and 3 were the same shape: **the API was comfortable when the set of
+code, all six now fixed. Findings 1, 2 and 3 were the same shape: **the API was comfortable when the set of
 domains was known at compile time and awkward the moment it was not.** That was never a
 decision anybody made — it was the shape that falls out of writing a library with no consumer,
 where `&'static str` is free because every name is a literal in a test.

@@ -38,35 +38,41 @@ fn a_scene_round_trips_through_json() {
 }
 
 /// The standing mode oscillates at the frequency the closed form gives, and the gap
-/// between the two converges at **first** order — which is itself the finding.
+/// between the two converges at **second** order.
 ///
 /// The room is released at its (1,1) antinode with amplitude 1 Pa. A standing mode is
 /// separable, so every point follows `cos(2 pi f t)` and the peak of the field is
 /// `|cos(2 pi f t)|`. That is a closed form the integration never sees.
 ///
-/// Measured worst departure over a run of 0.02 s, against grid resolution:
+/// Worst departure over a run of 0.02 s, against grid resolution, before and after the
+/// leapfrog startup was fixed:
 ///
 /// ```text
-///   31 cells   0.0528       241 cells  0.0076
-///   61 cells   0.0265       481 cells  0.0039
-///  121 cells   0.0151
+///   cells     first order      second order
+///      31        0.0528            0.00238
+///      61        0.0265            0.00059
+///     121        0.0151            0.00007
+///     241        0.0076            0.00002
+///     481        0.0039            0.0000032
 /// ```
 ///
-/// Halving, not quartering — first order, where the scheme's interior is second. See
-/// `FRICTION.md` finding 6: `Room::released_from` sets the velocity to zero at `t = 0`, but
-/// a staggered leapfrog carries velocity at half steps, and a mode released from rest has
-/// `v(-dt/2) = -sin(pi f dt)`, not zero. That startup error is `O(dt)`, and `dt` follows
-/// `dx` through the CFL condition.
+/// The left column halves on refinement and the right one quarters. The cause of the left
+/// column was `Room::released_from` leaving the velocity at `t = 0` when a staggered
+/// leapfrog carries it at `t = -h/2`; the first velocity update then travelled a whole step
+/// where it was owed half. `O(h)`, permanent, and enough to drag a second-order scheme to
+/// first. `Tube` had it too.
 ///
-/// The rate is asserted and not merely the size, because only the rate distinguishes a
-/// coarse scheme from a wrong one — this repository learned that from a wall boundary that
-/// was wrong by 1.4% and looked like coarseness. Pinning it at first order also means that
-/// *fixing* the startup will fail this test, which is the correct outcome: the numbers in
-/// it would then be a lie.
+/// **The rate is asserted and not the size**, because only the rate separates a coarse
+/// scheme from a wrong one — the same lesson as the wall-weighting defect, which was 1.4%
+/// and looked like coarseness. Measured across three doublings rather than one: the
+/// per-doubling ratio bounces between 3.9 and 8.1 because "worst over forty sampled frames"
+/// is a maximum and therefore noisy, while the span 31 -> 241 is a stable 127x. Second order
+/// over three doublings is 64x and first order is 8x, so 40x separates them with room on
+/// both sides.
 #[test]
-fn the_room_rings_at_the_closed_form_frequency_and_converges_at_first_order() {
+fn the_room_rings_at_the_closed_form_frequency_and_converges_at_second_order() {
     let worst_at = |cells: usize| {
-        let probe = dualis::acoustic::Room::of_air("probe", Length::m(4.4), Length::m(3.1), cells);
+        let probe = Room::of_air("probe", Length::m(4.4), Length::m(3.1), cells);
         let f = probe.mode_frequency(1, 1).to_si();
         let mut world = World::build(room_scene(0.02, 40, cells)).expect("the scene builds");
         world
@@ -84,18 +90,16 @@ fn the_room_rings_at_the_closed_form_frequency_and_converges_at_first_order() {
             .fold(0.0f64, f64::max)
     };
 
-    // The size first: on a 61-cell grid the field tracks the closed form to within 6% of its
-    // amplitude. Measured 0.0265, so this uses 44% of its budget — the rest is room for the
-    // startup error to move if `dt` selection changes, which would not make the run wrong.
+    // The size first: a 61-cell grid tracks the closed form to a tenth of a percent of the
+    // amplitude. Measured 0.00059, so this uses 30% of its budget.
     let mid = worst_at(61);
-    assert!(mid < 0.06, "61 cells departed by {mid:.4} Pa");
+    assert!(mid < 0.002, "61 cells departed by {mid:.5} Pa");
 
-    // And the rate, which is the claim with content. One doubling, expected to halve.
-    let (coarse, fine) = (worst_at(121), worst_at(241));
-    let ratio = coarse / fine;
+    let (coarse, fine) = (worst_at(31), worst_at(241));
+    let fall = coarse / fine;
     assert!(
-        (1.7..2.3).contains(&ratio),
-        "121 -> 241 cells should halve the error if this is the first-order startup:          {coarse:.5} -> {fine:.5}, ratio {ratio:.3}"
+        fall > 40.0,
+        "31 -> 241 cells is three doublings: second order is 64x, first order 8x.          Got {coarse:.5} -> {fine:.5}, a factor of {fall:.1}"
     );
 }
 

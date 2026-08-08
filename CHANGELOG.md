@@ -42,22 +42,36 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
 - **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
   into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
   the SDK from outside rather than to be a good application, and it reports what that was like
-  in `crates/dualis-world/FRICTION.md`: five places the API is awkward and one real defect.
+  in `crates/dualis-world/FRICTION.md`: five places the API was awkward and one real defect,
+  all six now fixed.
   Excluded from the wasm, determinism and 1.78 jobs, which are promises the *library* makes to
   the people who depend on it.
 
-### Found
+### Found and fixed
 
-- **A first-order startup error in `Room`.** A room released in its (1,1) mode follows
-  `|cos(2πft)|`, but the gap converges at first order against grid resolution — 0.0528 at 31
-  cells, 0.0265 at 61, 0.0151 at 121, 0.0076 at 241 — where the scheme's interior is second.
-  `released_from` zeroes the velocity at `t = 0`, but a staggered leapfrog carries velocity at
-  half steps, and a mode released from rest has `v(−dt/2) = −sin(πf·dt)`. That is `O(dt)`, and
-  `dt` follows `dx` through the CFL condition. The same shape as the wall-weighting defect this
-  workspace already fixed, found the same way — by the rate rather than the size. Not fixed:
-  a half-step kick would move every acoustic test's numbers and `Tube` very likely shares the
-  bug, so it deserves its own pass. `dualis-world`'s test pins the rate, so fixing it will fail
-  that test, which is correct.
+- **A first-order startup error in `Room`, and in `Tube`.** A mode released from rest follows
+  `|cos(2πft)|`, but the gap converged at first order against grid resolution where the
+  scheme's interior is second. `released_from` left the velocity at `t = 0`; a staggered
+  leapfrog carries it at `t = −h/2`, so the first velocity update travelled a whole step where
+  it was owed half. `O(h)`, permanent, and `h` follows `dx` through the CFL condition.
+
+  Fixed: the first velocity update takes half a step. Second order now, and the worst
+  departure over 20 ms fell from 0.0528 to 0.00238 at 31 cells. Found by the workspace's own
+  application checking itself against a closed form, because nothing inside the library was
+  checking a rate.
+
+  Two things came out of the fix. **A test had turned the bug into the specification** — one
+  step from rest was asserted to move the pressure by `h²c²∇²p`, where Taylor gives `½h²c²∇²p`
+  since `ṗ(0) = 0`; the test was missing the half because the scheme was, and `Tube` had the
+  same pair. And **the old startup conserved energy exactly while the correct one does not**:
+  with `v = 0` read as the half-step value, `Σ∇·(p∇p) = 0` at a rigid wall makes the first
+  step's energy change cancel to the last bit. Starting correctly breaks that by `O(h²)` at
+  the first step only — 0.42% at 31 cells, quartering on refinement, and 1e-15 thereafter. The
+  old code had bought exact bookkeeping by making the scheme first order, which is this
+  workspace's own documented trap appearing a second time in the same crate. Energy is now
+  reported against the released state as its datum, with the difference available from
+  `Room::startup_adjustment` and bounded at 25% so a real first-step bug cannot hide there.
+
 - **The API is comfortable only when the set of domains is known at compile time.**
   `Simulation::with` takes `impl Domain` and there is no `impl Domain for Box<dyn Domain>`;
   domain names are `&'static str`, so a name from a file has to be leaked; and a renderer

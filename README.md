@@ -22,7 +22,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 349 tests, all against closed forms
+cargo test --workspace                       # 351 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -40,9 +40,10 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good
 application but to use the SDK the way a stranger would. It came back with five places the
 API is awkward and one real defect in the acoustic startup, all in
-[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md). None of the 345 tests
-inside the library could have found them: they are written by someone who already knows the
-shape.
+[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md), all six now fixed. Not
+one of the library's own tests could have found them — the ergonomic ones because a test is
+written by somebody who already knows the shape, and the defect because nothing here was
+checking a *rate*. There are two tests for that rate now.
 
 ## The crates
 
@@ -362,6 +363,37 @@ a half-width cell with a factor of exactly **−1** — it inverts the wave inst
 it. Not a divergence: a perfectly stable run that quietly reflects. So `max_stable_dt` now
 reports the impedance's own limit as well as the wave's, `Z·dx/2ρc²`, which halves the step
 for a matched end and leaves a closed one alone.
+
+### The same crate, the same shape, a second time
+
+There was another one, in the boundary in *time*, and it was still there after all of the
+above. `released_from` set the velocity to zero at `t = 0`, but a staggered leapfrog carries
+velocity at `t = −h/2`, so the first velocity update travelled a whole step where the initial
+condition entitled it to half. `O(h)`, permanent, and `h` follows `dx` — first order again,
+from a scheme whose interior and whose walls were now both second order.
+
+Found the same way, by the rate. Not by anything in the library: it took `dualis-world`, the
+first consumer, checking a released mode against `|cos(2πft)|`. The worst departure over 20 ms
+went from 0.0528 to 0.00238 at 31 cells once the first update took half a step.
+
+Two things fell out of it that are worth more than the fix.
+
+**A test had turned the bug into the specification.** One step from rest was asserted to move
+the pressure by `h²c²∇²p` — but from rest `ṗ(0) = 0`, so Taylor gives `½h²c²∇²p`. The test was
+missing the half because the scheme was, and `Tube` carried the identical pair. Both were
+written by reading the implementation. A test written from the closed form cannot do that,
+which is why the conventions say to write it that way.
+
+**And the old startup conserved energy exactly, while the correct one does not.** With `v = 0`
+read as the half-step value, `Σ∇·(p∇p) = 0` at a rigid wall makes the first step's energy
+change cancel to the last bit. Starting correctly breaks that cancellation by `O(h²)` — 0.42%
+at 31 cells, quartering on refinement, and only at the first step; from there the invariant
+holds to 1e-15. So the old code had bought exact bookkeeping by making the scheme first order.
+That is the trap this repository already had written down — *the functional and the update
+were consistent with each other and both wrong* — turning up a second time in the same crate,
+and the audit that was supposed to catch it was the thing keeping it in place. The energy is
+now measured against the released state as its datum, with the difference reported by
+`Room::startup_adjustment` and bounded so a real first-step bug cannot hide in it.
 
 ## The domain whose answers are distributions
 

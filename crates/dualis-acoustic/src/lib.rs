@@ -137,7 +137,15 @@ pub struct Tube {
     area: f64,
     left: End,
     right: End,
-    saved: Option<(Vec<f64>, Vec<f64>)>,
+    /// Whether `velocity` has been offset to the half step the scheme carries it at. See
+    /// [`Room`](crate::room::Room)'s field of the same name; the defect and the fix are
+    /// identical, because the two schemes are the same one in different dimensions.
+    velocity_staggered: bool,
+    /// The released state's energy minus the invariant, once staggered.
+    energy_offset: f64,
+    /// The physical energy at release, the datum the reported energy is measured against.
+    energy_datum: f64,
+    saved: Option<(Vec<f64>, Vec<f64>, bool)>,
     /// Energy handed to the bus by absorbing ends, in joules.
     radiated: f64,
 }
@@ -157,6 +165,9 @@ impl Tube {
             name: name.into(),
             pressure: vec![0.0; cells],
             pressure_prev: vec![0.0; cells],
+            velocity_staggered: false,
+            energy_offset: 0.0,
+            energy_datum: 0.0,
             velocity: vec![0.0; cells - 1],
             dx: length.to_si() / (cells - 1) as f64,
             speed: sound_speed.to_si(),
@@ -193,16 +204,22 @@ impl Tube {
 
     /// Start with a pressure profile and no motion.
     ///
-    /// Genuinely at rest, since the velocity field is stored and set to zero rather than
-    /// implied by two equal time levels. A pressure bump released from rest splits into
-    /// two pulses going opposite ways, each half the height — worth knowing before
-    /// reading a result off one of them.
+    /// At rest at `t = 0`, which is where an initial condition lives and *not* where a
+    /// staggered scheme carries velocity. The first step makes up the missing half; see
+    /// `velocity_staggered`. Storing the velocity explicitly rather than implying it from two
+    /// equal time levels is what makes that correction possible at all.
+    ///
+    /// A pressure bump released from rest splits into two pulses going opposite ways, each
+    /// half the height — worth knowing before reading a result off one of them.
     pub fn released_from(mut self, profile: impl Fn(Length) -> Pressure) -> Tube {
         for i in 0..self.pressure.len() {
             self.pressure[i] = profile(Length::from_si(i as f64 * self.dx)).to_si();
         }
         self.pressure_prev.copy_from_slice(&self.pressure);
         self.velocity.iter_mut().for_each(|u| *u = 0.0);
+        self.velocity_staggered = false;
+        self.energy_offset = 0.0;
+        self.energy_datum = self.invariant_si();
         self
     }
 
@@ -257,10 +274,23 @@ impl Tube {
     /// the sound and not of a related quantity. Conserved for rigid or pressure-release
     /// ends, and reduced by exactly what an absorbing end published to the bus.
     pub fn energy(&self) -> Energy {
+        Energy::from_si(self.invariant_si() + self.energy_offset)
+    }
+
+    /// How much the discrete invariant differs from the released state's physical energy.
+    ///
+    /// Zero until the first step; `O(dt²)` and converging. See
+    /// [`Room::startup_adjustment`](crate::room::Room::startup_adjustment).
+    pub fn startup_adjustment(&self) -> Energy {
+        Energy::from_si(self.energy_offset)
+    }
+
+    /// The scheme's invariant, before the release datum is applied.
+    fn invariant_si(&self) -> f64 {
         let volume = self.area * self.dx;
         let rc2 = self.density * self.speed * self.speed;
         if rc2 <= 0.0 {
-            return Energy::from_si(0.0);
+            return 0.0;
         }
         // End cells hold half a cell's worth, matching the weighting their update uses —
         // which is what keeps this conserved exactly rather than nearly. Every velocity face
@@ -281,7 +311,7 @@ impl Tube {
             .iter()
             .map(|u| self.density * u * u / 2.0 * volume)
             .sum();
-        Energy::from_si(potential + kinetic)
+        potential + kinetic
     }
 
     /// Joules handed to the bus by absorbing ends over the run.
@@ -345,10 +375,21 @@ impl Tube {
         let n = self.pressure.len();
         let rc2 = self.density * self.speed * self.speed;
 
+        // Half a step the first time. The stored velocity starts where the initial condition
+        // put it, at t = 0, and the scheme wants it at t = -dt/2; kicking it a whole step
+        // instead is the leapfrog startup error, O(dt) and permanent.
+        let vh = if self.velocity_staggered {
+            dt
+        } else {
+            0.5 * dt
+        };
+        let starting = !self.velocity_staggered;
+        self.velocity_staggered = true;
+
         // Faces first: rho du/dt = -dp/dx.
         for i in 0..self.velocity.len() {
             self.velocity[i] -=
-                dt / (self.density * self.dx) * (self.pressure[i + 1] - self.pressure[i]);
+                vh / (self.density * self.dx) * (self.pressure[i + 1] - self.pressure[i]);
         }
 
         // Then cells: dp/dt = -rho c^2 du/dx. The two walls supply the velocities just
@@ -392,6 +433,20 @@ impl Tube {
         if absorbed > 0.0 {
             self.radiated += absorbed;
             bus.publish(quantity::ENERGY, absorbed);
+        }
+
+        // Startup, once. See `Room`'s step for the full account: converting the released
+        // state's velocity from t = 0 to the half step the scheme carries it at moves the
+        // invariant by O(dt²), which is discretisation and not a leak, so it is taken as a
+        // datum rather than handed to the audit. Bounded, so a real first-step bug cannot
+        // hide in it.
+        if starting {
+            let invariant = self.invariant_si();
+            let offset = self.energy_datum - invariant;
+            let scale = self.energy_datum.abs().max(invariant.abs());
+            if scale > 0.0 && offset.abs() / scale <= 0.25 {
+                self.energy_offset = offset;
+            }
         }
     }
 }
@@ -470,14 +525,19 @@ impl Domain for Tube {
     }
 
     fn checkpoint(&mut self) {
-        self.saved = Some((self.pressure.clone(), self.velocity.clone()));
+        self.saved = Some((
+            self.pressure.clone(),
+            self.velocity.clone(),
+            self.velocity_staggered,
+        ));
     }
 
     fn restore(&mut self) {
-        if let Some((pressure, velocity)) = self.saved.clone() {
+        if let Some((pressure, velocity, staggered)) = self.saved.clone() {
             self.pressure_prev.copy_from_slice(&pressure);
             self.pressure = pressure;
             self.velocity = velocity;
+            self.velocity_staggered = staggered;
         }
     }
 
@@ -526,7 +586,10 @@ mod tests {
                 before[i + 1]
             };
             let expected = (left - 2.0 * before[i] + right) / (dx * dx);
-            let implied = (tube.pressure[i] - before[i]) / (h * h * c * c);
+            // The ½ is Taylor's: from rest ṗ(0) = 0, so p(h) − p(0) = ½h²c²∇²p. See the
+            // matching test in `room`, which asserted this without the half and passed —
+            // against a scheme that kicked the velocity a whole step where it was owed half.
+            let implied = (tube.pressure[i] - before[i]) / (0.5 * h * h * c * c);
             assert!(
                 (implied - expected).abs() < scale * 1e-12,
                 "cell {i}: the step implies {implied} but the stencil says {expected}"

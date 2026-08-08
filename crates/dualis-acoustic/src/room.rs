@@ -35,6 +35,13 @@ use dualis_core::{Domain, Exchange, Kind, Ledger, ScalarField, Violation};
 use dualis_units::{Area, Density, Energy, Frequency, Length, LengthVec, Pressure, Time, Velocity};
 use glam::DVec3;
 
+/// Everything [`Room::checkpoint`] has to put back: the pressure, both velocity components,
+/// and whether the velocity has been staggered yet.
+///
+/// A named type because clippy is right that four things in a tuple is where a reader starts
+/// counting commas.
+type Snapshot = (Vec<f64>, Vec<f64>, Vec<f64>, bool);
+
 /// A rectangular room, discretised on a uniform grid with rigid walls.
 pub struct Room {
     name: String,
@@ -54,7 +61,22 @@ pub struct Room {
     density: f64,
     /// Depth, so a two-dimensional room still has a volume and an energy in joules.
     depth: f64,
-    saved: Option<(Vec<f64>, Vec<f64>, Vec<f64>)>,
+    /// Whether `vx`/`vy` have been offset to the half step the scheme carries them at.
+    ///
+    /// A staggered leapfrog wants velocity half a step *behind* the pressure it is about to
+    /// update: `v^(n+1/2) = v^(n-1/2) - (h/rho) grad p^n`. An initial condition gives
+    /// velocity at `t = 0`, not at `t = -h/2`, so the very first velocity update has only
+    /// half a step to travel. Using a whole one leaves an `O(h)` error that never decays —
+    /// and since `h` follows `dx` through the CFL condition, it drags a second-order scheme
+    /// to first order. See the note on [`Room::released_from`].
+    velocity_staggered: bool,
+    /// What the released state's energy was, minus what the scheme's invariant came out as
+    /// once it had been staggered. See [`Room::startup_adjustment`].
+    energy_offset: f64,
+    /// The physical energy at release, which is the datum the reported energy is measured
+    /// against.
+    energy_datum: f64,
+    saved: Option<Snapshot>,
 }
 
 impl Room {
@@ -87,6 +109,9 @@ impl Room {
             speed: sound_speed.to_si(),
             density: density.to_si(),
             depth: depth.to_si(),
+            velocity_staggered: false,
+            energy_offset: 0.0,
+            energy_datum: 0.0,
             saved: None,
         }
     }
@@ -121,6 +146,14 @@ impl Room {
         self.pressure_prev = self.pressure.clone();
         self.vx.iter_mut().for_each(|v| *v = 0.0);
         self.vy.iter_mut().for_each(|v| *v = 0.0);
+        // At rest at `t = 0`, which is not where the scheme carries velocity. The first step
+        // makes up the difference; see `velocity_staggered`.
+        self.velocity_staggered = false;
+        // The datum: the energy this state physically has, with the velocity where the
+        // initial condition put it. What the scheme will conserve is a slightly different
+        // number, and `startup_adjustment` is the difference.
+        self.energy_offset = 0.0;
+        self.energy_datum = self.invariant_si();
         self
     }
 
@@ -189,10 +222,27 @@ impl Room {
     /// A consequence worth knowing: a single cell's contribution can be negative, where
     /// the pressure changed sign across the step. The total cannot.
     pub fn energy(&self) -> Energy {
+        Energy::from_si(self.invariant_si() + self.energy_offset)
+    }
+
+    /// How much the discrete invariant differs from the released state's physical energy.
+    ///
+    /// Zero until the first step, because the invariant is a function of the step size and
+    /// there is no step size before then. `O(h²)` and therefore converging: 0.42% of the
+    /// total on a 31-cell room, 0.10% at 61, 0.026% at 121, 0.0065% at 241.
+    ///
+    /// Reported rather than hidden, because it is the one place where what this domain tells
+    /// the audit is not simply what its state says.
+    pub fn startup_adjustment(&self) -> Energy {
+        Energy::from_si(self.energy_offset)
+    }
+
+    /// The scheme's invariant itself, before the release datum is applied.
+    fn invariant_si(&self) -> f64 {
         let volume = self.dx * self.dx * self.depth;
         let rc2 = self.density * self.speed * self.speed;
         if rc2 <= 0.0 {
-            return Energy::from_si(0.0);
+            return 0.0;
         }
         // Every term carries the volume it actually occupies. A node on a wall owns half a
         // cell, one in a corner a quarter, and a face between two boundary rows likewise —
@@ -224,7 +274,7 @@ impl Room {
             .enumerate()
             .map(|(k, u)| self.density * u * u / 2.0 * volume / wall_weight(k % nx, nx))
             .sum();
-        Energy::from_si(potential + kinetic_x + kinetic_y)
+        potential + kinetic_x + kinetic_y
     }
 
     /// Cross-sectional area of one cell, for reporting.
@@ -328,18 +378,27 @@ impl Domain for Room {
         let rc2 = self.density * self.speed * self.speed;
         let (nx, ny) = (self.nx, self.ny);
 
+        // Half a step the first time, a whole one after that. The stored velocity starts at
+        // `t = 0` where the initial condition put it, and the scheme wants it at `t = -h/2`,
+        // so the first update has half the distance to cover. Kicking it a whole step
+        // instead is the classic leapfrog startup error: `O(h)`, permanent, and enough to
+        // make a second-order scheme converge at first order.
+        let vh = if self.velocity_staggered { h } else { 0.5 * h };
+        let starting = !self.velocity_staggered;
+        self.velocity_staggered = true;
+
         // Faces: rho du/dt = -grad p.
         for j in 0..ny {
             for i in 0..nx - 1 {
                 let face = j * (nx - 1) + i;
-                self.vx[face] -= h / (self.density * self.dx)
+                self.vx[face] -= vh / (self.density * self.dx)
                     * (self.pressure[j * nx + i + 1] - self.pressure[j * nx + i]);
             }
         }
         for j in 0..ny - 1 {
             for i in 0..nx {
                 let face = j * nx + i;
-                self.vy[face] -= h / (self.density * self.dx)
+                self.vy[face] -= vh / (self.density * self.dx)
                     * (self.pressure[(j + 1) * nx + i] - self.pressure[j * nx + i]);
             }
         }
@@ -378,6 +437,37 @@ impl Domain for Room {
                     * (wall_weight(i, nx) * (right - left) + wall_weight(j, ny) * (above - below));
             }
         }
+
+        // Startup, once: the released state has its velocity at t = 0 and the scheme's
+        // invariant is defined on a staggered state, so converting between them moves the
+        // number by O(h²). Measured on a 61-cell room: 0.10%, and it quarters on refinement
+        // — 0.42% at 31 cells, 0.026% at 121, 0.0065% at 241.
+        //
+        // That is discretisation, not a leak: from this step onward the invariant holds to
+        // about 1e-15. So the energy is reported against the released state as its datum and
+        // the difference is kept here, where `startup_adjustment` can be asked for it, rather
+        // than being handed to the audit as a violation it would be right to refuse.
+        //
+        // The bound is what stops this from being a place for a real bug to hide. A genuine
+        // error in the first step — a sign, a factor of two, a boundary — is not O(h²), and
+        // a quarter of the energy is far outside anything the Courant condition permits.
+        if starting {
+            let invariant = self.invariant_si();
+            let offset = self.energy_datum - invariant;
+            let scale = self.energy_datum.abs().max(invariant.abs());
+            if scale > 0.0 && offset.abs() / scale > 0.25 {
+                return Err(Violation {
+                    quantity: "energy".to_string(),
+                    site: format!("{} (starting the leapfrog)", self.name),
+                    before: self.energy_datum,
+                    after: invariant,
+                    scale,
+                    tolerance: 0.25,
+                });
+            }
+            self.energy_offset = offset;
+        }
+
         Ok(())
     }
 
@@ -386,15 +476,21 @@ impl Domain for Room {
     }
 
     fn checkpoint(&mut self) {
-        self.saved = Some((self.pressure.clone(), self.vx.clone(), self.vy.clone()));
+        self.saved = Some((
+            self.pressure.clone(),
+            self.vx.clone(),
+            self.vy.clone(),
+            self.velocity_staggered,
+        ));
     }
 
     fn restore(&mut self) {
-        if let Some((p, vx, vy)) = self.saved.clone() {
+        if let Some((p, vx, vy, staggered)) = self.saved.clone() {
             self.pressure_prev.copy_from_slice(&p);
             self.pressure = p;
             self.vx = vx;
             self.vy = vy;
+            self.velocity_staggered = staggered;
         }
     }
 
@@ -803,14 +899,21 @@ mod tests {
     }
 
     /// **What the wall weighting is, stated exactly.** One step from rest moves every
-    /// pressure by `h²c²∇²p`, walls included, where `∇²` is the mirrored five-point stencil
+    /// pressure by `½h²c²∇²p`, walls included, where `∇²` is the mirrored five-point stencil
     /// [`ScalarField::laplacian`] reports.
     ///
-    /// From rest the velocities are `−h∇p/ρdx` after the first half of a step, so the
-    /// pressure change is `h²c²` times whatever Laplacian the scheme implies — which makes
-    /// this a direct read of that operator, boundary treatment and all. Without the wall
-    /// weighting a boundary node moves by exactly half as much, and the two would disagree
-    /// there and only there.
+    /// **The ½ is Taylor's.** From rest `ṗ(0) = −ρc²∇·v(0) = 0`, so `p(h) − p(0) =
+    /// ½h²p̈(0) = ½h²c²∇²p`. This test used to assert `h²c²∇²p` with no half, and passed,
+    /// because the scheme kicked the velocity a whole step on its first update where the
+    /// initial condition only entitled it to half — the startup error that made a
+    /// second-order scheme converge at first order. The test had turned the bug into the
+    /// specification, which is what a test written from the implementation does.
+    ///
+    /// After the first half-step the velocities are `−h∇p/2ρdx`, so the pressure change is
+    /// `½h²c²` times whatever Laplacian the scheme implies — which makes this a direct read
+    /// of that operator, boundary treatment and all. Without the wall weighting a boundary
+    /// node moves by exactly half as much again, and the two would disagree there and only
+    /// there.
     ///
     /// Cheaper and sharper than measuring a frequency: it is exact, it needs one step, and it
     /// names the wrong node rather than reporting that a number came out low.
@@ -838,7 +941,8 @@ mod tests {
         for j in 0..ny {
             for i in 0..nx {
                 let k = j * nx + i;
-                let implied = (room.pressure[k] - before[k]) / (h * h * room.speed * room.speed);
+                let implied =
+                    (room.pressure[k] - before[k]) / (0.5 * h * h * room.speed * room.speed);
                 assert!(
                     (implied - reported[k]).abs() < scale * 1e-12,
                     "node ({i},{j}): the step implies {implied} but the field says {}",
@@ -1094,6 +1198,82 @@ mod tests {
         for _ in 0..20 {
             sim.advance(Time::ms(1.0)).expect("energy should hold");
         }
+    }
+
+    /// The leapfrog is started correctly, and the proof is the rate.
+    ///
+    /// A mode released from rest follows `|cos(2 pi f t)|`; the departure from it must
+    /// *quarter* on refinement, not halve. It halved until the velocity was given its missing
+    /// half step, and this pins the fix — because losing it again produces a scheme that
+    /// still runs, still conserves energy to 1e-15, and is quietly first order. That
+    /// combination is why it survived: nothing here was checking a rate, and everything that
+    /// was being checked passed.
+    ///
+    /// Measured, at a fixed 20 ms rather than a fixed step count: 7.83e-4 at 31 cells,
+    /// 1.76e-4 at 61, 3.83e-5 at 121, 9.95e-6 at 241 — ratios of 4.5, 4.6, 3.9.
+    ///
+    /// **Two ways this test could have measured nothing**, both met while writing it. A fixed
+    /// number of steps covers less physical time as the grid refines, which flattered the
+    /// ratio to 8.7 by comparing eight periods against one. And a *square* room stepped at
+    /// exactly its stability limit solves its symmetric modes to 1e-13 — the two-dimensional
+    /// magic time step — so the room here is 4.4 by 3.1 and not 4 by 4.
+    #[test]
+    fn starting_the_leapfrog_correctly_makes_the_scheme_second_order() {
+        let worst = |cells: usize| {
+            let mut room = Room::of_air("room", Length::m(4.4), Length::m(3.1), cells)
+                .released_in_mode(1, 1, Pressure::from_si(1.0));
+            let f = room.mode_frequency(1, 1).to_si();
+            let steps = (0.02 / room.max_stable_dt(Time::ZERO).to_si()).ceil() as usize;
+            let h = Time::from_si(0.02 / steps as f64);
+            let mut bus = Exchange::new();
+            let (mut t, mut worst) = (0.0f64, 0.0f64);
+            for _ in 0..steps {
+                room.step(Time::from_si(t), h, &mut bus).unwrap();
+                t += h.to_si();
+                let want = (2.0 * std::f64::consts::PI * f * t).cos().abs();
+                worst = worst.max((room.peak_pressure().to_si() - want).abs());
+            }
+            worst
+        };
+        let (coarse, fine) = (worst(31), worst(241));
+        let fall = coarse / fine;
+        // Three doublings: second order is 64x, first order 8x. Measured 78.7.
+        assert!(
+            fall > 30.0,
+            "31 -> 241 cells fell only {fall:.1}x ({coarse:.4e} -> {fine:.4e});              a first-order startup would give about 8"
+        );
+    }
+
+    /// The startup adjustment is real, small, and second order.
+    ///
+    /// It is the one number this domain reports that its state does not directly say, so it
+    /// is worth pinning rather than trusting. Converting the released velocity from `t = 0`
+    /// to the half step moves the invariant by `O(h²)`: 0.42% of the total at 31 cells,
+    /// 0.10% at 61, 0.026% at 121.
+    #[test]
+    fn the_startup_adjustment_is_second_order_and_declared() {
+        let relative = |cells: usize| {
+            let mut room = square(cells).released_in_mode(1, 1, Pressure::from_si(1.0));
+            let total = room.energy().to_si();
+            room.step(
+                Time::ZERO,
+                room.max_stable_dt(Time::ZERO),
+                &mut Exchange::new(),
+            )
+            .unwrap();
+            room.startup_adjustment().to_si().abs() / total
+        };
+        let (a, b) = (relative(31), relative(121));
+        assert!(
+            a > 1e-4,
+            "the adjustment should not be nothing, got {a:.2e}"
+        );
+        // Two doublings of the grid, so sixteenfold if it is second order.
+        let fall = a / b;
+        assert!(
+            (10.0..24.0).contains(&fall),
+            "31 -> 121 cells should quarter it twice: {a:.3e} -> {b:.3e}, a factor of {fall:.1}"
+        );
     }
 
     /// Degenerate rooms are handled.
