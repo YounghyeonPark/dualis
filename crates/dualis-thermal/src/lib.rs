@@ -53,7 +53,7 @@ use dualis_units::{
     STEFAN_BOLTZMANN,
 };
 use glam::DVec3;
-pub use network::{Node, ThermalNetwork};
+pub use network::{Node, SteadyState, ThermalNetwork};
 
 /// The bus channel heat arrives on, in joules.
 ///

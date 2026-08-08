@@ -242,6 +242,54 @@ def test_a_network_that_loses_its_heat_is_still_audited():
     assert abs(book["energy"] - (20.0 * 300 + 1.0)) < 1e-6, book
 
 
+def test_steady_state_lands_where_marching_arrives():
+    """The solve and the march are independent routes to the same balance.
+
+    Marching is the reference -- it is what the Rust closed-form suite checks -- so this asks
+    whether one solve lands where 30000 seconds of stepping arrives -- about sixteen time
+    constants, where the remaining transient is microkelvin. It also shows the reason to
+    have it from Python at all: the march below crosses the binding 30000 times for an answer
+    that `steady_state` gives once, and gives exactly rather than to whatever the transient has
+    decayed to.
+    """
+    watts = 6.0
+    solved = dict(motor(watts=watts, seconds=1).steady_state("motor", watts))
+
+    marched = dict(motor(watts=watts, seconds=30_000).node_temperatures("motor"))
+    for name, t in solved.items():
+        assert abs(t - marched[name]) < 1e-3, f"{name}: solved {t:.6f} against marched {marched[name]:.6f}"
+
+    # The drop across the joint is P/K at steady state, computed here rather than read back.
+    assert abs((solved["winding"] - solved["case"]) - watts / 0.9) < 1e-9
+
+    # And the march had genuinely not arrived at one second, so the first line is not comparing
+    # a steady state against itself.
+    early = dict(motor(watts=watts, seconds=1).node_temperatures("motor"))
+    assert solved["winding"] - early["winding"] > 10.0
+
+
+def test_a_network_with_nowhere_to_lose_heat_has_no_steady_state():
+    """It warms without limit, so a finite answer would be the wrong answer to a question with
+    no answer. Raised as a Violation, with the fields addressable like any other."""
+    sim = dualis.Simulation(schedule="staggered")
+    sim.add_network(
+        "sealed",
+        nodes=[{"name": "a", "material": "copper", "volume_m3": 1e-5,
+                "thickness_m": 1e-3, "initial_k": 300.0}],
+        links=[],
+        absorbing="a",
+    )
+    try:
+        sim.steady_state("sealed", 5.0)
+        raise AssertionError("a sealed network has no steady state")
+    except dualis.Violation as v:
+        assert "nowhere to go" in v.quantity, v.quantity
+        assert v.site == "sealed"
+
+    # With no power there is a solution, and it is the network as it stands.
+    assert dict(sim.steady_state("sealed", 0.0))["a"] == 300.0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -109,7 +109,9 @@ pub mod prelude {
         fresnel_reflectance, fresnel_split, Hit, Material, Mtf, Psf, Pupil, Ray, Scatter,
         SpectralPower, Spectrum, SurfaceFinish, SurfaceOptics, Zernike, VISIBLE_RANGE,
     };
-    pub use dualis_thermal::{Bar1D, Environment, LumpedMass, Node, ThermalNetwork, HEAT};
+    pub use dualis_thermal::{
+        Bar1D, Environment, LumpedMass, Node, SteadyState, ThermalNetwork, HEAT,
+    };
     pub use dualis_units::{
         AccelerationVec, Area, Conductance, Damping, Density, Energy, Force, ForceVec, Frequency,
         HeatCapacity, Irradiance, Length, LengthVec, Mass, Momentum, MomentumVec, Power, Pressure,

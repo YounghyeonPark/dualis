@@ -377,6 +377,211 @@ impl ThermalNetwork {
 
     /// Everything conducting heat out of node `i`: its environment linearised at its current
     /// temperature, plus every link on it.
+    /// **Where it all ends up, without marching there.**
+    ///
+    /// Solves for the temperatures at which every node's heat in equals its heat out, given
+    /// `power` arriving at the absorbing node. That is the number a designer actually wants —
+    /// *will the winding survive* — and stepping to it is both slow and approximate: the
+    /// assembly's time constant is `C/G` over the whole thing, so reaching one part in a
+    /// thousand of the answer takes about seven of them, and every step of that is an explicit
+    /// Euler step accumulating its own error.
+    ///
+    /// This is not the implicit stepping this workspace declines to have. Nothing about
+    /// [`Domain::step`] changes, the kernel is untouched, and no schedule learns anything: it is
+    /// a question asked *of* a network — where does this end up — answered by solving the same
+    /// balance the step loop converges to. The network is not modified; the temperatures come
+    /// back and what you do with them is yours.
+    ///
+    /// # The nonlinearity, and why Newton rather than one solve
+    ///
+    /// With emissivity zero the balance is linear and this converges in a single iteration, to
+    /// machine precision. Radiation makes it `T⁴` and one solve would be an answer to the
+    /// linearised problem rather than to the problem — the mistake
+    /// [`LumpedMass::equilibrium_rise`](crate::LumpedMass::equilibrium_rise) was written to
+    /// correct on a single body, and it is the same mistake here with more nodes. So: Newton,
+    /// with `4εσAT³` as the radiative part of the Jacobian, which is exactly the
+    /// `linearised_loss_conductance` the step limit already uses.
+    ///
+    /// The linear cases exit after one solve. The radiative ones take **more than they look like
+    /// they should**, and the bound on them was wrong at first: it was set to twice the worst
+    /// case the mild tests exercised, and refused a kilowatt.
+    ///
+    /// The cost is the overshoot on the first step. At ambient the radiative slope `4εσAT³` is
+    /// tiny against what the balance eventually needs, so the first solve lands far above the
+    /// answer and Newton walks down at the `3/4` error ratio a quartic gives. Counted on one
+    /// radiating node:
+    ///
+    /// ```text
+    ///     1 kW   12 iterations      2 037 K
+    ///   100 kW   24                 6 646 K
+    ///    10 MW   36                21 039 K
+    ///     1 GW   48                66 533 K
+    ///     1 TW   66               374 142 K
+    /// ```
+    ///
+    /// Roughly twelve more per factor of a hundred in power, so the limit of 100 covers anything
+    /// a caller could mean. Exhausting it returns a `Violation` rather than the last iterate,
+    /// because an unconverged guess is a plausible temperature for a balance that was never
+    /// struck.
+    ///
+    /// # What it refuses
+    ///
+    /// **A network with no environment anywhere**, when power is arriving. Heat has nowhere to
+    /// go, so no steady state exists and the balance has no solution — the matrix is singular.
+    /// Marching such a network is perfectly well defined; it simply heats up forever. Returning
+    /// a plausible number here would be the worst outcome, so it is named instead.
+    ///
+    /// ```
+    /// # use dualis_thermal::{Environment, ThermalNetwork};
+    /// # use dualis_core::Substance;
+    /// # use dualis_units::{Area, Conductance, Length, Power, Temperature, Volume};
+    /// let mut net = ThermalNetwork::new("motor");
+    /// let winding = net.node("winding", Substance::copper(), Volume::from_si(18e-6),
+    ///                        Length::mm(2.0), Temperature::celsius(25.0));
+    /// let case = net.node_losing_to("case", Substance::aluminium_6061(), Volume::from_si(220e-6),
+    ///                               Length::mm(4.0), Temperature::celsius(25.0),
+    ///                               Environment::still_air(Temperature::celsius(25.0),
+    ///                                                      Area::from_si(0.042)));
+    /// net.link(winding, case, Conductance::w_per_k(0.9)).unwrap();
+    /// net.absorbing(winding).unwrap();
+    ///
+    /// let settled = net.steady_state(Power::w(6.0)).unwrap();
+    /// // The joint carries the full 6 W at steady state, so the drop across it is P/K.
+    /// let drop = settled.temperature(winding).to_si() - settled.temperature(case).to_si();
+    /// assert!((drop - 6.0 / 0.9).abs() < 1e-9, "{drop}");
+    /// ```
+    pub fn steady_state(&self, power: Power) -> Result<SteadyState, Violation> {
+        let n = self.nodes.len();
+        if n == 0 {
+            return Err(Violation::at(
+                self.name.clone(),
+                "a network with no nodes has no steady state",
+                0.0,
+            ));
+        }
+        let p = power.to_si();
+        if !p.is_finite() {
+            return Err(Violation::at(self.name.clone(), "power is not finite", p));
+        }
+        let sink = match self.absorbing {
+            Some(i) => i,
+            None if p == 0.0 => 0, // unused: with no power the source vector is zero anyway
+            None => {
+                return Err(Violation::at(
+                    self.name.clone(),
+                    "power was given but no node was named to absorb it",
+                    p,
+                ))
+            }
+        };
+        if p != 0.0 && !self.nodes.iter().any(|node| node.environment.is_some()) {
+            return Err(Violation::at(
+                self.name.clone(),
+                "no node loses heat to an environment, so heat has nowhere to go and there is \
+                 no steady state — it warms without limit",
+                p,
+            ));
+        }
+
+        // Start from where the network is. For the linear case the start is irrelevant; for the
+        // radiative one it is a better guess than ambient whenever the caller has already
+        // stepped, and no worse when they have not.
+        let mut t: Vec<f64> = self.nodes.iter().map(|node| node.temperature).collect();
+
+        // Newton. Eight is generous: the linear case converges on the first, and a radiative
+        // one from a cold start has taken four in every case measured. The count is bounded so
+        // a pathological input reports rather than spins.
+        let mut converged = false;
+        for _ in 0..NEWTON_STEPS {
+            // Residual: what each node is failing to balance, in watts.
+            let mut r = vec![0.0; n];
+            r[sink] += p;
+            for l in &self.links {
+                let q = l.ua * (t[l.a] - t[l.b]);
+                r[l.a] -= q;
+                r[l.b] += q;
+            }
+            for (i, node) in self.nodes.iter().enumerate() {
+                if let Some(e) = &node.environment {
+                    r[i] -= e
+                        .loss_from(Temperature::from_si(t[i]), emissivity_of(node))
+                        .to_si();
+                }
+            }
+            if r.iter().all(|v| v.abs() < 1e-12 * p.abs().max(1.0)) {
+                converged = true;
+                break;
+            }
+
+            // Jacobian of that residual. Off-diagonal `+UA`, diagonal minus the row sum minus
+            // the environment's slope — the same conductance `max_stable_dt` divides by.
+            let mut j = vec![0.0; n * n];
+            for l in &self.links {
+                j[l.a * n + l.b] += l.ua;
+                j[l.b * n + l.a] += l.ua;
+                j[l.a * n + l.a] -= l.ua;
+                j[l.b * n + l.b] -= l.ua;
+            }
+            for (i, node) in self.nodes.iter().enumerate() {
+                if let Some(e) = &node.environment {
+                    j[i * n + i] -= crate::linearised_loss_conductance(
+                        e,
+                        Temperature::from_si(t[i]),
+                        emissivity_of(node),
+                    );
+                }
+            }
+
+            // J·dT = −r, then T += dT.
+            for v in r.iter_mut() {
+                *v = -*v;
+            }
+            let step = solve(&mut j, &mut r, n).ok_or_else(|| {
+                Violation::at(
+                    self.name.clone(),
+                    "the steady-state balance is singular; some part of this network has no \
+                     path to an environment",
+                    p,
+                )
+            })?;
+            let mut moved: f64 = 0.0;
+            for (ti, d) in t.iter_mut().zip(&step) {
+                *ti += d;
+                moved = moved.max(d.abs());
+            }
+            if moved < 1e-12 {
+                converged = true;
+                break;
+            }
+        }
+
+        // Not converging is a real answer and it is not this one. Returning whatever the last
+        // iterate happened to be would be a plausible temperature for a balance that was never
+        // struck — found by instrumenting the iteration count, which showed the loop had no way
+        // to report exhausting itself.
+        if !converged {
+            return Err(Violation::at(
+                self.name.clone(),
+                "the steady-state balance did not converge in the iterations allowed",
+                p,
+            ));
+        }
+
+        for (i, v) in t.iter().enumerate() {
+            if !v.is_finite() {
+                return Err(Violation::at(
+                    format!("{}/{}", self.name, self.nodes[i].label),
+                    "steady-state temperature is not finite",
+                    *v,
+                ));
+            }
+        }
+        Ok(SteadyState {
+            network: self.id,
+            temperatures: t,
+        })
+    }
+
     fn node_conductance(&self, i: usize) -> f64 {
         let n = &self.nodes[i];
         let env = n
@@ -397,6 +602,100 @@ impl ThermalNetwork {
             .map(|l| l.ua)
             .sum::<f64>()
     }
+}
+
+/// How many Newton steps `ThermalNetwork::steady_state` will take before giving up.
+///
+/// The measured iteration counts that set this are in that method's own documentation, where a
+/// caller will read them. Each iteration is one dense solve of an n×n system with n the node
+/// count, so for the handful of nodes a lumped network has, even sixty-six is microseconds.
+const NEWTON_STEPS: usize = 100;
+
+/// What [`ThermalNetwork::steady_state`] found: a temperature per node.
+///
+/// A separate type rather than a `Vec<Temperature>` so it is read with the same [`Node`] handles
+/// the network was built with, and so a handle from a *different* network is refused here too
+/// rather than indexing into whatever sits at that position.
+#[derive(Clone, Debug)]
+pub struct SteadyState {
+    network: u64,
+    temperatures: Vec<f64>,
+}
+
+impl SteadyState {
+    /// The settled temperature of a node.
+    ///
+    /// # Panics
+    ///
+    /// If the handle came from a different network, for the same reason the rest of this module
+    /// does: the alternative is answering a question about a node the caller did not mean.
+    pub fn temperature(&self, node: Node) -> Temperature {
+        assert_eq!(
+            node.network, self.network,
+            "this Node belongs to a different network"
+        );
+        Temperature::from_si(self.temperatures[node.index as usize])
+    }
+
+    /// How many nodes it covers.
+    pub fn nodes(&self) -> usize {
+        self.temperatures.len()
+    }
+}
+
+fn emissivity_of(node: &NodeState) -> f64 {
+    node.substance.thermal.map(|t| t.emissivity).unwrap_or(0.0)
+}
+
+/// Dense Gaussian elimination with partial pivoting, in place. `None` if singular.
+///
+/// Written here rather than pulled in: a thermal network is a handful of nodes, this is forty
+/// lines, and a linear-algebra dependency would have to clear `deny.toml` and the WebAssembly
+/// jobs to save them. Partial pivoting by magnitude, which is deterministic — the same matrix
+/// gives the same pivots on every platform, as everything in this workspace must.
+fn solve(a: &mut [f64], b: &mut [f64], n: usize) -> Option<Vec<f64>> {
+    for col in 0..n {
+        let (mut best, mut best_at) = (a[col * n + col].abs(), col);
+        for row in col + 1..n {
+            let v = a[row * n + col].abs();
+            if v > best {
+                best = v;
+                best_at = row;
+            }
+        }
+        // Scaled against the largest entry, so "singular" means singular rather than "small
+        // because the conductances are in milliwatts per kelvin".
+        let scale = a.iter().fold(0.0f64, |m, v| m.max(v.abs())).max(1e-300);
+        if best <= scale * 1e-14 {
+            return None;
+        }
+        if best_at != col {
+            for k in 0..n {
+                a.swap(col * n + k, best_at * n + k);
+            }
+            b.swap(col, best_at);
+        }
+        let pivot = a[col * n + col];
+        for row in col + 1..n {
+            let factor = a[row * n + col] / pivot;
+            if factor == 0.0 {
+                continue;
+            }
+            for k in col..n {
+                a[row * n + k] -= factor * a[col * n + k];
+            }
+            b[row] -= factor * b[col];
+        }
+    }
+    let mut x = vec![0.0; n];
+    for row in (0..n).rev() {
+        let mut acc = b[row];
+        for k in row + 1..n {
+            acc -= a[row * n + k] * x[k];
+        }
+        x[row] = acc / a[row * n + row];
+    }
+    Some(x)
 }
 
 impl Domain for ThermalNetwork {

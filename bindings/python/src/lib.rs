@@ -39,7 +39,7 @@ use pyo3::types::PyDict;
 use dualis::prelude::{quantity, Energy};
 use dualis::prelude::{
     Area, Bar1D, Conductance, Domain, Environment, Exchange, Kind, Ledger, Length, LumpedMass,
-    Schedule, Simulation as RustSimulation, Substance, Temperature, ThermalNetwork, Time,
+    Power, Schedule, Simulation as RustSimulation, Substance, Temperature, ThermalNetwork, Time,
     Violation as RustViolation, Volume, HEAT,
 };
 
@@ -397,6 +397,27 @@ impl PySimulation {
             })
         };
         Ok(net.heat_flow(pick(a)?, pick(b)?).to_si())
+    }
+
+    /// Where a network settles for a steady `watts`, without marching there.
+    ///
+    /// Returns `(name, kelvin)` pairs in declaration order. The network is not modified — this
+    /// is a question asked of it, so asking mid-run does not disturb the run.
+    ///
+    /// Worth more from Python than from Rust: the loop that marches to a steady state crosses
+    /// this boundary once per step, so `for _ in range(900): sim.advance(1.0)` pays nine hundred
+    /// times for an answer one solve gives — and gives exactly, rather than to whatever the
+    /// transient has decayed to.
+    ///
+    /// Raises if heat has nowhere to go, because then there is no steady state and the network
+    /// warms without limit. A finite number would be the wrong answer to a question with none.
+    fn steady_state(&self, name: &str, watts: f64) -> PyResult<Vec<(String, f64)>> {
+        let net = self.network(name)?;
+        let settled = net.steady_state(Power::from_si(watts)).map_err(raise)?;
+        Ok(net
+            .handles()
+            .map(|(n, label)| (label.to_string(), settled.temperature(n).to_si()))
+            .collect())
     }
 
     /// Advance every domain by `dt` seconds, auditing the crossing and the books.

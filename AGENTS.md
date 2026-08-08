@@ -7,13 +7,13 @@ Everything needed to write a working dualis program, on one page. If you are her
 `PATH`, so `which dualis` will fail and that is not a broken installation.
 
 From Python, `import dualis` works — see [`bindings/python`](bindings/python), built from this
-repository and not yet on PyPI. It can *run and audit* the library's physics; it cannot *extend*
+repository and published as `dualis` on PyPI. It can *run and audit* the library's physics; it cannot *extend*
 it, because writing a `Domain` in Python is unsupported and the reasons are written down there.
 Everything below describes the Rust API.
 
 ```toml
 [dependencies]
-dualis = "0.2"
+dualis = "0.3"
 ```
 
 API docs: <https://docs.rs/dualis>. Source: <https://github.com/YounghyeonPark/dualis>.
@@ -177,6 +177,17 @@ motor.heat_flow(winding, case);
 
 That is `junction_to_case` in `examples/agents_quickstart.rs`, which CI runs — so it is a
 snippet that compiled and produced that number, not one written into a document by hand.
+
+If what you want is the *settled* answer rather than the trajectory, do not march to it:
+
+```rust
+let settled = motor.steady_state(Power::w(6.0))?;   // solves the balance directly
+settled.temperature(winding);
+```
+
+Exact rather than "close enough after enough steps", and it refuses a network where heat has
+nowhere to go — that has no steady state, and a finite number would be the wrong answer to a
+question with none.
 
 Nodes are `Node` handles rather than names on purpose — see below. `node_named` is the way in if
 you are building from a file, and `handles()` walks a network you did not build.

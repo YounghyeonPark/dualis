@@ -10,6 +10,43 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [Unreleased]
+
+### Added
+
+- **`ThermalNetwork::steady_state(power)`** — where a network settles, solved rather than marched
+  to. The question a designer actually asks is *will the winding survive*, and stepping to it is
+  slow and approximate: reaching a part in a thousand takes about seven time constants of
+  explicit Euler, each accumulating its own error. This solves the same balance the step loop
+  converges to, exactly, and returns a `SteadyState` read with the same `Node` handles.
+
+  Not the implicit stepping this workspace declines to have: `Domain::step` is unchanged, the
+  kernel is untouched, no schedule learns anything, and the network is not modified by being
+  asked. Newton, because radiation makes the balance `T⁴` and a single solve would answer the
+  linearised problem — the mistake `LumpedMass::equilibrium_rise` exists to correct on one body.
+  The Jacobian's radiative part is the `linearised_loss_conductance` the step limit already uses.
+
+  Refuses a network where no node loses heat to an environment: it warms without limit, so there
+  is no steady state, and a plausible finite number would be the worst possible answer.
+
+  Exposed in Python as `steady_state(name, watts)`, where it is worth more than in Rust — a
+  marching loop crosses the binding once per step.
+
+### Fixed
+
+- **The Newton bound was set from the wrong measurement and refused a kilowatt.** It was eight,
+  twice the worst case the first tests exercised — but none of them loads a node hard enough for
+  the `T⁴` term to dominate. At ambient the radiative slope `4εσAT³` is tiny against what the
+  balance needs, so the first solve overshoots enormously and Newton walks down at the `3/4`
+  ratio a quartic gives: twelve iterations at a kilowatt, sixty-six at a terawatt. Now 100, from
+  counting them, with the table in the method's documentation.
+
+  Found by instrumenting the iteration count, which also showed the loop had no way to *report*
+  exhausting itself — it returned the last iterate, a plausible temperature for a balance that
+  was never struck. It returns a `Violation` now, and the test that would have caught the
+  original bound checks a radiation-dominated solve against a root found by **bisection**, which
+  shares no arithmetic with Newton.
+
 ## [0.3.0] — 2026-08-09
 
 ### Added
