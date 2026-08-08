@@ -22,7 +22,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 345 tests, all against closed forms
+cargo test --workspace                       # 349 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -33,10 +33,16 @@ is [further down](#examples).
 > including a deliberate 10% energy leak, so you can see what the audit says when a model is
 > wrong. Working *on* dualis rather than with it: [CLAUDE.md](CLAUDE.md).
 
-Nothing consumes this workspace yet, and that shapes how it is written: every claim in it
-is checked against a closed form or against an independent computation rather than against
-an application that might be wrong in the same direction. Where no closed form exists, the
-README says so.
+Every claim in this workspace is checked against a closed form or against an independent
+computation rather than against an application that might be wrong in the same direction.
+Where no closed form exists, the README says so.
+
+There is now one consumer, `dualis-world`, and its first job was not to be a good
+application but to use the SDK the way a stranger would. It came back with five places the
+API is awkward and one real defect in the acoustic startup, all in
+[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md). None of the 345 tests
+inside the library could have found them: they are written by someone who already knows the
+shape.
 
 ## The crates
 
@@ -50,6 +56,7 @@ README says so.
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
+| `dualis-world` | The first consumer, and not published. Scenes described as data, run and drawn — it exists to use the SDK from outside and write down where that is awkward |
 
 ```text
 dualis-units       no dependencies but glam and serde
@@ -60,6 +67,7 @@ dualis-mechanics   depends on core      │   any of the others
 dualis-acoustic    depends on core      │
 dualis-molecular   depends on core     ─┘
 dualis             depends on all of them
+dualis-world       depends on the facade, and nothing depends on it
 ```
 
 **The kernel must never depend on a domain.** If a new physics needs the kernel
@@ -267,13 +275,21 @@ give none and it just checks. Nothing generated is committed.
 Plotting has no dependency. SVG is text, so it is a `format!` and a file write — no
 encoder, no fonts, and it opens by double-click. `examples/common/svg.rs` is about three
 hundred and fifty lines and is the right size for this job; when it stops being, the answer is
-`dualis-world` rather than a bigger version of it.
+`dualis-world` rather than a bigger version of it. That turned out to be a prediction rather
+than a plan: `dualis-world` had to write its own renderer, because this one lives under
+`examples/` where no other crate can reach it — `FRICTION.md` finding 4.
 
 The examples also exist to keep the library honest in a way tests cannot. `ScalarField` was
 written as the interface a visualiser would read a simulation through and then sat with no
 implementor at all, which meant "is it the right interface" was a guess. There are two now —
 a one-dimensional bar governed by diffusion and a two-dimensional room governed by a wave —
 and the pair has said more about the interface than either could alone. See the next section.
+
+An actual visualiser has since said something neither could: `ScalarField` is the right
+*shape* and is unreachable through the thing you have. A renderer holds `&dyn Domain` and
+there is no way to ask it for a `&dyn ScalarField`, so `dualis-world` downcasts to concrete
+types instead and knows every domain by name — which is exactly what the interface existed to
+avoid. `FRICTION.md` finding 3.
 
 ## What implementing the field interface found
 

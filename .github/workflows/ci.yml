@@ -116,8 +116,9 @@ jobs:
   # already enforces its MSRV and its determinism in CI rather than promising them, and a
   # licence claim deserves the same treatment.
   #
-  # Worth having in place *before* `dualis-world`, whose windowing and GPU stack will be
-  # several hundred crates. Nobody audits that by reading.
+  # `dualis-world` is inside this check. It is dependency-light today — serde and the SDK —
+  # but it is the crate most likely to reach for something heavy, and the moment it does the
+  # allow-list is the only thing standing between the workspace and a licence nobody read.
   deny:
     name: licences, advisories
     runs-on: ubuntu-latest
@@ -129,6 +130,15 @@ jobs:
 
   # WebAssembly builds at all. Catches an accidental dependency on something the
   # target does not have — a thread, a clock, the filesystem.
+  #
+  # `--exclude dualis-world` in this job and the two below it.
+  #
+  # WebAssembly, determinism and the 1.78 floor are promises the *library* makes to the
+  # people who depend on it from crates.io. `dualis-world` is an application that is not
+  # published, has no dependents, and exists to exercise the SDK from outside; holding it
+  # to those three would be inventing a constraint nobody asked for, and the first heavy
+  # dependency it needs would fail a promise the library is still keeping perfectly well.
+  # It is covered by `lint`, `test` and `release`, which is where its correctness lives.
   wasm:
     name: build (wasm32-unknown-unknown)
     runs-on: ubuntu-latest
@@ -139,7 +149,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: cargo build
-        run: cargo build --locked --workspace --target wasm32-unknown-unknown
+        run: cargo build --locked --workspace --exclude dualis-world --target wasm32-unknown-unknown
 
   # WebAssembly *runs*, and agrees with every other platform to the last bit.
   #
@@ -163,7 +173,7 @@ jobs:
       - name: cargo test --target wasm32-wasip1
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime
-        run: cargo test --locked --workspace --target wasm32-wasip1
+        run: cargo test --locked --workspace --exclude dualis-world --target wasm32-wasip1
 
   # The oldest toolchain the workspace is claimed to build on.
   #
@@ -188,4 +198,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.78
       - uses: Swatinem/rust-cache@v2
       - name: cargo build
-        run: cargo build --locked --workspace
+        run: cargo build --locked --workspace --exclude dualis-world

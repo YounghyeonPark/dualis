@@ -2,14 +2,42 @@
 
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
-explicitly not stable and a minor bump may break you — which is the honest state of a library
-whose first consumer has not been written yet.
+explicitly not stable and a minor bump may break you. The first consumer exists now, and it
+has already found three places the API should probably change — see `dualis-world` below.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
 ## [Unreleased]
+
+### Added
+
+- **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
+  into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
+  the SDK from outside rather than to be a good application, and it reports what that was like
+  in `crates/dualis-world/FRICTION.md`: five places the API is awkward and one real defect.
+  Excluded from the wasm, determinism and 1.78 jobs, which are promises the *library* makes to
+  the people who depend on it.
+
+### Found
+
+- **A first-order startup error in `Room`.** A room released in its (1,1) mode follows
+  `|cos(2πft)|`, but the gap converges at first order against grid resolution — 0.0528 at 31
+  cells, 0.0265 at 61, 0.0151 at 121, 0.0076 at 241 — where the scheme's interior is second.
+  `released_from` zeroes the velocity at `t = 0`, but a staggered leapfrog carries velocity at
+  half steps, and a mode released from rest has `v(−dt/2) = −sin(πf·dt)`. That is `O(dt)`, and
+  `dt` follows `dx` through the CFL condition. The same shape as the wall-weighting defect this
+  workspace already fixed, found the same way — by the rate rather than the size. Not fixed:
+  a half-step kick would move every acoustic test's numbers and `Tube` very likely shares the
+  bug, so it deserves its own pass. `dualis-world`'s test pins the rate, so fixing it will fail
+  that test, which is correct.
+- **The API is comfortable only when the set of domains is known at compile time.**
+  `Simulation::with` takes `impl Domain` and there is no `impl Domain for Box<dyn Domain>`;
+  domain names are `&'static str`, so a name from a file has to be leaked; and a renderer
+  cannot get a `&dyn ScalarField` from a `&dyn Domain`, so it downcasts and knows every domain
+  by name — which is what `ScalarField` existed to avoid. Three symptoms of one position. It
+  may be the right position, but nobody chose it.
 
 ## [0.1.0] — 2026-08-07
 

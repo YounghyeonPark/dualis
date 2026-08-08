@@ -84,6 +84,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dualis-world"
+version = "0.1.0"
+dependencies = [
+ "dualis",
+ "glam",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "glam"
 version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
