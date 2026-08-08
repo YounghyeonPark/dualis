@@ -19,9 +19,11 @@ use serde::{Deserialize, Serialize};
 // one on both sides. That collision is the app's problem and not the library's.
 use dualis::prelude::Room as AcousticRoom;
 
+pub mod beam;
 pub mod heater;
 pub mod render;
 
+use beam::Beam;
 use heater::Heater;
 
 /// What to simulate, in a form that can be written down rather than compiled in.
@@ -105,6 +107,28 @@ pub enum DomainSpec {
         /// Joules it has to spend before it goes quiet.
         reserve_j: f64,
     },
+    /// A beam that heats *where it lands*, over a shared boundary.
+    ///
+    /// The spatial publisher. `faces` has to equal the bar's `cells`: both sides build their
+    /// own [`Interface`] and the kernel refuses a flux whose face count disagrees, naming
+    /// both numbers. Stated twice because nothing derives one from the other — see
+    /// `FRICTION.md`, finding 9.
+    Beam {
+        /// Domain name.
+        name: String,
+        /// The boundary to publish onto. Must match the bar's `exposes`.
+        onto: String,
+        /// Faces the boundary is cut into. Must equal the bar's `cells`.
+        faces: usize,
+        /// Area of one face.
+        face_area_mm2: f64,
+        /// Beam power.
+        watts: f64,
+        /// Joules it has to spend.
+        reserve_j: f64,
+        /// Gaussian waist, as a fraction of the boundary's span.
+        waist_fraction: f64,
+    },
     /// A one-dimensional conducting bar.
     Bar {
         /// Domain name, and the handle the renderer uses to find it again.
@@ -117,7 +141,21 @@ pub enum DomainSpec {
         area_mm2: f64,
         /// Starting temperature, uniform, in celsius.
         initial_c: f64,
+        /// If set, the bar exposes a boundary of this name that a beam can land on. One
+        /// face per cell, which is the bar's own choice and the reason a beam has to be
+        /// told the cell count separately.
+        #[serde(default)]
+        exposes: Option<Boundary>,
     },
+}
+
+/// A boundary a bar offers for something else to publish onto.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Boundary {
+    /// Both sides have to use the same name.
+    pub name: String,
+    /// Area of one face.
+    pub face_area_mm2: f64,
 }
 
 impl DomainSpec {
@@ -126,7 +164,8 @@ impl DomainSpec {
         match self {
             DomainSpec::Room { name, .. }
             | DomainSpec::Bar { name, .. }
-            | DomainSpec::Heater { name, .. } => name,
+            | DomainSpec::Heater { name, .. }
+            | DomainSpec::Beam { name, .. } => name,
         }
     }
 
@@ -163,20 +202,42 @@ impl DomainSpec {
                 watts,
                 reserve_j,
             } => Box::new(Heater::new(name.clone(), *watts, *reserve_j)),
+            DomainSpec::Beam {
+                name,
+                onto,
+                faces,
+                face_area_mm2,
+                watts,
+                reserve_j,
+                waist_fraction,
+            } => Box::new(Beam::new(
+                name.clone(),
+                Interface::uniform(onto.clone(), *faces, Area::from_si(face_area_mm2 * 1e-6)),
+                *watts,
+                *reserve_j,
+                *waist_fraction,
+            )),
             DomainSpec::Bar {
                 name,
                 length_mm,
                 cells,
                 area_mm2,
                 initial_c,
-            } => Box::new(Bar1D::new(
-                name.clone(),
-                Substance::aluminium_6061(),
-                *cells,
-                Length::mm(length_mm / *cells as f64),
-                Area::from_si(area_mm2 * 1e-6),
-                Temperature::celsius(*initial_c),
-            )),
+                exposes,
+            } => {
+                let bar = Bar1D::new(
+                    name.clone(),
+                    Substance::aluminium_6061(),
+                    *cells,
+                    Length::mm(length_mm / *cells as f64),
+                    Area::from_si(area_mm2 * 1e-6),
+                    Temperature::celsius(*initial_c),
+                );
+                Box::new(match exposes {
+                    Some(b) => bar.exposing(b.name.clone(), Area::from_si(b.face_area_mm2 * 1e-6)),
+                    None => bar,
+                })
+            }
         }
     }
 }
@@ -301,7 +362,7 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
         // A heater has no field, so `Domain::as_field` returns `None` and `capture` never
         // reaches here with one. Matching on it anyway rather than an `unreachable!`, because
         // a panic reachable only through a future edit is worse than a panel nobody draws.
-        DomainSpec::Heater { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
+        DomainSpec::Heater { .. } | DomainSpec::Beam { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
         DomainSpec::Bar {
             cells, length_mm, ..
         } => (

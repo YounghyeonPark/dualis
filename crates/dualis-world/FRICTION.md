@@ -5,11 +5,12 @@ library with no consumers is a library whose ergonomics nobody has measured, and
 345 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
-Everything below was hit while building the smallest thing that loads a scene, runs it,
-couples two domains over the bus and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
+Everything below was hit while building the smallest thing that loads a scene, runs it, couples
+two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Six of the eight are fixed**, and two are recorded rather than actioned. The entries are
+**Six of the ten are fixed**, and four are recorded rather than actioned — three of
+those because the kernel already refuses the mistake they describe. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
 around it. Each fixed entry says what was done.
@@ -192,12 +193,52 @@ where the message can name the file and the line. This one does not yet.
 Not a library defect. A note about where the natural seam is, and the sort of thing only
 somebody loading scenes from disk would think to want.
 
+## 9. A spatial coupling makes both sides state the discretisation, twice
+
+`Bar1D::exposing(name, face_area)` builds its own `Interface` with one face per cell. A
+publisher has to build a matching one, and there is no way to derive it from the bar: by the
+time a `Box<dyn Domain>` exists, its interface is behind the trait, and a per-spec builder
+cannot see another spec's product anyway.
+
+So a scene says the face count twice — once as the bar's `cells` and once as the beam's
+`faces` — and can say it inconsistently.
+
+**Not fixed, and the kernel is the reason it does not need to be.** `publish_on` refuses a
+flux whose face count differs from the interface's and reports both numbers. That is the right
+place for the check: silently padding or truncating would put energy on the wrong part of the
+boundary while keeping the total exactly right, which is the one failure a conservation audit
+cannot see and the whole reason the spatial channel exists. `a_boundary_the_two_sides_cut_differently_is_refused`
+asserts it.
+
+What would remove the duplication is `exposing` taking an `Interface` rather than building
+one — then a scene constructs a single boundary and hands clones to both sides. Worth doing
+when a second spatial consumer exists; with one, the duplication is two integers in a file
+and the kernel already refuses the mistake.
+
+## 10. A sampled field is not the state, and averaging it is not averaging the state
+
+The renderer samples `ScalarField` at evenly spaced points including both ends. `Bar1D`'s grid
+is cell-centred, so the two end samples sit half a cell outside the outermost cell centres.
+Averaging the samples therefore comes out about `1/2n` low against averaging the cells — 1.2%
+at 41 cells.
+
+Found by an assertion failing, not by reasoning: a test checked that the bar held every joule
+the beam paid, computed the mean from the render panel, and missed by 1.2%.
+
+**Not a defect anywhere.** `ScalarField` is a function of position and is behaving exactly as
+documented; the renderer is sampling it exactly as it should. But an application that reported
+a mean temperature from its own render buffer would be wrong by that much with nothing to tell
+it, and the two numbers look interchangeable right up until they are compared. The test now
+reads the total from the domain and the shape from the panel, and pins the gap between them so
+it stays understood rather than rediscovered.
+
 ---
 
 ## What this says about the exercise
 
-Eight findings from about four hundred lines of application code: six ergonomic, one a real
-defect in the physics, one a note about where a check belongs. Six are fixed.
+Ten findings from about six hundred lines of application code: six ergonomic, one a real defect
+in the physics, and three notes about where a check belongs or why one is already in the right
+place. Six are fixed.
 
 Findings 1, 2, 3 and 7 were the same shape. **The API was comfortable when the set of domains
 was known at compile time and awkward the moment it was not** — and that was never a decision
@@ -219,11 +260,6 @@ That is the case for building a consumer early, and it is stronger than the ergo
 None of this was visible from inside.
 
 ## What this report does not cover
-
-**Spatial coupling.** The scene above meets on a plain channel. `Interface` and `Flux` — a
-boundary cut into faces that both sides address, audited face by face — are the newest part of
-the kernel and still have no consumer outside the workspace. `Bar1D::exposing` now takes a
-name from data, which is the first step toward one.
 
 **Three of the five domains.** Optics, mechanics and molecular have no `DomainSpec` variant, so
 their constructors have not been driven from data at all. `Fluid::lattice` alone takes five

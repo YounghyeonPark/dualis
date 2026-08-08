@@ -22,7 +22,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 353 tests, all against closed forms
+cargo test --workspace                       # 355 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -40,8 +40,9 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good
 application but to use the SDK the way a stranger would. It came back with five places the
 API is awkward and one real defect in the acoustic startup, all in
-[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) — eight of them now, six
-fixed and two argued down in writing. Not
+[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) — ten of them now, six
+fixed and four argued down in writing, three of those because the kernel already refuses the
+mistake they describe. Not
 one of the library's own tests could have found them — the ergonomic ones because a test is
 written by somebody who already knows the shape, and the defect because nothing here was
 checking a *rate*. There are two tests for that rate now.

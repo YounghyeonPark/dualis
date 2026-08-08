@@ -273,3 +273,146 @@ fn a_schedule_a_scene_cannot_survive_is_named_and_refused() {
     assert!((violation.before - 0.5).abs() < 1e-12);
     assert!(violation.after > 30.0, "got {}", violation.after);
 }
+
+/// **A beam that heats where it lands**, over a boundary two domains share, from data.
+///
+/// The last part of the kernel with no outside consumer. A plain channel carries an amount;
+/// an `Interface` carries an amount *and a place*, and is audited face by face — because a
+/// flux redistributed to the wrong part of a boundary keeps the total exactly right, so a
+/// total-only check would pass the one bug the spatial coupling exists to prevent.
+///
+/// The scene builds a bar that exposes a boundary and a beam that publishes onto it. Neither
+/// names the other; they name the same boundary.
+///
+/// The check is a shape, not a total. A total would be satisfied by spreading the joules
+/// evenly, which is exactly the failure mode: the middle cell must end up hotter than the
+/// ends by the ratio the Gaussian says, computed here rather than read off the bar.
+#[test]
+fn a_beam_heats_the_bar_where_it_lands() {
+    let cells = 41;
+    let scene: Scene = serde_json::from_str(&format!(
+        r#"{{
+          "title": "a beam on a bar", "schedule": "multirate",
+          "duration_s": 0.2, "frames": 4,
+          "conservation_tolerance": 1e-9,
+          "domains": [
+            {{ "kind": "beam", "name": "beam", "onto": "face", "faces": {cells},
+               "face_area_mm2": 0.5, "watts": 4.0, "reserve_j": 0.4,
+               "waist_fraction": 0.12 }},
+            {{ "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": {cells},
+               "area_mm2": 100.0, "initial_c": 20.0,
+               "exposes": {{ "name": "face", "face_area_mm2": 0.5 }} }}
+          ]
+        }}"#
+    ))
+    .expect("the spatial scene parses");
+
+    let mut world = World::build(scene).expect("it builds");
+    // The audit is face by face, and anything left unclaimed on a spatial channel at the end
+    // of a step is refused just as it is on a plain one.
+    let frames = world.run().expect("the books close over the boundary");
+
+    let beam = world
+        .simulation()
+        .domain_as::<dualis_world::beam::Beam>("beam")
+        .expect("the beam is still there");
+    assert!(
+        beam.reserve().to_si() < 1e-12,
+        "0.4 J at 4 W runs out in 0.1 s, {} J left",
+        beam.reserve().to_si()
+    );
+
+    let profile = &frames[frames.len() - 1].panels[0].values;
+    assert_eq!(profile.len(), cells);
+
+    // The shape. Conduction has had 0.2 s to smear it, so the peak is lower than the
+    // Gaussian's and the check is a bound rather than an equality: the middle must still be
+    // clearly hotter than the ends, and a uniform spread would put it at exactly 1.0.
+    let middle = profile[cells / 2] - 20.0;
+    let edge = profile[0] - 20.0;
+    assert!(
+        middle / edge > 3.0,
+        "the beam should land in the middle: centre rose {middle:.4} K, end {edge:.4} K, \
+         ratio {:.2} — a flat spread would give 1.0",
+        middle / edge
+    );
+
+    // And the total is exactly what was paid, independent of where it went. 0.4 J into
+    // 20 mm x 1 cm^2 of aluminium, insulated, computed from the substance rather than the bar.
+    //
+    // **Read from the bar and not from the panel**, which is a trap worth naming. A panel is
+    // `ScalarField` *sampled* at evenly spaced points including both ends; the bar's grid is
+    // cell-centred, so the two end samples sit half a cell outside the outermost centres.
+    // Averaging the samples is not averaging the cells, and it comes out about 1/2n low —
+    // 1.2% at 41 cells, which is exactly what this assertion caught the first time. An
+    // application that reported a mean temperature from its own render buffer would be wrong
+    // by that much and would have no way to know. See `FRICTION.md`, finding 10.
+    let capacity = Substance::aluminium_6061()
+        .heat_capacity(Volume::from_si(20e-3 * 100e-6))
+        .expect("aluminium has a specific heat");
+    let bar = world
+        .simulation()
+        .domain_as::<Bar1D>("bar")
+        .expect("the bar is still there");
+    let mean_rise = bar.mean_temperature().to_si() - Temperature::celsius(20.0).to_si();
+    assert!(
+        (mean_rise / (0.4 / capacity.to_si()) - 1.0).abs() < 1e-6,
+        "the bar holds every joule the beam paid: {mean_rise:.5} K"
+    );
+
+    // The sampled panel is close but not equal, and the gap is the sampling and not a leak.
+    let sampled_rise = profile.iter().sum::<f64>() / cells as f64 - 20.0;
+    let gap = (sampled_rise / mean_rise - 1.0).abs();
+    assert!(
+        gap > 1e-4 && gap < 0.05,
+        "the panel average should differ from the cell average by about 1/2n, got {gap:.4}"
+    );
+}
+
+/// Two sides that disagree about the boundary are refused, and told both numbers.
+///
+/// The face count is stated twice in a scene — once as the bar's `cells` and once as the
+/// beam's `faces` — because nothing derives one from the other. So it can be stated wrongly,
+/// and this is what happens when it is.
+///
+/// Not a silent renormalisation onto whichever discretisation happened to be first. A flux
+/// padded or truncated to fit would put energy on the wrong part of the boundary while
+/// keeping the total right, which is the failure the spatial channel exists to prevent and
+/// the one a conservation audit cannot see.
+#[test]
+fn a_boundary_the_two_sides_cut_differently_is_refused() {
+    let scene: Scene = serde_json::from_str(
+        r#"{
+          "title": "mismatched", "schedule": "multirate",
+          "duration_s": 0.1, "frames": 2,
+          "domains": [
+            { "kind": "beam", "name": "beam", "onto": "face", "faces": 20,
+              "face_area_mm2": 0.5, "watts": 4.0, "reserve_j": 0.4,
+              "waist_fraction": 0.12 },
+            { "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": 41,
+              "area_mm2": 100.0, "initial_c": 20.0,
+              "exposes": { "name": "face", "face_area_mm2": 0.5 } }
+          ]
+        }"#,
+    )
+    .unwrap();
+
+    let violation = World::build(scene)
+        .expect("it builds; the two sides only meet when they run")
+        .run()
+        .expect_err("20 faces cannot be published onto a boundary cut into 41");
+
+    // The refusal names the boundary and the channel, and carries both counts.
+    assert!(
+        violation.site.contains("face") && violation.site.contains("energy"),
+        "the refusal should name the boundary and channel, got {:?}",
+        violation.site
+    );
+    assert!(
+        (violation.before - 41.0).abs() < 0.5 || (violation.after - 41.0).abs() < 0.5,
+        "one side of the report should be the 41 faces the bar offered: \
+         before {} after {}",
+        violation.before,
+        violation.after
+    );
+}

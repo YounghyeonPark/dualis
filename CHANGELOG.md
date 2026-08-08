@@ -47,18 +47,22 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
 - **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
   into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
   the SDK from outside rather than to be a good application, and it reports what that was like
-  in `crates/dualis-world/FRICTION.md`: eight findings, six fixed. Two are declined in
+  in `crates/dualis-world/FRICTION.md`: ten findings, six fixed. Two are declined in
   writing rather than actioned — sharing the examples' SVG plotting, which would mean
   committing to a public drawing API in a workspace whose scope excludes rendering, and
   validating a scene's schedule against its domains at build time, which an application can
   already do with `Domain::max_stable_dt`. The report also says what it does *not* cover.
 
-  The scene format now couples: a heater defined **in the application** publishes joules and
-  a bar takes them, with the kernel auditing the crossing at 1e-9 and the bar's rise checked
-  against `6 J / ρVc_p` computed outside the library. That closes the gap the report itself
-  had flagged — until then no `publish`, `take` or `Exchange` appeared anywhere in the
-  consumer, so the part of the API this workspace exists for had only ever been driven from
-  inside. Writing a `Domain` from outside needed nothing beyond `dualis::prelude`.
+  The scene format couples both ways. On a plain channel, a heater defined **in the
+  application** publishes joules and a bar takes them. Over a shared boundary, a beam
+  publishes a Gaussian `Flux` onto an `Interface` the bar exposes, and the bar ends up hotter
+  in the middle than at the ends by a ratio the scene never states. Both are audited at 1e-9,
+  and the totals are checked against `Q / ρVc_p` computed outside the library.
+
+  That closes the gap the report itself had flagged — until then no `publish`, `take`,
+  `Exchange`, `Interface` or `Flux` appeared anywhere in the consumer, so the part of the API
+  this workspace exists for had only ever been driven from inside. Writing both domains from
+  outside needed nothing beyond `dualis::prelude`.
   Excluded from the wasm, determinism and 1.78 jobs, which are promises the *library* makes to
   the people who depend on it.
 
