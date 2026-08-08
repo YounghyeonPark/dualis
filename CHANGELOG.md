@@ -53,6 +53,13 @@ messages carry the full account.
   becoming an interior node that looks like it is cooling and is not. `temperature()` refuses a
   network rather than averaging it, and names the calls that answer.
 
+- **The Python bindings are on PyPI**, as `dualis`. `pip install dualis` gets an abi3 wheel for
+  Linux x86_64/aarch64, macOS x86_64/aarch64 or Windows x64, plus an sdist to fall back on.
+  Built by `.github/workflows/release-python.yml` on a tag, because a wheel built on one
+  machine is a wheel for one platform — uploading the Windows one alone would have made
+  `pip install` fail on Linux and macOS in a shape that reads as an unsupported platform rather
+  than a botched release. Trusted publishing, so no token lives in the repository.
+
 - **A `network` domain in the scene format**, and scene 11: 12 W into a copper winding, out
   through electrical steel and an aluminium housing. The first scene with **nothing to draw** —
   `as_field` declines, because nodes have capacities rather than positions and a conductance is

@@ -3,7 +3,7 @@
 Coupled physics whose conservation audit is an exception you can catch.
 
 ```sh
-pip install dualis        # once it is on PyPI; until then, see Building below
+pip install dualis        # wheels for linux, macos and windows; abi3, so 3.10 upward
 ```
 
 ```python

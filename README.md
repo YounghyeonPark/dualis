@@ -23,7 +23,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 361 tests, all against closed forms
+cargo test --workspace                       # 378 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -41,13 +41,17 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good application
 but to use the SDK the way a stranger would.
 [`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
-**sixteen findings, eleven fixed and five argued down in writing.** The first twelve came from
-writing the application. The last four came from running the subagents that were built out of
+**seventeen findings, twelve fixed and five argued down in writing.** The first twelve came from
+writing the application. The next four came from running the subagents that were built out of
 what the first twelve taught — and one of those is a first-order accuracy defect in the
 kernel's own scheduler, in the schedule chosen *for* accuracy, which the conservation audit
 reported as clean to 1e-12 the entire time. That one is fixed: a subcycling consumer asks the
 bus for its substep's share instead of the whole interval, and multirate went from the worse of
 the two schedules to fourteen times better than the alternative.
+
+The seventeenth arrived a third way again — by adding a domain the library did not have, and
+finding that the *new* API had the old shape. Five of the seventeen are now the same underlying
+decision, which is the sort of thing only a count makes visible.
 
 Not one of the library's own tests could have found any of them. The ergonomic ones because a
 test is written by somebody who already knows the shape; the two real defects because nothing
@@ -66,7 +70,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
-| `bindings/python` | Python bindings, in their own cargo workspace and not on PyPI. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
+| `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with eleven scenes across all five domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
