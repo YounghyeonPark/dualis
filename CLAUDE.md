@@ -116,6 +116,27 @@ Python**: that needs callbacks into the interpreter from inside the step loop, t
 across it, and an answer for what an exception raised mid-sweep does to a half-advanced
 simulation.
 
+### Releasing the wheel
+
+**Never `maturin publish` from a workstation.** A local build produces a wheel for *one*
+platform, and uploading only that makes `pip install dualis` fail everywhere else — a failure
+shaped like the project not supporting Linux rather than like a release mistake.
+
+`.github/workflows/release-python.yml` builds Linux x86_64 and aarch64, macOS x86_64 and
+aarch64, Windows x64 and an sdist, installs and runs the tests on every wheel it can execute,
+and warns on the cross-compiled ones rather than skipping them silently. It fires on a `v*` tag,
+or on a manual dispatch with the `publish` box ticked.
+
+It uses **PyPI trusted publishing**, so there is no token in the repository. That needs
+configuring once on PyPI — for a project that does not exist yet, as a *pending* publisher:
+owner `YounghyeonPark`, repository `dualis`, workflow `release-python.yml`, environment `pypi`.
+
+The sdist is why `bindings/python/Cargo.toml` pins `dualis` with **both** a path and a version.
+An sdist is a tarball rooted at that directory, so `../../crates/dualis` points outside it;
+maturin vendors the whole crate tree in, and the version is what makes the manifest resolvable.
+Verified by building the sdist, installing it into a clean venv with `--no-binary :all:`, and
+running the test file against what came out.
+
 ## What is deliberately not here
 
 No GPU, no implicit solvers, no mesh generation, no unstructured grids, no FEM. Adding physics

@@ -1,0 +1,156 @@
+name: release python
+
+# Wheels for PyPI, built on the platforms they run on.
+#
+# This exists because a wheel built locally is a wheel for *one* platform. The 0.3.0 release was
+# prepared on Windows, so the only artefact was `dualis-0.3.0-cp310-abi3-win_amd64.whl` —
+# uploading that alone would make `pip install dualis` fail on Linux and macOS, which is most
+# people, and the failure would look like the project not supporting them rather than like a
+# release mistake.
+#
+# abi3-py310, so each platform needs exactly one wheel rather than one per interpreter version.
+# That is why there is no Python matrix here and why the CI job does not have one either.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload to PyPI (leave false to rehearse the build)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-python-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The tag and the file must agree before anything is built. A tag of v0.3.0 against a
+  # pyproject saying 0.2.1 would produce wheels nobody asked for and, worse, wheels whose
+  # filename disagrees with the tag they came from.
+  #
+  # Skipped on workflow_dispatch, where there is no tag to compare against.
+  check-version:
+    name: the tag matches the file
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v5
+      - name: compare
+        working-directory: bindings/python
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          # Both files, because they are hand-maintained and nothing else forces them to agree.
+          # `test_units_crossed_intact` checks them against each other at run time; this checks
+          # them against the tag before a build exists.
+          proj=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          cargo=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "tag=$tag pyproject=$proj cargo=$cargo"
+          test "$tag" = "$proj" || { echo "::error::tag $tag against pyproject $proj"; exit 1; }
+          test "$tag" = "$cargo" || { echo "::error::tag $tag against Cargo.toml $cargo"; exit 1; }
+
+  wheels:
+    name: wheel (${{ matrix.target }} on ${{ matrix.os }})
+    needs: [check-version]
+    # `always()` so a workflow_dispatch run — where check-version is skipped, not successful —
+    # still builds. The publish job is what a dispatch must not reach, and it is gated on the
+    # tag separately.
+    if: always() && needs.check-version.result != 'failure'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, native: true }
+          - { os: ubuntu-latest, target: aarch64, native: false }
+          - { os: macos-latest, target: x86_64, native: false }
+          - { os: macos-latest, target: aarch64, native: true }
+          - { os: windows-latest, target: x64, native: true }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          # manylinux for the Linux wheels, so they install on anything reasonably current
+          # rather than only on the runner's glibc.
+          manylinux: auto
+          sccache: "true"
+
+      # The repository's rule about this is already written down for CI: "the cdylib compiles"
+      # proves neither half of "pip install then import". So every wheel that *can* be run here
+      # is installed and put through the real test file. The cross-compiled ones (linux aarch64,
+      # macOS x86_64 on an arm runner) cannot be, and are marked rather than quietly skipped.
+      - name: install it and run its tests
+        if: matrix.native
+        working-directory: bindings/python
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python tests/test_dualis.py
+      - name: not tested here
+        if: ${{ !matrix.native }}
+        run: echo "::warning::${{ matrix.target }} is cross-compiled on ${{ matrix.os }}; this wheel is built but not executed"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: bindings/python/dist/*.whl
+
+  # A source distribution as well, so `pip install` has something to fall back on for a platform
+  # with no wheel — and so the source is on PyPI rather than only the binaries.
+  sdist:
+    name: sdist
+    needs: [check-version]
+    if: always() && needs.check-version.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: bindings/python/dist/*.tar.gz
+
+  publish:
+    name: publish to PyPI
+    needs: [wheels, sdist]
+    # A tag publishes; so does a dispatch that explicitly asks to. The default for a dispatch is
+    # to build and stop, which is what makes this workflow safe to rehearse.
+    #
+    # The switch is not redundant with the tag. `v0.3.0` was tagged and pushed before this
+    # workflow existed, so nothing will ever fire on it — and the alternatives were deleting and
+    # re-pushing a tag that marks already-published crates, or burning a version number on a
+    # release whose only change is CI configuration. Both are worse than a checkbox.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/dualis
+    # Trusted publishing: PyPI verifies this workflow's OIDC identity, so there is no API token
+    # in the repository's secrets to leak, rotate or accidentally print. Requires configuring
+    # `dualis` on PyPI with this repository, workflow filename and environment name.
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
