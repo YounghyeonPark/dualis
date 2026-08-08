@@ -14,8 +14,9 @@ publish = false
 
 [dependencies]
 dualis = { workspace = true }
+# For the vector constructors the mechanics domains take, and for the molecular crate's
+# reduced-unit helpers, which the facade does not re-export.
+glam = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-[dev-dependencies]
-glam = { workspace = true }

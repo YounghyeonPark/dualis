@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 // `Room` is in the prelude now (it was not, though `Tube` was — FRICTION 5). Still aliased,
 // because this crate has a `DomainSpec::Room` variant of its own and that name is the right
 // one on both sides. That collision is the app's problem and not the library's.
+use dualis::molecular as dualis_molecular;
 use dualis::prelude::Room as AcousticRoom;
 
 pub mod beam;
@@ -128,6 +129,73 @@ pub enum DomainSpec {
         /// Gaussian waist, as a fraction of the boundary's span.
         waist_fraction: f64,
     },
+    /// Bodies under their own gravity: a central mass with satellites on circular orbits.
+    ///
+    /// `dualis-mechanics`. Not a field — a countable number of things at places — so it is
+    /// drawn as dots and `Domain::as_field` rightly declines to invent a continuum for it.
+    Orbit {
+        /// Domain name.
+        name: String,
+        /// The mass everything orbits, in kilograms.
+        central_kg: f64,
+        /// One satellite per radius, each started at the circular speed for that radius and
+        /// spaced evenly in angle so they do not begin on top of each other.
+        radii_m: Vec<f64>,
+        /// Mass of each satellite. Small against the central one, or "circular" is a lie.
+        satellite_kg: f64,
+    },
+    /// A ball bouncing on a floor through a penalty contact, losing energy to its dashpot.
+    Bounce {
+        /// Domain name.
+        name: String,
+        /// Drop height.
+        drop_m: f64,
+        /// Ball mass.
+        mass_kg: f64,
+        /// Contact stiffness, in N/m.
+        stiffness: f64,
+        /// Contact damping, in N·s/m. Zero bounces forever.
+        damping: f64,
+    },
+    /// A Lennard-Jones fluid in a periodic box.
+    ///
+    /// `dualis-molecular`. Drawn as a slab: every atom projected onto the x-y plane, coloured
+    /// by speed, which is what a molecular-dynamics snapshot conventionally shows.
+    Atoms {
+        /// Domain name.
+        name: String,
+        /// Unit cells per side; the count is `4·cells³`.
+        cells: usize,
+        /// Reduced number density, `ρ*`.
+        density: f64,
+        /// Reduced temperature to start at, `T*`.
+        temperature: f64,
+        /// If set, a Langevin bath holds it at this reduced temperature.
+        #[serde(default)]
+        thermostat_t: Option<f64>,
+        /// Seed. Nothing here consults a clock.
+        seed: u64,
+    },
+    /// A lumped thermal mass: one temperature, losing heat to still air.
+    ///
+    /// The consumer a dissipating domain needs. A `bounce` publishes its dashpot's losses
+    /// onto the heat channel, and without something to take them the kernel refuses the step
+    /// — correctly, because joules that left one domain and arrived nowhere are joules that
+    /// went missing. It has no field, so it shows up in the numbers and not in the picture.
+    Lump {
+        /// Domain name.
+        name: String,
+        /// Volume of the thing being warmed.
+        volume_cm3: f64,
+        /// Conduction path length, for the Biot number.
+        thickness_mm: f64,
+        /// Starting temperature.
+        initial_c: f64,
+        /// Air temperature it loses to.
+        ambient_c: f64,
+        /// Surface area exposed to that air.
+        area_cm2: f64,
+    },
     /// A one-dimensional conducting bar.
     Bar {
         /// Domain name, and the handle the renderer uses to find it again.
@@ -207,7 +275,11 @@ impl DomainSpec {
             DomainSpec::Room { name, .. }
             | DomainSpec::Bar { name, .. }
             | DomainSpec::Heater { name, .. }
-            | DomainSpec::Beam { name, .. } => name,
+            | DomainSpec::Beam { name, .. }
+            | DomainSpec::Orbit { name, .. }
+            | DomainSpec::Bounce { name, .. }
+            | DomainSpec::Atoms { name, .. }
+            | DomainSpec::Lump { name, .. } => name,
         }
     }
 
@@ -271,6 +343,95 @@ impl DomainSpec {
                 *watts,
                 *reserve_j,
                 *waist_fraction,
+            )),
+            DomainSpec::Orbit {
+                name,
+                central_kg,
+                radii_m,
+                satellite_kg,
+            } => {
+                let mut bodies = vec![Body::new(
+                    Mass::kg(*central_kg),
+                    LengthVec::m(0.0, 0.0, 0.0),
+                    VelocityVec::ZERO,
+                )];
+                for (k, r) in radii_m.iter().enumerate() {
+                    // Evenly spaced in angle, and each at the circular speed the library
+                    // computes for its radius — so an ellipse in the picture is the
+                    // integrator's opinion and not the initial condition's.
+                    let a = k as f64 * std::f64::consts::TAU / radii_m.len().max(1) as f64;
+                    let v = NBody::circular_speed(Mass::kg(*central_kg), Length::m(*r)).to_si();
+                    bodies.push(Body::new(
+                        Mass::kg(*satellite_kg),
+                        LengthVec::m(r * a.cos(), r * a.sin(), 0.0),
+                        VelocityVec::from_si(glam::DVec3::new(-v * a.sin(), v * a.cos(), 0.0)),
+                    ));
+                }
+                Box::new(NBody::new(name.clone(), &bodies))
+            }
+            DomainSpec::Bounce {
+                name,
+                drop_m,
+                mass_kg,
+                stiffness,
+                damping,
+            } => Box::new(ContactSystem::new(
+                name.clone(),
+                &[Body::new(
+                    Mass::kg(*mass_kg),
+                    LengthVec::m(0.0, 0.0, *drop_m),
+                    VelocityVec::ZERO,
+                )],
+                AccelerationVec::from_si(-glam::DVec3::Z * G0.to_si()),
+                Ground::floor(),
+                Stiffness::from_si(*stiffness),
+                Damping::from_si(*damping),
+            )),
+            DomainSpec::Atoms {
+                name,
+                cells,
+                density,
+                temperature,
+                thermostat_t,
+                seed,
+            } => {
+                let lj = LennardJones::reduced();
+                let fluid = Fluid::lattice(
+                    name.clone(),
+                    lj,
+                    dualis_molecular::unit_mass(),
+                    *cells,
+                    *density,
+                )
+                .thermalised(
+                    dualis_molecular::temperature_from_reduced(*temperature, &lj),
+                    *seed,
+                );
+                Box::new(match thermostat_t {
+                    Some(t) => fluid.with_thermostat(Thermostat::Langevin {
+                        target: dualis_molecular::temperature_from_reduced(*t, &lj),
+                        damping: 2.0,
+                    }),
+                    None => fluid,
+                })
+            }
+            DomainSpec::Lump {
+                name,
+                volume_cm3,
+                thickness_mm,
+                initial_c,
+                ambient_c,
+                area_cm2,
+            } => Box::new(LumpedMass::new(
+                name.clone(),
+                Substance::aluminium_6061(),
+                Volume::from_si(volume_cm3 * 1e-6),
+                Length::mm(*thickness_mm),
+                Temperature::celsius(*initial_c),
+                Environment::still_air(
+                    Temperature::celsius(*ambient_c),
+                    Area::from_si(area_cm2 * 1e-4),
+                ),
             )),
             DomainSpec::Bar {
                 name,
@@ -384,15 +545,69 @@ impl World {
             .scene
             .domains
             .iter()
-            .filter_map(|spec| {
-                let field = self.sim.field(spec.name())?;
-                Some(sample(spec, field, t))
+            .filter_map(|spec| match self.sim.field(spec.name()) {
+                Some(field) => Some(sample(spec, field, t)),
+                // FRICTION 11: `Domain::as_field` covers the domains that *are* fields, and
+                // there is no counterpart for the ones that are a countable number of bodies.
+                // So a renderer wanting to draw an orbit or a box of atoms is back to
+                // downcasting and knowing the type — which is finding 3 again, for the other
+                // half of the domains.
+                None => self.bodies(spec),
             })
             .collect();
         Frame {
             time_s: t.to_si(),
             panels,
         }
+    }
+
+    /// The domains that are bodies rather than fields, as dots.
+    fn bodies(&self, spec: &DomainSpec) -> Option<Panel> {
+        let (positions, values, bounds, unit) = match spec {
+            DomainSpec::Orbit { name, radii_m, .. } => {
+                let n = self.sim.domain_as::<NBody>(name)?;
+                let r = radii_m.iter().cloned().fold(1.0f64, f64::max) * 1.25;
+                let (mut p, mut v) = (Vec::new(), Vec::new());
+                for i in 0..n.count() {
+                    let b = n.body(i);
+                    p.push([b.position.to_si().x, b.position.to_si().y]);
+                    v.push(b.velocity.to_si().length());
+                }
+                (p, v, [-r, -r, r, r], "m/s")
+            }
+            DomainSpec::Bounce { name, drop_m, .. } => {
+                let c = self.sim.domain_as::<ContactSystem>(name)?;
+                let (mut p, mut v) = (Vec::new(), Vec::new());
+                for i in 0..c.count() {
+                    let b = c.body(i);
+                    p.push([b.position.to_si().x, b.position.to_si().z]);
+                    v.push(b.velocity.to_si().length());
+                }
+                let half = drop_m * 0.5;
+                (p, v, [-half, 0.0, half, *drop_m * 1.05], "m/s")
+            }
+            DomainSpec::Atoms { name, .. } => {
+                let f = self.sim.domain_as::<Fluid>(name)?;
+                let l = f.bounds().length;
+                let (mut p, mut v) = (Vec::new(), Vec::new());
+                for i in 0..f.count() {
+                    let x = f.position(i);
+                    p.push([x.x, x.y]);
+                    v.push(f.velocity(i).length());
+                }
+                (p, v, [0.0, 0.0, l, l], "m/s")
+            }
+            _ => return None,
+        };
+        Some(Panel {
+            name: spec.name().to_string(),
+            unit,
+            data: PanelData::Points {
+                positions,
+                values,
+                bounds,
+            },
+        })
     }
 }
 
@@ -417,7 +632,15 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
         // A heater has no field, so `Domain::as_field` returns `None` and `capture` never
         // reaches here with one. Matching on it anyway rather than an `unreachable!`, because
         // a panic reachable only through a future edit is worse than a panel nobody draws.
-        DomainSpec::Heater { .. } | DomainSpec::Beam { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
+        // Sources have no field, and bodies are handled by `World::bodies`, so neither
+        // reaches here. Matched rather than left to an `unreachable!`, because a panic a
+        // future edit could reach is worse than a panel nobody draws.
+        DomainSpec::Heater { .. }
+        | DomainSpec::Beam { .. }
+        | DomainSpec::Orbit { .. }
+        | DomainSpec::Bounce { .. }
+        | DomainSpec::Atoms { .. }
+        | DomainSpec::Lump { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
         DomainSpec::Bar {
             cells, length_mm, ..
         } => (
@@ -448,10 +671,8 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
     }
     Panel {
         name: spec.name().to_string(),
-        nx,
-        ny,
-        values,
         unit,
+        data: PanelData::Field { nx, ny, values },
     }
 }
 
@@ -464,17 +685,62 @@ pub struct Frame {
     pub panels: Vec<Panel>,
 }
 
-/// One domain's field, sampled onto a grid for drawing.
+/// One domain, captured for drawing.
 #[derive(Clone, Debug)]
 pub struct Panel {
     /// Which domain this came from.
     pub name: String,
-    /// Samples across.
-    pub nx: usize,
-    /// Samples up. One for a bar, which has no second dimension.
-    pub ny: usize,
-    /// Row-major, `nx * ny` values in whatever unit the domain reports.
-    pub values: Vec<f64>,
     /// What the values mean, for the legend.
     pub unit: &'static str,
+    /// The shape of what was captured.
+    pub data: PanelData,
+}
+
+/// A continuum sampled on a grid, or a finite number of bodies at positions.
+///
+/// Two shapes rather than one because the domains genuinely are two kinds of thing. A room
+/// and a bar are fields: defined everywhere, and a picture of one is a raster. An orbit, a
+/// bouncing ball and a box of atoms are not: they are a countable number of things at places,
+/// and rasterising them would be inventing a continuum they do not have.
+///
+/// This is the distinction `ScalarField` cannot express, and it is why `Domain::as_field`
+/// returns `None` for three of the five domains rather than something contrived.
+#[derive(Clone, Debug)]
+pub enum PanelData {
+    /// A field, sampled onto a grid.
+    Field {
+        /// Samples across.
+        nx: usize,
+        /// Samples up. One for a bar, which has no second dimension.
+        ny: usize,
+        /// Row-major, `nx * ny` values.
+        values: Vec<f64>,
+    },
+    /// Bodies at positions, each carrying a value to colour it by.
+    Points {
+        /// Where each body is, in the plane being drawn.
+        positions: Vec<[f64; 2]>,
+        /// One per body — a speed, a height, whatever the scene is about.
+        values: Vec<f64>,
+        /// `[x0, y0, x1, y1]`, the region to draw. Fixed for the whole run so a body moving
+        /// is a body moving and not the frame rescaling underneath it.
+        bounds: [f64; 4],
+    },
+}
+
+impl Panel {
+    /// The scalar values, whichever shape this is.
+    pub fn values(&self) -> &[f64] {
+        match &self.data {
+            PanelData::Field { values, .. } | PanelData::Points { values, .. } => values,
+        }
+    }
+
+    /// Grid size, for a field. `None` for points, which have no grid.
+    pub fn grid(&self) -> Option<(usize, usize)> {
+        match self.data {
+            PanelData::Field { nx, ny, .. } => Some((nx, ny)),
+            PanelData::Points { .. } => None,
+        }
+    }
 }

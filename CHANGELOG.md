@@ -36,6 +36,12 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   the workspace's own visualiser downcast to concrete types instead — precisely what the
   interface existed to avoid. It no longer names a single domain type.
 - **`Room` is in the prelude**, which it should always have been; `Tube` already was.
+- **`NBody`, `TreeNBody`, `RigidBody` and `Rolling` answer `as_any`.** All four returned the
+  default `None`, so `Simulation::domain_as` could not reach any of them and a renderer got
+  nothing back. The failure was a picture with no bodies in it — not an error, not a violation,
+  just an empty frame, which is the least debuggable outcome there is. Optics, thermal,
+  acoustic and molecular had all opted in because tests inside the workspace had reached for
+  them; mechanics had not, because none had.
 - **`Bar1D::exposing` takes `impl Into<String>`.** The sweep behind `Domain::name` had matched
   on the parameter being called `name` and missed this one, so a boundary name — the thing two
   domains have to agree on, and therefore exactly the kind of thing that comes from a file —
@@ -53,13 +59,19 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   validating a scene's schedule against its domains at build time, which an application can
   already do with `Domain::max_stable_dt`. The report also says what it does *not* cover.
 
-  **Five scenes ship**, in `crates/dualis-world/scenes/`, and CI runs every one of them
-  through the real binary as well as through the test harness — a room breathing in its (1,1)
-  mode, the same room in (3,2), a clap in a corner that reflects off all four walls, a heater
-  feeding a bar over a plain channel, and a beam burning a spot into one over a shared
-  boundary. Each has one number asserted, chosen to be a property of the physics rather than
-  of the file. A room can also be released as a Gaussian pulse now and not only as a mode,
-  which is what makes the third of those worth looking at.
+  **Nine scenes ship**, in `crates/dualis-world/scenes/`, covering four of the five domains,
+  and CI runs every one through the real binary as well as the test harness. Three acoustic —
+  two room modes and a clap that reflects off all four walls; two thermal, which are the same
+  heat told over a plain channel and over a shared boundary and are the argument for
+  `Interface` in one picture; two mechanical — four satellites and a bouncing ball whose
+  dashpot heat a thermal lump takes; and two molecular, the same 108 atoms at `T* = 0.15` and
+  `T* = 1.4`, which side by side are melting. Each has one number asserted, chosen to be a
+  property of the physics rather than of the file, and a scene that ships without a claim
+  fails the test rather than passing quietly.
+
+  A room can be released as a Gaussian pulse now and not only as a mode, and a panel can hold
+  bodies as well as a sampled field — an orbit is a countable number of things at places, and
+  rasterising one would invent a continuum it does not have.
 
   The scene format couples both ways. On a plain channel, a heater defined **in the
   application** publishes joules and a bar takes them. Over a shared boundary, a beam

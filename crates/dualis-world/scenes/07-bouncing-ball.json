@@ -1,0 +1,26 @@
+{
+  "title": "a ball bouncing on a penalty contact, and the heat its dashpot makes",
+  "schedule": "multirate",
+  "duration_s": 1.0,
+  "frames": 24,
+  "conservation_tolerance": 0.05,
+  "domains": [
+    {
+      "kind": "bounce",
+      "name": "ball",
+      "drop_m": 0.5,
+      "mass_kg": 0.0113,
+      "stiffness": 200000.0,
+      "damping": 20.0
+    },
+    {
+      "kind": "lump",
+      "name": "ball-temperature",
+      "volume_cm3": 4.19,
+      "thickness_mm": 10.0,
+      "initial_c": 20.0,
+      "ambient_c": 20.0,
+      "area_cm2": 12.57
+    }
+  ]
+}

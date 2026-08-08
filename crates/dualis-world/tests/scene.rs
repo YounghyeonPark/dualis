@@ -81,7 +81,7 @@ fn the_room_rings_at_the_closed_form_frequency_and_converges_at_second_order() {
             .iter()
             .map(|frame| {
                 let peak = frame.panels[0]
-                    .values
+                    .values()
                     .iter()
                     .fold(0.0f64, |m, v| m.max(v.abs()));
                 let want = (2.0 * std::f64::consts::PI * f * frame.time_s).cos().abs();
@@ -138,7 +138,7 @@ fn a_scene_can_hold_more_than_one_domain() {
     assert_eq!(frames[0].panels[1].name, "bar");
     // An isolated bar at a uniform temperature has nowhere to send heat, so it stays put.
     let bar = &frames[frames.len() - 1].panels[1];
-    for v in &bar.values {
+    for v in bar.values() {
         assert!((v - 20.0).abs() < 1e-9, "bar drifted to {v} C");
     }
 }
@@ -217,10 +217,10 @@ fn a_heater_and_a_bar_meet_on_the_bus() {
         .expect("aluminium has a specific heat");
     let expected_rise = 6.0 / capacity.to_si();
     let mean_rise = frames[frames.len() - 1].panels[0]
-        .values
+        .values()
         .iter()
         .sum::<f64>()
-        / frames[0].panels[0].values.len() as f64
+        / frames[0].panels[0].values().len() as f64
         - 20.0;
     assert!(
         (mean_rise / expected_rise - 1.0).abs() < 1e-6,
@@ -322,7 +322,7 @@ fn a_beam_heats_the_bar_where_it_lands() {
         beam.reserve().to_si()
     );
 
-    let profile = &frames[frames.len() - 1].panels[0].values;
+    let profile = frames[frames.len() - 1].panels[0].values();
     assert_eq!(profile.len(), cells);
 
     // The shape. Conduction has had 0.2 s to smear it, so the peak is lower than the
@@ -455,7 +455,7 @@ fn every_scene_that_ships_runs_and_says_something_true() {
 
         let last = frames.last().expect("a run produces frames");
         let peak = last.panels[0]
-            .values
+            .values()
             .iter()
             .fold(0.0f64, |m, v| m.max(v.abs()));
         assert!(peak.is_finite(), "{name}: the field went to {peak}");
@@ -513,11 +513,58 @@ fn every_scene_that_ships_runs_and_says_something_true() {
             // constant of about 0.59 s and had levelled itself twice over. The scene is
             // 0.2 s now, which spans the beam being on and the spot starting to spread.
             "05-beam-on-bar.json" => {
-                let v = &last.panels[0].values;
+                let v = last.panels[0].values();
                 let (middle, end) = (v[v.len() / 2] - 20.0, v[0] - 20.0);
                 assert!(
                     middle > 2.0 * end,
                     "{name}: the beam landed in the middle: {middle:.4} K against {end:.4} K"
+                );
+            }
+            // Kepler's third law, from the picture. The satellites are on circular orbits,
+            // so `v = sqrt(GM/r)` and the fastest is the innermost: 7546 m/s at 7000 km
+            // against Earth's mass, computed here and not read off the domain.
+            "06-orbits.json" => {
+                let want = (6.674_30e-11f64 * 5.972e24 / 7.0e6).sqrt();
+                assert!(
+                    (peak / want - 1.0).abs() < 0.02,
+                    "{name}: the innermost should be at {want:.1} m/s, got {peak:.1}"
+                );
+                // And every satellite is still in orbit rather than having been flung out.
+                let (_, _, bounds) = match &last.panels[0].data {
+                    dualis_world::PanelData::Points {
+                        positions,
+                        values,
+                        bounds,
+                    } => (positions, values, bounds),
+                    _ => panic!("{name}: an orbit is bodies, not a field"),
+                };
+                assert!(
+                    bounds[2] > 2.0e7,
+                    "{name}: the frame should hold the widest orbit"
+                );
+            }
+            // The dashpot takes the height away. Restitution is about 0.51, so after a
+            // second the ball is on the floor and not moving — and the audit having passed
+            // at all means a lump took every joule the contact published.
+            "07-bouncing-ball.json" => {
+                assert!(
+                    peak < 0.2,
+                    "{name}: a second is enough bounces to settle, still at {peak:.3} m/s"
+                );
+            }
+            // Equipartition, twice. The mean square speed is `3(N-1)k_B T / N m`, so the
+            // liquid at T* = 1.4 must be quicker than the crystal at 0.15 by about
+            // sqrt(1.4/0.15) = 3.06. Peaks are noisier than means, so this is a band.
+            "08-atoms-crystal.json" => {
+                assert!(
+                    (0.5..4.0).contains(&peak),
+                    "{name}: a cold crystal's fastest atom, got {peak:.3}"
+                );
+            }
+            "09-atoms-liquid.json" => {
+                assert!(
+                    peak > 3.0,
+                    "{name}: at nine times the temperature the atoms are quicker, got {peak:.3}"
                 );
             }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),

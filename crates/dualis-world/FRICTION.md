@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Six of the ten are fixed**, and four are recorded rather than actioned — three of
+**Eight of the twelve are fixed**, and four are recorded rather than actioned — three of
 those because the kernel already refuses the mistake they describe. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
@@ -232,13 +232,47 @@ it, and the two numbers look interchangeable right up until they are compared. T
 reads the total from the domain and the shape from the panel, and pins the gap between them so
 it stays understood rather than rediscovered.
 
+## 11. `as_field` covers half the domains, and there is no counterpart for the other half
+
+Finding 3 gave `Domain` an `as_field`, and a renderer stopped needing to know what a room or a
+bar was. Then the scene format grew orbits, a bouncing ball and a box of atoms, and the
+renderer went straight back to `domain_as::<NBody>`, `domain_as::<ContactSystem>`,
+`domain_as::<Fluid>`.
+
+Not because the fix was wrong. Those three genuinely are not fields: they are a countable
+number of bodies at places, and rasterising them would invent a continuum they do not have.
+`as_field` returning `None` for them is the honest answer.
+
+But it means the escape hatch covers one of the two shapes a domain can be, and anything
+wanting the other is back where finding 3 started. `PanelData` in this crate has both shapes
+because it had to.
+
+**Not fixed.** What it wants is a second optional accessor — bodies with positions, the way
+`as_field` gives a function of position — and that is an API commitment worth making on
+evidence rather than on one application's renderer. Recorded so the evidence is on file.
+
+## 12. Four mechanics domains had never opted into `as_any`
+
+`NBody`, `TreeNBody`, `RigidBody` and `Rolling` all returned the default `None`, so
+`Simulation::domain_as` could not reach any of them. The orbit scene ran, conserved, and drew
+nothing at all — `bodies()` returned `None` and the panel was silently dropped.
+
+**Fixed.** Four one-line impls. The same shape as finding 7: an opt-in that everything with
+state to show is expected to take, not taken in the places nobody had needed yet. Optics,
+thermal, acoustic and molecular had all taken it, because tests inside the workspace had
+reached for them; mechanics had not, because none had.
+
+Worth noticing how it failed. Not a compile error and not a violation — a picture with nothing
+in it. A renderer that skips what it cannot read is reasonable on its own and produces the
+least debuggable outcome there is.
+
 ---
 
 ## What this says about the exercise
 
-Ten findings from about six hundred lines of application code: six ergonomic, one a real defect
-in the physics, and three notes about where a check belongs or why one is already in the right
-place. Six are fixed.
+Twelve findings from about eight hundred lines of application code: eight ergonomic, one a real
+defect in the physics, and three notes about where a check belongs or why one is already in the
+right place. Eight are fixed.
 
 Findings 1, 2, 3 and 7 were the same shape. **The API was comfortable when the set of domains
 was known at compile time and awkward the moment it was not** — and that was never a decision
@@ -261,6 +295,8 @@ None of this was visible from inside.
 
 ## What this report does not cover
 
-**Three of the five domains.** Optics, mechanics and molecular have no `DomainSpec` variant, so
-their constructors have not been driven from data at all. `Fluid::lattice` alone takes five
-arguments of four different kinds; whether that survives contact with a scene file is untested.
+**Optics.** Mechanics and molecular have scene variants now; optics does not, because it has no
+`Domain` in the library at all — the workspace's own coupling tests define an absorbing surface
+locally. So `SpectralPower`, `Spectrum` and `SurfaceOptics` have still never been driven from a
+file. An application writing that domain is the obvious next thing, and it would be the fourth
+`Domain` written outside the library rather than the first.

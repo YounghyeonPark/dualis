@@ -32,7 +32,7 @@ pub fn filmstrip(title: &str, frames: &[Frame], columns: usize) -> String {
     let extent = frames
         .iter()
         .flat_map(|f| f.panels.iter())
-        .flat_map(|p| p.values.iter())
+        .flat_map(|p| p.values().iter())
         .fold(0.0f64, |m, v| m.max(v.abs()))
         .max(f64::MIN_POSITIVE);
 
@@ -41,7 +41,7 @@ pub fn filmstrip(title: &str, frames: &[Frame], columns: usize) -> String {
         let x0 = pad + col as f64 * (cell + pad);
         for (pi, panel) in frame.panels.iter().enumerate() {
             let y0 = top + (row * panels + pi) as f64 * (cell + pad + 14.0);
-            s.push_str(&raster(panel, x0, y0, cell, extent));
+            s.push_str(&draw(panel, x0, y0, cell, extent));
             s.push_str(&format!(
                 "<text x='{x0:.1}' y='{:.1}' font-family='sans-serif' font-size='9' \
                  fill='#555'>{} t={:.4}s</text>\n",
@@ -71,8 +71,68 @@ const MAX_DRAWN: usize = 48;
 /// 3 px cell, so nothing visible is lost buying that.
 const LEVELS: i32 = 48;
 
-fn raster(p: &crate::Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String {
-    let (sx, sy) = (p.nx.max(1), p.ny.max(1));
+/// One panel, in whichever shape it came in.
+fn draw(p: &crate::Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String {
+    let body = match &p.data {
+        crate::PanelData::Field { nx, ny, values } => {
+            raster(*nx, *ny, values, x0, y0, size, extent)
+        }
+        crate::PanelData::Points {
+            positions,
+            values,
+            bounds,
+        } => scatter(positions, values, bounds, x0, y0, size, extent),
+    };
+    body + &format!(
+        "<rect x='{x0:.1}' y='{y0:.1}' width='{size:.1}' height='{size:.1}' fill='none' \
+         stroke='#bbb' stroke-width='0.7'/>\n"
+    )
+}
+
+/// Bodies as dots, in a frame fixed for the whole run.
+///
+/// One `<circle>` each rather than the quantised paths a raster gets, because there are tens
+/// or hundreds of these and not thousands, and because a dot's *position* is the information —
+/// snapping it to a colour bucket would throw away the thing being drawn.
+fn scatter(
+    positions: &[[f64; 2]],
+    values: &[f64],
+    bounds: &[f64; 4],
+    x0: f64,
+    y0: f64,
+    size: f64,
+    extent: f64,
+) -> String {
+    let (bx0, by0, bx1, by1) = (bounds[0], bounds[1], bounds[2], bounds[3]);
+    let (w, h) = ((bx1 - bx0).abs().max(1e-30), (by1 - by0).abs().max(1e-30));
+    // One radius for the whole strip, from the count: a hundred atoms want smaller dots than
+    // three planets, and picking per frame would make a body look like it was breathing.
+    let r = (size / (positions.len().max(1) as f64).sqrt() / 3.0).clamp(0.7, 4.0);
+    let mut s = String::new();
+    for (k, p) in positions.iter().enumerate() {
+        let x = x0 + (p[0] - bx0) / w * size;
+        // SVG y runs down and the world's runs up.
+        let y = y0 + size - (p[1] - by0) / h * size;
+        let v = values.get(k).copied().unwrap_or(0.0) / extent;
+        s.push_str(&format!(
+            "<circle cx='{x:.2}' cy='{y:.2}' r='{r:.2}' fill='{}'/>\n",
+            diverging(v)
+        ));
+    }
+    s
+}
+
+#[allow(clippy::too_many_arguments)]
+fn raster(
+    sx: usize,
+    sy: usize,
+    values: &[f64],
+    x0: f64,
+    y0: f64,
+    size: f64,
+    extent: f64,
+) -> String {
+    let (sx, sy) = (sx.max(1), sy.max(1));
     // Nearest neighbour, so an extremum survives if it lands on a chosen sample. Averaging
     // would be smoother and would hide exactly the overshoot worth seeing.
     let nx = sx.min(MAX_DRAWN);
@@ -82,7 +142,7 @@ fn raster(p: &crate::Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String 
     let mut buckets: Vec<String> = vec![String::new(); (2 * LEVELS + 1) as usize];
     for j in 0..ny {
         for i in 0..nx {
-            let v = p.values[(j * sy / ny) * sx + (i * sx / nx)] / extent;
+            let v = values[(j * sy / ny) * sx + (i * sx / nx)] / extent;
             let level = (v.clamp(-1.0, 1.0) * LEVELS as f64).round() as i32;
             // Rows are drawn top-down and the field's y runs up, so flip.
             buckets[(level + LEVELS) as usize].push_str(&format!("M{i} {}h1v1h-1z", ny - 1 - j));
@@ -105,10 +165,6 @@ fn raster(p: &crate::Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String 
         s.push_str(&format!("<path fill='{}' d='{d}'/>\n", diverging(t)));
     }
     s.push_str("</g>\n");
-    s.push_str(&format!(
-        "<rect x='{x0:.1}' y='{y0:.1}' width='{size:.1}' height='{size:.1}' fill='none' \
-         stroke='#bbb' stroke-width='0.7'/>\n"
-    ));
     s
 }
 

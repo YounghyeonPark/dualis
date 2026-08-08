@@ -439,6 +439,13 @@ impl Domain for RigidBody {
     fn supports_restore(&self) -> bool {
         true
     }
+
+    /// Opted in so a caller can read the bodies back out — a test asserting an orbit, a
+    /// renderer drawing one. Every other domain with state to show already does this; these
+    /// were simply never asked, which is what a library with no consumer looks like.
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// Precession rate of a symmetric top's angular velocity about its symmetry axis, in

@@ -40,9 +40,9 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good
 application but to use the SDK the way a stranger would. It came back with five places the
 API is awkward and one real defect in the acoustic startup, all in
-[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) — ten of them now, six
-fixed and four argued down in writing, three of those because the kernel already refuses the
-mistake they describe. Not
+[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) — twelve of them now,
+eight fixed and four argued down in writing, three of those because the kernel already refuses
+the mistake they describe. Not
 one of the library's own tests could have found them — the ergonomic ones because a test is
 written by somebody who already knows the shape, and the defect because nothing here was
 checking a *rate*. There are two tests for that rate now.
@@ -59,7 +59,7 @@ checking a *rate*. There are two tests for that rate now.
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with five scenes CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with nine scenes across four domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
 dualis-units       no dependencies but glam and serde

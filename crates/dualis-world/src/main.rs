@@ -50,10 +50,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for panel in &frames[frames.len() - 1].panels {
-        let peak = panel.values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let peak = panel.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let shape = match panel.grid() {
+            Some((nx, ny)) => format!("{nx} x {ny}"),
+            None => format!("{} bodies", panel.values().len()),
+        };
         println!(
-            "  {:<14} {:>3} x {:<3} peak |{}| = {:.4}",
-            panel.name, panel.nx, panel.ny, panel.unit, peak
+            "  {:<14} {:<12} peak |{}| = {:.4}",
+            panel.name, shape, panel.unit, peak
         );
     }
 

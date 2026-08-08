@@ -1,0 +1,11 @@
+{
+  "title": "a Lennard-Jones crystal at T* = 0.15: atoms rattling in place",
+  "schedule": "multirate",
+  "duration_s": 6.0e-12,
+  "frames": 12,
+  "conservation_tolerance": 5e-2,
+  "domains": [
+    { "kind": "atoms", "name": "crystal", "cells": 3, "density": 0.8442,
+      "temperature": 0.15, "thermostat_t": 0.15, "seed": 20260808 }
+  ]
+}
