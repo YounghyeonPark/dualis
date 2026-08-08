@@ -3,8 +3,8 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found sixteen places it is awkward, eleven of which have been changed — see
-`dualis-world` below.
+has already found sixteen places it is awkward, eleven of which have been changed — see the
+0.2.0 entry below.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
@@ -12,8 +12,16 @@ messages carry the full account.
 
 ## [Unreleased]
 
-Version bumped to 0.2.0 in the tree; **not yet published**. crates.io still carries 0.1.0, so
-`dualis = "0.1"` is what a consumer gets and none of the changes below are in it.
+## [0.2.0] — 2026-08-08
+
+Breaking, and almost nothing broke: `&str: Into<String>` meant not one existing call site
+changed. Everything in it came from the workspace acquiring its first consumer, and then from
+two subagents built out of what that consumer taught.
+
+The headline is not the ergonomics. It is that a first-order accuracy defect in the kernel's own
+scheduler — in the schedule chosen *for* accuracy — was found by an application comparing a
+coupled run against the closed form of its own recursion, having survived every test the library
+had while the conservation audit reported clean to 1e-12.
 
 ### Fixed — the kernel scheduler
 
@@ -290,5 +298,6 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.2.0
 [0.1.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.1.0

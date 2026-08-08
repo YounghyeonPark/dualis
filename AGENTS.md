@@ -9,7 +9,7 @@ broken installation.
 
 ```toml
 [dependencies]
-dualis = "0.1"
+dualis = "0.2"
 ```
 
 API docs: <https://docs.rs/dualis>. Source: <https://github.com/YounghyeonPark/dualis>.
