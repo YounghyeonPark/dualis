@@ -100,7 +100,7 @@ pub struct LumpedMass {
     thickness: Length,
     temperature: Temperature,
     environment: Environment,
-    saved: Option<Temperature>,
+    saved: Option<(Temperature, f64, f64)>,
     /// Joules taken from the bus over the run, for the books.
     absorbed: f64,
     /// Joules given up to the environment over the run.
@@ -341,13 +341,26 @@ impl Domain for LumpedMass {
         Ledger::new().with(quantity::ENERGY, stored + self.lost)
     }
 
+    /// Everything the ledger reads, not only the temperature.
+    ///
+    /// `ledger()` is `stored + lost`, and `stored` follows the temperature while `lost` is a
+    /// running total. Saving one and not the other means a sweep that gets rewound leaves its
+    /// losses behind: under `Schedule::Iterative` the books then grow by one sweep of shed heat
+    /// per iteration and the audit sees energy created out of nothing. Measured at 1567.6 J
+    /// becoming 1600.9 J over forty advances of three sweeps each.
+    ///
+    /// It went unnoticed because nothing in this workspace has a residual, so `iterate` always
+    /// converged on its first sweep and the restore branch never ran —
+    /// `crates/dualis/tests/iterative_restore.rs` supplies the domain that makes it run.
     fn checkpoint(&mut self) {
-        self.saved = Some(self.temperature);
+        self.saved = Some((self.temperature, self.absorbed, self.lost));
     }
 
     fn restore(&mut self) {
-        if let Some(t) = self.saved {
+        if let Some((t, absorbed, lost)) = self.saved {
             self.temperature = t;
+            self.absorbed = absorbed;
+            self.lost = lost;
         }
     }
 
