@@ -181,3 +181,10 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+          # A re-run should be idempotent, not an error. PyPI refuses to replace a file that
+          # exists — correctly, since a published artefact is permanent — and without this a
+          # release re-run after, say, one matrix leg failing would fail on the legs that had
+          # already uploaded. It cannot mask a real problem: the version is what decides whether
+          # a file is "existing", so shipping changed code under an unchanged version is caught
+          # by the version being unchanged, not by the upload.
+          skip-existing: true
