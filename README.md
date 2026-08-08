@@ -40,7 +40,8 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good
 application but to use the SDK the way a stranger would. It came back with five places the
 API is awkward and one real defect in the acoustic startup, all in
-[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md), all six now fixed. Not
+[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md), five of them now fixed
+and the sixth argued down in writing. Not
 one of the library's own tests could have found them — the ergonomic ones because a test is
 written by somebody who already knows the shape, and the defect because nothing here was
 checking a *rate*. There are two tests for that rate now.

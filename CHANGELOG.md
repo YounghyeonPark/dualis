@@ -42,8 +42,10 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
 - **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
   into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
   the SDK from outside rather than to be a good application, and it reports what that was like
-  in `crates/dualis-world/FRICTION.md`: five places the API was awkward and one real defect,
-  all six now fixed.
+  in `crates/dualis-world/FRICTION.md`: five places the API was awkward and one real defect.
+  Five of the six are fixed; the sixth — sharing the examples' SVG plotting — is declined in
+  writing, because it means committing to a public drawing API in a workspace whose scope
+  excludes rendering. The report also says what it did *not* cover, which is the coupling.
   Excluded from the wasm, determinism and 1.78 jobs, which are promises the *library* makes to
   the people who depend on it.
 

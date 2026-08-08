@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 draws it. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**All six are now fixed.** The entries are kept rather than deleted, because what the
+**Five of the six are fixed.** The entries are kept rather than deleted, because what the
 API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
 around it. Each fixed entry says what was done.
@@ -95,6 +95,14 @@ Not obviously wrong — the examples are meant to be self-contained, and a plott
 commitment. But it means the first thing a consumer wants to do after running a simulation is
 something the workspace already solved and cannot share.
 
+**Not fixed, and the only one of the six that is not.** Sharing it means either a `dualis-plot`
+crate or a feature-gated module in the facade, and either way it is a public API for drawing
+that would have to be supported, versioned and documented — for a workspace whose stated
+scope excludes rendering. Two overlapping private renderers is the cheaper mistake for now.
+
+Revisit when there is a second consumer. One application writing its own hundred lines of SVG
+is not evidence; two would be.
+
 ## 5. `Room` is not in the prelude
 
 `dualis::prelude` re-exports `Tube` but not `Room`, though they are the two headline types of
@@ -158,7 +166,7 @@ Two things the fix turned up that were not visible from the outside:
 ## What this says about the exercise
 
 Five ergonomic frictions and one real defect, from about three hundred lines of application
-code, all six now fixed. Findings 1, 2 and 3 were the same shape: **the API was comfortable when the set of
+code, five of the six now fixed. Findings 1, 2 and 3 were the same shape: **the API was comfortable when the set of
 domains was known at compile time and awkward the moment it was not.** That was never a
 decision anybody made — it was the shape that falls out of writing a library with no consumer,
 where `&'static str` is free because every name is a literal in a test.
@@ -168,3 +176,22 @@ argument for keeping it: no existing call site changed, five test comparisons di
 application lost its leak, both of its downcast matches and about forty lines.
 
 That is the case for building a consumer early. None of this was visible from inside.
+
+---
+
+## What this report does not cover
+
+**Coupling.** `dualis-world` runs its domains side by side and they never speak to each other:
+there is no `publish`, no `take`, no `Exchange` in the whole crate. So the part of the API this
+workspace exists for — domains meeting on a bus, audited face by face — has been exercised only
+by tests written from the inside, which is the exact condition that produced findings 1, 2
+and 3.
+
+Nothing here should be read as "the coupling API was checked from outside and found fine". It
+was not checked. A scene where a lamp warms a bar, or a bar and a room share a boundary through
+`Interface`, is the obvious next thing for this crate to do, and it is where the next batch of
+findings will come from if there is one.
+
+**Any domain but two.** Optics, mechanics and molecular have no `DomainSpec` variant, so their
+constructors have not been driven from data. `Fluid::lattice` alone takes five arguments of
+four different kinds; whether that survives contact with a scene file is untested.
