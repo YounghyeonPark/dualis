@@ -90,10 +90,9 @@ pub enum DomainSpec {
         height_m: f64,
         /// Grid resolution across the width.
         cells_across: usize,
-        /// Which standing mode to start in, as (nx, ny).
-        mode: [u32; 2],
-        /// How loud, in pascals.
-        amplitude_pa: f64,
+        /// How the field starts. Defaults to the (1,1) mode at 1 Pa.
+        #[serde(default)]
+        release: Release,
     },
     /// A heat source with a finite tank, defined in this crate rather than the library.
     ///
@@ -149,6 +148,49 @@ pub enum DomainSpec {
     },
 }
 
+/// How a room's field is set up before the clock starts.
+///
+/// A mode is the case with a closed form to check against, so it is what the tests use. A
+/// pulse is the case worth looking at: it has no standing shape, so it travels, reflects off
+/// the walls and interferes with itself, which is what a room actually does to a sound.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "as", rename_all = "kebab-case")]
+pub enum Release {
+    /// One standing mode, exactly. `cos(nx πx/Lx) cos(ny πy/Ly)`.
+    Mode {
+        /// Half-wavelengths across the width.
+        nx: u32,
+        /// Half-wavelengths up the height.
+        ny: u32,
+        /// Peak pressure, in pascals.
+        amplitude_pa: f64,
+    },
+    /// A Gaussian bump, at rest.
+    ///
+    /// Released from rest it splits into outgoing waves in every direction, each carrying
+    /// half the amplitude — worth knowing before reading a height off one of them.
+    Pulse {
+        /// Where, across.
+        x_m: f64,
+        /// Where, up.
+        y_m: f64,
+        /// Gaussian radius, in metres.
+        radius_m: f64,
+        /// Peak pressure, in pascals.
+        amplitude_pa: f64,
+    },
+}
+
+impl Default for Release {
+    fn default() -> Release {
+        Release::Mode {
+            nx: 1,
+            ny: 1,
+            amplitude_pa: 1.0,
+        }
+    }
+}
+
 /// A boundary a bar offers for something else to publish onto.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Boundary {
@@ -182,21 +224,34 @@ impl DomainSpec {
                 width_m,
                 height_m,
                 cells_across,
-                mode,
-                amplitude_pa,
-            } => Box::new(
-                AcousticRoom::of_air(
+                release,
+            } => {
+                let room = AcousticRoom::of_air(
                     name.clone(),
                     Length::m(*width_m),
                     Length::m(*height_m),
                     *cells_across,
-                )
-                .released_in_mode(
-                    mode[0],
-                    mode[1],
-                    Pressure::from_si(*amplitude_pa),
-                ),
-            ),
+                );
+                Box::new(match release {
+                    Release::Mode {
+                        nx,
+                        ny,
+                        amplitude_pa,
+                    } => room.released_in_mode(*nx, *ny, Pressure::from_si(*amplitude_pa)),
+                    Release::Pulse {
+                        x_m,
+                        y_m,
+                        radius_m,
+                        amplitude_pa,
+                    } => {
+                        let (cx, cy, r, a) = (*x_m, *y_m, radius_m.max(1e-9), *amplitude_pa);
+                        room.released_from(move |x, y| {
+                            let (dx, dy) = (x.to_si() - cx, y.to_si() - cy);
+                            Pressure::from_si(a * (-(dx * dx + dy * dy) / (r * r)).exp())
+                        })
+                    }
+                })
+            }
             DomainSpec::Heater {
                 name,
                 watts,

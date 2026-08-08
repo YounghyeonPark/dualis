@@ -1,0 +1,12 @@
+{
+  "title": "the (3,2) mode: more nodal lines, and a higher note",
+  "schedule": "multirate",
+  "duration_s": 0.012,
+  "frames": 11,
+  "conservation_tolerance": 1e-6,
+  "domains": [
+    { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1,
+      "cells_across": 81,
+      "release": { "as": "mode", "nx": 3, "ny": 2, "amplitude_pa": 1.0 } }
+  ]
+}

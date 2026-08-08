@@ -1,0 +1,13 @@
+{
+  "title": "a clap in the corner, spreading and coming back",
+  "schedule": "multirate",
+  "duration_s": 0.03,
+  "frames": 17,
+  "conservation_tolerance": 1e-6,
+  "domains": [
+    { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1,
+      "cells_across": 101,
+      "release": { "as": "pulse", "x_m": 0.9, "y_m": 0.7,
+                   "radius_m": 0.22, "amplitude_pa": 1.0 } }
+  ]
+}

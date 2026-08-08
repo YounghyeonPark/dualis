@@ -53,6 +53,14 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   validating a scene's schedule against its domains at build time, which an application can
   already do with `Domain::max_stable_dt`. The report also says what it does *not* cover.
 
+  **Five scenes ship**, in `crates/dualis-world/scenes/`, and CI runs every one of them
+  through the real binary as well as through the test harness — a room breathing in its (1,1)
+  mode, the same room in (3,2), a clap in a corner that reflects off all four walls, a heater
+  feeding a bar over a plain channel, and a beam burning a spot into one over a shared
+  boundary. Each has one number asserted, chosen to be a property of the physics rather than
+  of the file. A room can also be released as a Gaussian pulse now and not only as a mode,
+  which is what makes the third of those worth looking at.
+
   The scene format couples both ways. On a plain channel, a heater defined **in the
   application** publishes joules and a bar takes them. Over a shared boundary, a beam
   publishes a Gaussian `Flux` onto an `Interface` the bar exposes, and the bar ends up hotter

@@ -108,6 +108,14 @@ jobs:
             cargo run --locked --release --example "$example"
             echo "::endgroup::"
           done
+          # And every shipped scene, through the application rather than the test harness.
+          # `tests/scene.rs` already runs them and asserts a number each; this runs the real
+          # binary on the real files, which is the thing a reader will type.
+          for scene in crates/dualis-world/scenes/*.json; do
+            echo "::group::$scene"
+            cargo run --locked --release -p dualis-world -- "$scene"
+            echo "::endgroup::"
+          done
 
   # Licences and advisories, against the allow-list in `deny.toml`.
   #

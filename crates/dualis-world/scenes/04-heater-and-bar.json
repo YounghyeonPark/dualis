@@ -1,0 +1,12 @@
+{
+  "title": "a heater pays joules onto the bus and a bar takes them",
+  "schedule": "multirate",
+  "duration_s": 4.0,
+  "frames": 9,
+  "conservation_tolerance": 1e-9,
+  "domains": [
+    { "kind": "heater", "name": "element", "watts": 2.0, "reserve_j": 6.0 },
+    { "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": 61,
+      "area_mm2": 100.0, "initial_c": 20.0 }
+  ]
+}

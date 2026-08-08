@@ -416,3 +416,111 @@ fn a_boundary_the_two_sides_cut_differently_is_refused() {
         violation.after
     );
 }
+
+/// **Every scene that ships is run**, because a scene in this repository is a claim.
+///
+/// The same rule the library's examples follow: one that compiles and then produces nonsense
+/// is worse than none at all, and the only way to know is to run it. Running one is not a
+/// weak check — the conservation audit is live for the whole run, so a scene that leaked
+/// energy or left it unclaimed on a channel would fail here rather than draw something
+/// plausible.
+///
+/// Each also gets one number asserted, chosen to be a property of the physics rather than of
+/// the file: what would change if the scene were edited, and what would change if the library
+/// broke.
+#[test]
+fn every_scene_that_ships_runs_and_says_something_true() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("scenes");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .expect("the scenes directory is there")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".json"))
+        .collect();
+    names.sort();
+    assert!(
+        names.len() >= 5,
+        "expected the shipped scenes, found {names:?}"
+    );
+
+    for name in &names {
+        let text = std::fs::read_to_string(dir.join(name)).unwrap();
+        let scene: Scene =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
+        let title = scene.title.clone();
+        let mut world = World::build(scene).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let frames = world
+            .run()
+            .unwrap_or_else(|v| panic!("{name} ({title}) stopped conserving: {v}"));
+
+        let last = frames.last().expect("a run produces frames");
+        let peak = last.panels[0]
+            .values
+            .iter()
+            .fold(0.0f64, |m, v| m.max(v.abs()));
+        assert!(peak.is_finite(), "{name}: the field went to {peak}");
+
+        match name.as_str() {
+            // A standing mode keeps its shape and rides |cos|, so it can never exceed the
+            // amplitude it was released at. A scheme going unstable shows up here first.
+            "01-room-mode.json" | "02-room-higher-mode.json" => {
+                assert!(
+                    peak <= 1.0 + 1e-9,
+                    "{name}: a standing mode cannot exceed its release amplitude, got {peak}"
+                );
+            }
+            // A pulse released from rest splits into waves going every way, so no part of it
+            // keeps the full height. It must have spread and it must not have blown up.
+            "03-room-pulse.json" => {
+                assert!(
+                    peak < 0.5 && peak > 0.02,
+                    "{name}: a spread pulse should be well under its release height and \
+                     still visible, got {peak}"
+                );
+            }
+            // Six joules into 20 mm x 1 cm^2 of aluminium, insulated, is 1.24 K — computed
+            // from the substance and not from the bar.
+            //
+            // Against the *mean*, and read from the domain rather than the panel. Two traps
+            // in one assertion, both met while writing it. The peak is 1.30 K, not 1.24,
+            // because heat arriving on a plain channel has no place and `Bar1D` puts it in
+            // cell 0 — four seconds of conduction have not finished levelling it, and that
+            // gradient is the physics rather than an error. And a mean taken over the panel
+            // would be about 1/2n low, for the reason in `FRICTION.md` finding 10.
+            "04-heater-and-bar.json" => {
+                let capacity = Substance::aluminium_6061()
+                    .heat_capacity(Volume::from_si(20e-3 * 100e-6))
+                    .unwrap();
+                let want = 6.0 / capacity.to_si();
+                let bar = world
+                    .simulation()
+                    .domain_as::<Bar1D>("bar")
+                    .expect("the bar is still there");
+                let mean = bar.mean_temperature().to_si() - Temperature::celsius(20.0).to_si();
+                assert!(
+                    (mean / want - 1.0).abs() < 1e-6,
+                    "{name}: the bar holds every joule: wanted {want:.4} K, got {mean:.4}"
+                );
+                assert!(
+                    peak - 20.0 > mean,
+                    "{name}: the fed end should still be above the mean,                      peak {:.4} against mean {mean:.4}",
+                    peak - 20.0
+                );
+            }
+            // The beam lands in the middle, so the middle must be hotter than the ends. A
+            // flat spread would make these equal — which is what the scene showed at its
+            // first duration of 1.5 s, because 20 mm of aluminium has a diffusion time
+            // constant of about 0.59 s and had levelled itself twice over. The scene is
+            // 0.2 s now, which spans the beam being on and the spot starting to spread.
+            "05-beam-on-bar.json" => {
+                let v = &last.panels[0].values;
+                let (middle, end) = (v[v.len() / 2] - 20.0, v[0] - 20.0);
+                assert!(
+                    middle > 2.0 * end,
+                    "{name}: the beam landed in the middle: {middle:.4} K against {end:.4} K"
+                );
+            }
+            other => panic!("{other} ships but nothing checks it; add a claim for it"),
+        }
+    }
+}

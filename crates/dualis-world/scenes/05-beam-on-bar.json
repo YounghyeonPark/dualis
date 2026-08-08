@@ -1,0 +1,15 @@
+{
+  "title": "a beam that heats where it lands, and the heat spreading afterwards",
+  "schedule": "multirate",
+  "duration_s": 0.2,
+  "frames": 13,
+  "conservation_tolerance": 1e-9,
+  "domains": [
+    { "kind": "beam", "name": "beam", "onto": "face", "faces": 61,
+      "face_area_mm2": 0.5, "watts": 4.0, "reserve_j": 0.4,
+      "waist_fraction": 0.08 },
+    { "kind": "bar", "name": "bar", "length_mm": 20.0, "cells": 61,
+      "area_mm2": 100.0, "initial_c": 20.0,
+      "exposes": { "name": "face", "face_area_mm2": 0.5 } }
+  ]
+}
