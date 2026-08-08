@@ -12,6 +12,12 @@ members = [
     # which is a question no test in the library can answer about itself.
     "crates/dualis-world",
 ]
+exclude = [
+    # Its own workspace: pyo3 brings fifteen crates and a libpython link, and the library's
+    # lockfile, `deny.toml` allow-list and wasm jobs are promises that should not have to
+    # accommodate a Python extension. See its Cargo.toml.
+    "bindings/python",
+]
 resolver = "2"
 
 [workspace.package]

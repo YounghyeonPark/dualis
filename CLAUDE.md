@@ -89,6 +89,32 @@ of the staggered leapfrog now travels half a step. Two tests in `dualis-acoustic
 first step, by design — `Room::startup_adjustment` reports the `O(h²)` difference, measured
 0.42% at 31 cells and quartering on refinement.
 
+## The Python bindings
+
+`bindings/python` is a **separate cargo workspace**, excluded from the root one. That is the
+escalation this repository wrote down for itself, and pyo3 is what triggered it: fifteen crates
+and a libpython link, against a library that has kept to twelve external dependencies with every
+one gated by `deny.toml`. Folding it in would put pyo3's tree in the library's lockfile and make
+`cargo build --workspace` need a Python development environment.
+
+The gate above therefore does not touch it. It has its own CI job, which builds a wheel,
+**installs it**, and runs `tests/test_dualis.py` — because "the cdylib compiles" proves neither
+half of "pip install then import". Its own gate:
+
+```sh
+cd bindings/python
+python -m maturin build --release
+python -m pip install --force-reinstall target/wheels/dualis-0.2.0-*.whl
+python tests/test_dualis.py
+```
+
+Two decisions worth not relitigating. The boundary is **SI floats with the unit in the parameter
+name**, because the dimensional types are compile-time and a runtime wrapper would cost per
+operation to catch an error a Python caller does not make. And **a `Domain` cannot be written in
+Python**: that needs callbacks into the interpreter from inside the step loop, the GIL held
+across it, and an answer for what an exception raised mid-sweep does to a half-advanced
+simulation.
+
 ## What is deliberately not here
 
 No GPU, no implicit solvers, no mesh generation, no unstructured grids, no FEM. Adding physics

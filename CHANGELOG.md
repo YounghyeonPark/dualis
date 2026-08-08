@@ -12,6 +12,28 @@ messages carry the full account.
 
 ## [Unreleased]
 
+### Added
+
+- **Python bindings**, in `bindings/python`, as their own cargo workspace. `pip install` the
+  wheel and `import dualis`: a `Simulation`, the library's heater, bar and lumped-mass domains,
+  and the conservation audit as a `dualis.Violation` carrying `quantity`, `site`, `before`,
+  `after`, `scale` and `tolerance` — addressable rather than a sentence to parse. A refused step
+  does not move the clock.
+
+  SI floats at the boundary with the unit in the parameter name, because the dimensional types
+  are a compile-time thing Python cannot have, and a runtime wrapper would cost per operation to
+  catch an error a Python caller does not make. What crosses instead is the audit.
+
+  A domain cannot be written in Python yet, and the reasons are in its README. Enough to *run and
+  audit* coupled physics, not enough to *extend* it.
+
+  Separate workspace because pyo3 brings about fifteen crates and links libpython, and the
+  library's twelve external dependencies, its `deny.toml` allow-list and its WebAssembly jobs are
+  promises that should not have to accommodate a Python extension. Verified rather than assumed:
+  the library workspace still resolves to exactly twelve external crates. An abi3 wheel, so one
+  build serves 3.10 upward; CI builds it, installs it and runs its six tests, each against a
+  number computed in the test file rather than read off the simulation.
+
 ## [0.2.0] — 2026-08-08
 
 Breaking, and almost nothing broke: `&str: Into<String>` meant not one existing call site

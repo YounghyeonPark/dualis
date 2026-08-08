@@ -3,9 +3,13 @@
 Everything needed to write a working dualis program, on one page. If you are here to
 *modify* dualis rather than use it, read [CLAUDE.md](CLAUDE.md) instead.
 
-**dualis is a Rust library.** It is not a CLI, not a Python package, and there is nothing on
-`PATH`. `which dualis`, `pip show dualis` and `import dualis` will all fail, and that is not a
-broken installation.
+**dualis is a Rust library**, with Python bindings. It is not a CLI and there is nothing on
+`PATH`, so `which dualis` will fail and that is not a broken installation.
+
+From Python, `import dualis` works — see [`bindings/python`](bindings/python), built from this
+repository and not yet on PyPI. It can *run and audit* the library's physics; it cannot *extend*
+it, because writing a `Domain` in Python is unsupported and the reasons are written down there.
+Everything below describes the Rust API.
 
 ```toml
 [dependencies]

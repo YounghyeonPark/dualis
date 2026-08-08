@@ -2,3 +2,11 @@
 node_modules/
 *.log
 .DS_Store
+
+# The bindings are their own cargo workspace, so their build directory is not the root one.
+/bindings/python/target
+# maturin's output, and what a local `pip install -e` leaves behind.
+/bindings/python/dist
+__pycache__/
+*.pyd
+*.so

@@ -1,0 +1,33 @@
+[package]
+name = "dualis-py"
+description = "Python bindings for dualis: coupled physics whose conservation audit is an exception"
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Younghyeon Park and dualis contributors"]
+repository = "https://github.com/YounghyeonPark/dualis"
+publish = false
+
+# **Its own workspace, deliberately.**
+#
+# pyo3 brings about fifteen crates and a build script that links libpython. The library
+# workspace has kept to twelve external dependencies, three of which reach a published
+# artifact, and `deny.toml` gates every one of them by licence — a claim the README makes and
+# CI enforces. Folding a Python extension into that workspace would put pyo3's tree into the
+# same lockfile and the same allow-list, and would make `cargo build --workspace` require a
+# Python development environment to compile a physics library.
+#
+# So: separate workspace, separate `Cargo.lock`, separate CI job. This is the escalation the
+# repository wrote down for itself in `crates/dualis-world/Cargo.toml`'s sibling note — "move
+# to a nested workspace when a heavy dependency arrives" — and pyo3 is that dependency.
+[workspace]
+
+[lib]
+# `dualis` is the importable name; the crate is `dualis-py` so it does not collide with the
+# facade in the parent workspace.
+name = "dualis"
+crate-type = ["cdylib"]
+
+[dependencies]
+dualis = { path = "../../crates/dualis" }
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }

@@ -117,6 +117,39 @@ jobs:
             echo "::endgroup::"
           done
 
+  # The Python bindings, built and tested the way somebody would install them.
+  #
+  # A separate job because they are a separate workspace: pyo3 brings fifteen crates and links
+  # libpython, and the library's lockfile and `deny.toml` allow-list should not have to
+  # accommodate that to compile a physics crate. Nothing here is in `--workspace`.
+  #
+  # `maturin build` rather than `cargo build`, and then the wheel is *installed* — because the
+  # claim is "pip install dualis then import dualis", and a cdylib that compiles proves neither
+  # half of it. abi3, so one wheel serves 3.10 upward and the job does not need a matrix.
+  python:
+    name: python bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bindings/python
+      - name: build a wheel
+        working-directory: bindings/python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "maturin>=1.7,<2.0"
+          python -m maturin build --release --out dist
+      - name: install it and run its tests
+        working-directory: bindings/python
+        run: |
+          python -m pip install dist/*.whl
+          python tests/test_dualis.py
+
   # Licences and advisories, against the allow-list in `deny.toml`.
   #
   # The tree was audited once by hand and came back clean. That was a snapshot: one added

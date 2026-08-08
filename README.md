@@ -15,6 +15,7 @@ WebAssembly, and under sixteen threads as readily as one.
 
 ```sh
 cargo add dualis                             # one dependency, all eight crates
+pip install dualis                           # or from Python, see bindings/python
 ```
 
 Or, in a clone of this repository:
@@ -65,6 +66,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
+| `bindings/python` | Python bindings, in their own cargo workspace and not on PyPI. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with ten scenes across all five domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
