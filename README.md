@@ -471,12 +471,21 @@ as well as the total, which is why scaling an unfiltered photon rate by a power
 fraction is wrong by nearly three times for a tungsten lamp.
 
 That number is also the seam between the two domains, and the integration test
-follows it end to end: a dichroic under a 5 W lamp absorbs 96 mW, which warms a 25 mm
-lens 10.0 K above ambient, which grows its 100 mm mount by 7.10 µm — 81% of the depth
-of focus at NA 0.25, and more than all of it at NA 0.30. Radiometry comes from the
+follows it end to end: a dichroic under a 5 W lamp absorbs 96.2 mW, which warms a
+25 mm lens 5.69 K above ambient, which grows its 100 mm mount by 4.04 µm — 46% of the
+depth of focus at NA 0.25 and two thirds of it at NA 0.30. Radiometry comes from the
 optics crate, heat capacity and expansion from the kernel's `Substance`, depth of
 focus from diffraction; the dimensions are what let them compose, and the `Exchange`
 audit is what proves nothing leaked on the way.
+
+Those figures used to be 10.0 K, 7.10 µm and 81%, and the difference is **radiation**.
+`LumpedMass::equilibrium_rise` was `P/(hA)` — convection only — while `step` always
+included the radiative term, so two public functions disagreed with the crate's own
+physics for as long as they existed. `Environment::loss_from`'s documentation had
+been explaining why that would be wrong the whole time: a black surface at room
+temperature radiates about 6 W·m⁻²·K⁻¹, the same order as still-air convection. It was
+reported from outside, by somebody who built a conclusion on the old number and had to
+retract the mechanism, and the error was always in the reassuring direction.
 
 ## Numerical against analytic, on purpose
 

@@ -175,25 +175,108 @@ impl LumpedMass {
 
     /// Time constant `C/(hA)` — how long it takes to get most of the way to
     /// equilibrium, and the step this domain must not much exceed.
+    /// How long it takes to settle, linearised **at the temperature it is at now**.
+    ///
+    /// `C / (hA + 4εσA·T³)`. Both loss paths, because the crate's own
+    /// [`Environment::loss_from`] says why: at room temperature a black surface radiates about
+    /// 6 W·m⁻²·K⁻¹, the same order as still-air convection, so leaving it out roughly halves
+    /// the conductance and doubles this number.
+    ///
+    /// It used to leave it out, and reported the same time constant for a polished surface and
+    /// a blackbody one. Measured on a 1.12 kg box in still air under 21 W, against the time to
+    /// reach 63% of its settled rise:
+    ///
+    /// ```text
+    ///   emissivity    was    at rest    once hot    measured
+    ///         0.05   53.0      50.8        48.3      49.2 min
+    ///         0.09   53.0      49.2        45.4      46.6
+    ///         0.50   53.0      37.1        30.1      32.2
+    ///         0.90   53.0      29.9        23.8      25.6
+    /// ```
+    ///
+    /// **Why the temperature it is at now, and not ambient.** The radiative conductance grows
+    /// as `T³`, so a body running hot settles faster than the same body at rest. This is not a
+    /// constant of the body; it is a property of its current state, and a function returning
+    /// one number has to say which one. The two right-hand columns above are the same call on
+    /// the same body cold and settled — and the measured figure lies *between* them, because a
+    /// large-signal time constant is an average over the trajectory and the small-signal one
+    /// bounds it at each end.
+    ///
+    /// [`LumpedMass::max_stable_dt`] re-reads this every step, so a scheduler tightens as the
+    /// body warms: 179 s to 143 s over that last row, against 318 s before radiation was
+    /// counted at all.
+    ///
+    /// Infinite when nothing carries heat away — no convection and no emissivity — which is a
+    /// body that never settles rather than one that settles instantly.
     pub fn time_constant(&self) -> Time {
         let capacity = self.heat_capacity().to_si();
-        let conductance = self.environment.convection_w_per_m2_k * self.environment.area.to_si();
+        let conductance = self.loss_conductance(self.temperature);
         if conductance <= 0.0 || !capacity.is_finite() {
             return Time::from_si(f64::INFINITY);
         }
         Time::from_si(capacity / conductance)
     }
 
-    /// Steady-state rise for a constant absorbed power, ignoring radiation.
+    /// `d(loss)/dT` at a temperature: convection plus the linearised radiative term.
+    fn loss_conductance(&self, at: Temperature) -> f64 {
+        let area = self.environment.area.to_si();
+        let t = at.to_si().max(0.0);
+        self.environment.convection_w_per_m2_k * area
+            + 4.0 * self.emissivity() * STEFAN_BOLTZMANN.to_si() * area * t * t * t
+    }
+
+    /// Steady-state rise for a constant absorbed power, **with radiation**.
     ///
-    /// `ΔT = P/(hA)`. The answer a designer actually wants: not how it gets there,
-    /// but where it ends up.
+    /// Solves `P = hA·ΔT + εσA((Tₐ+ΔT)⁴ − Tₐ⁴)` rather than `P/(hA)`. The answer a designer
+    /// actually wants: not how it gets there, but where it ends up — and the radiative term is
+    /// not a correction to it. On a 1.12 kg box in still air under 21 W, `P/(hA)` says 99.2 K
+    /// whatever the surface is, against a measured 92.9 K at ε = 0.05 and **47.5 K at ε = 1.0**.
+    /// It was over by 2.09× at the top of that range, and the error is always in the
+    /// comfortable direction.
+    ///
+    /// One positive root, because the right-hand side is strictly increasing in `ΔT` above
+    /// `−Tₐ`. Newton from the convective guess, which is an overestimate and therefore
+    /// approaches from the side where the derivative is largest — three or four steps.
+    ///
+    /// Infinite only when nothing carries heat away at all.
     pub fn equilibrium_rise(&self, absorbed: Power) -> Temperature {
-        let conductance = self.environment.convection_w_per_m2_k * self.environment.area.to_si();
-        if conductance <= 0.0 {
-            return Temperature::from_si(f64::INFINITY);
+        let p = absorbed.to_si();
+        let area = self.environment.area.to_si();
+        let ha = self.environment.convection_w_per_m2_k * area;
+        let er = self.emissivity() * STEFAN_BOLTZMANN.to_si() * area;
+        let ta = self.environment.ambient.to_si();
+
+        if !p.is_finite() || (ha <= 0.0 && er <= 0.0) {
+            return Temperature::from_si(if p == 0.0 { 0.0 } else { f64::INFINITY });
         }
-        Temperature::from_si(absorbed.to_si() / conductance)
+        if p == 0.0 {
+            return Temperature::from_si(0.0);
+        }
+        if er <= 0.0 {
+            return Temperature::from_si(p / ha);
+        }
+
+        // Start from whichever single-path answer exists; both are above the true root when
+        // the other path is also carrying heat, so Newton descends onto it.
+        let mut x = if ha > 0.0 {
+            p / ha
+        } else {
+            (p / er + ta.powi(4)).max(0.0).powf(0.25) - ta
+        };
+        for _ in 0..64 {
+            let t = (ta + x).max(0.0);
+            let f = ha * x + er * (t.powi(4) - ta.powi(4)) - p;
+            let df = ha + 4.0 * er * t * t * t;
+            if df <= 0.0 || !f.is_finite() {
+                break;
+            }
+            let step = f / df;
+            x -= step;
+            if step.abs() <= 1e-12 * (1.0 + x.abs()) {
+                break;
+            }
+        }
+        Temperature::from_si(x)
     }
 
     fn emissivity(&self) -> f64 {
@@ -634,6 +717,45 @@ impl Bar1D {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The box from the report that opened this: 1.122 kg, 96x60x60 mm, still air, 21 W.
+    ///
+    /// A real part from a downstream project rather than an invented one, and the emissivity is
+    /// the parameter because that is exactly what the old functions were blind to.
+    fn radiating_box(emissivity: f64) -> LumpedMass {
+        use dualis_units::SpecificHeat;
+        let (area, vol) = (0.030_24, 3.456e-4);
+        let mut substance = Substance::aluminium_6061();
+        substance.density = Density::kg_per_m3(1.122 / vol);
+        if let Some(t) = substance.thermal.as_mut() {
+            t.specific_heat = SpecificHeat::j_per_kg_k(600.0);
+            t.emissivity = emissivity;
+        }
+        LumpedMass::new(
+            "box",
+            substance,
+            Volume::from_si(vol),
+            Length::from_si(vol / area),
+            Temperature::celsius(25.0),
+            Environment {
+                ambient: Temperature::celsius(25.0),
+                convection_w_per_m2_k: 7.0,
+                area: Area::from_si(area),
+            },
+        )
+    }
+
+    /// Step to steady state under 21 W and report the settled rise.
+    fn settle(body: &mut LumpedMass) -> f64 {
+        let mut bus = Exchange::new();
+        for k in 0..400_000 {
+            bus.publish(HEAT, 21.0);
+            body.step(Time::s(k as f64), Time::s(1.0), &mut bus)
+                .unwrap();
+        }
+        body.rise().to_si()
+    }
+
     use dualis_core::{Flux, Schedule, Simulation};
     use dualis_units::Density;
 
@@ -772,20 +894,168 @@ mod tests {
         assert!(env.loss_from(Temperature::celsius(10.0), 0.9).to_si() < 0.0);
     }
 
-    /// The answer a designer wants: where does it end up. 10 mW into a lens in still
-    /// air settles a few kelvin above ambient — enough to matter for a focus, not
-    /// enough to break anything.
+    /// **`equilibrium_rise` agrees with stepping the domain**, whatever the surface is.
+    ///
+    /// It used to be `P/(hA)`, which reports the same rise for a polished surface and a
+    /// blackbody one, and was over by 2.09x at the top of that range — always in the
+    /// comfortable direction. It solves the full balance now.
+    ///
+    /// Asserted against `step`, and that is the point: the crate had two public functions
+    /// disagreeing with its own physics while `Environment::loss_from`'s documentation
+    /// explained exactly why that would be wrong. Reported by a downstream project that built
+    /// a conclusion on the old number and had to retract the mechanism.
+    ///
+    /// `quoted / settled` across the emissivity range was 1.07, 1.12, 1.37, 1.58, 1.99, 2.09.
+    #[test]
+    fn the_equilibrium_agrees_with_stepping_there_at_every_emissivity() {
+        for e in [0.0, 0.05, 0.3, 0.9, 1.0] {
+            let mut body = radiating_box(e);
+            let quoted = body.equilibrium_rise(Power::w(21.0)).to_si();
+            let settled = settle(&mut body);
+            assert!(
+                (quoted / settled - 1.0).abs() < 1e-6,
+                "emissivity {e}: quoted {quoted:.4} K, settled {settled:.4} K"
+            );
+        }
+        // And the surface matters, which is the whole complaint: a black box settles at about
+        // half the rise of a polished one under the same load, where `P/(hA)` said 99.2 K for
+        // both.
+        let (mut black, mut shiny) = (radiating_box(1.0), radiating_box(0.05));
+        let (b, s) = (settle(&mut black), settle(&mut shiny));
+        assert!(b < 0.55 * s, "black {b:.1} K against polished {s:.1} K");
+    }
+
+    /// **The time constant tightens as the body warms**, and brackets the large-signal value.
+    ///
+    /// `4εσA·T³` grows with temperature, so this is a property of the state and not of the
+    /// body. The measured figure — time to 63% of the settled rise — must lie between the value
+    /// at rest and the value once hot, because a large-signal time constant is an average over
+    /// the trajectory that the small-signal one bounds at each end.
+    ///
+    /// At ε = 0.9: 29.9 min at rest, 23.8 once settled, 25.6 large-signal. Before radiation was
+    /// counted it was 53.0 whatever the surface was.
+    #[test]
+    fn the_time_constant_brackets_the_measured_one_and_tightens_when_hot() {
+        let cold = radiating_box(0.9);
+        let tau_cold = cold.time_constant().to_si();
+
+        let mut body = radiating_box(0.9);
+        let settled = settle(&mut body);
+        let tau_hot = body.time_constant().to_si();
+        assert!(
+            tau_hot < tau_cold,
+            "hot {tau_hot:.1} s against cold {tau_cold:.1} s"
+        );
+
+        let mut probe = radiating_box(0.9);
+        let mut bus = Exchange::new();
+        let mut t63 = f64::NAN;
+        for k in 0..400_000 {
+            bus.publish(HEAT, 21.0);
+            probe
+                .step(Time::s(k as f64), Time::s(1.0), &mut bus)
+                .unwrap();
+            let reached = probe.rise().to_si() >= settled * (1.0 - 1.0 / std::f64::consts::E);
+            if t63.is_nan() && reached {
+                t63 = k as f64;
+            }
+        }
+        assert!(
+            tau_hot < t63 && t63 < tau_cold,
+            "the measured {:.1} min should lie between {:.1} and {:.1}",
+            t63 / 60.0,
+            tau_hot / 60.0,
+            tau_cold / 60.0
+        );
+        // The scheduler follows it: a tenth of a time constant that is now shorter.
+        assert!(body.max_stable_dt(Time::ZERO) < cold.max_stable_dt(Time::ZERO));
+    }
+
+    /// A body with no way to lose heat never settles, rather than settling instantly.
+    #[test]
+    fn a_body_that_cannot_lose_heat_has_no_equilibrium() {
+        let sealed = LumpedMass::new(
+            "sealed",
+            Substance::aluminium_6061(),
+            Volume::from_si(1e-4),
+            Length::mm(10.0),
+            Temperature::celsius(20.0),
+            Environment {
+                ambient: Temperature::celsius(20.0),
+                convection_w_per_m2_k: 0.0,
+                area: Area::from_si(0.0),
+            },
+        );
+        assert!(sealed.equilibrium_rise(Power::w(1.0)).to_si().is_infinite());
+        assert_eq!(sealed.equilibrium_rise(Power::w(0.0)).to_si(), 0.0);
+        assert!(sealed.time_constant().to_si().is_infinite());
+    }
+
+    /// With no convection at all the root is the Stefan-Boltzmann one, exactly.
+    ///
+    /// The case the old `P/(hA)` divided by zero on and returned infinity for — a body in
+    /// vacuum has an equilibrium, and it is a closed form.
+    #[test]
+    fn a_body_in_vacuum_settles_where_stefan_boltzmann_says() {
+        let (area, vol) = (0.030_24, 3.456e-4);
+        let emissivity = 0.8;
+        let mut substance = Substance::aluminium_6061();
+        if let Some(t) = substance.thermal.as_mut() {
+            t.emissivity = emissivity;
+        }
+        let vacuum = LumpedMass::new(
+            "vac",
+            substance,
+            Volume::from_si(vol),
+            Length::from_si(vol / area),
+            Temperature::celsius(25.0),
+            Environment {
+                ambient: Temperature::celsius(25.0),
+                convection_w_per_m2_k: 0.0,
+                area: Area::from_si(area),
+            },
+        );
+        let rise = vacuum.equilibrium_rise(Power::w(21.0)).to_si();
+        // Closed form, computed here: T = (P/(eps A sigma) + Ta^4)^(1/4).
+        let ta = Temperature::celsius(25.0).to_si();
+        let want =
+            (21.0 / (emissivity * STEFAN_BOLTZMANN.to_si() * area) + ta.powi(4)).powf(0.25) - ta;
+        assert!(
+            (rise / want - 1.0).abs() < 1e-9,
+            "vacuum: got {rise:.4} K, closed form {want:.4} K"
+        );
+    }
+
+    /// The answer a designer wants: where does it end up.
+    ///
+    /// Asserted against stepping there rather than against a band, and the band is why. This
+    /// test used to require 1 K to 20 K, which the convective-only formula satisfied and the
+    /// real answer does not: 10 mW into this lens settles **0.60 K** up, because borosilicate
+    /// radiates and the old formula pretended it did not. The band was wide enough to look
+    /// generous and narrow enough to encode the bug.
     #[test]
     fn equilibrium_rise_is_the_number_that_matters() {
-        let body = lens(20.0);
-        let rise = body.equilibrium_rise(Power::mw(10.0));
+        let mut body = lens(20.0);
+        let quoted = body.equilibrium_rise(Power::mw(10.0)).to_si();
+
+        let mut bus = Exchange::new();
+        for k in 0..200_000 {
+            bus.publish(HEAT, 0.010);
+            body.step(Time::s(k as f64), Time::s(1.0), &mut bus)
+                .unwrap();
+        }
+        let settled = body.rise().to_si();
         assert!(
-            rise.to_si() > 1.0 && rise.to_si() < 20.0,
-            "10 mW should settle a few kelvin up, got {} K",
-            rise.to_si()
+            (quoted / settled - 1.0).abs() < 1e-6,
+            "quoted {quoted:.6} K, settled {settled:.6} K"
         );
-        // And the glass survives it comfortably — that check lives on Substance.
-        assert_eq!(Substance::borosilicate_crown().survives(rise), Some(true));
+        // Small enough to matter for a focus and not for the glass, which is the point of
+        // the number — and that check lives on Substance.
+        assert!(quoted > 0.1 && quoted < 2.0, "got {quoted} K");
+        assert_eq!(
+            Substance::borosilicate_crown().survives(Temperature::from_si(quoted)),
+            Some(true)
+        );
     }
 
     /// Explicit conduction refuses to run past its stability limit rather than

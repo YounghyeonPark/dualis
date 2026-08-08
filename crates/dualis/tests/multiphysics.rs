@@ -239,32 +239,40 @@ fn a_warm_lens_drifts_out_of_focus() {
         .expect("N-BK7 has an expansion coefficient");
 
     // Against the depth of focus at 550 nm, which is the budget the drift has to fit
-    // inside. The numbers, all of them computed above rather than assumed: 96 mW of
-    // absorbed stray light settles the lens 10.0 K above ambient, which grows a
-    // 100 mm mount by 7.10 um.
+    // inside. The numbers, all computed above rather than assumed: 96.2 mW of absorbed
+    // stray light settles the lens 5.69 K above ambient, growing a 100 mm mount by 4.04 um.
+    //
+    // **Those used to be 10.0 K and 7.10 um**, and the difference is radiation.
+    // `equilibrium_rise` was `P/(hA)` -- convection only -- while `step`, which produced
+    // every other temperature in this file, always included the radiative term. Borosilicate
+    // radiates, so the real settling point is a little over half the convective one, and this
+    // test asserted the inflated figure inside a band wide enough to look generous. Reported
+    // by a downstream project that built a conclusion on the same function and retracted it.
     let modest = depth_of_focus(Length::nm(550.0), 0.25, 1.0); // 8.80 um
     let tighter = depth_of_focus(Length::nm(550.0), 0.30, 1.0); // 6.11 um
 
-    // At NA 0.25 the drift does not quite exceed the depth — it eats 81% of it, which
-    // leaves nothing for every other error in the instrument.
+    // At NA 0.25 the drift eats 46% of the depth: a real bite out of a budget that also has
+    // to hold alignment, figure and gradients.
     let used = growth / modest;
     assert!(
-        used > 0.7 && used < 1.0,
-        "a {:.1} K rise moves the mount {:.2} um and spends {:.0}% of the {:.2} um \
-         depth of focus",
+        used > 0.40 && used < 0.52,
+        "a {:.2} K rise moves the mount {:.2} um and spends {:.0}% of the {:.2} um depth",
         settled.to_si(),
         growth.in_um(),
         used * 100.0,
         modest.in_um()
     );
 
-    // Tighten the aperture slightly — depth falls as one over NA squared — and the
-    // same thermal drift is now larger than the entire budget. That is the whole
-    // reason this coupling has to exist rather than being assumed negligible.
+    // Tighten the aperture -- depth falls as one over NA squared -- and the same drift takes
+    // two thirds of the budget. It no longer exceeds it outright, which it appeared to before
+    // radiation was counted: a correction in the *uncomfortable* direction for the instrument
+    // and the comfortable one for the arithmetic, which is the pairing worth distrusting.
+    let tight_used = growth / tighter;
     assert!(
-        growth > tighter,
-        "at NA 0.30 the {:.2} um drift exceeds the {:.2} um depth outright",
+        tight_used > 0.60 && tight_used < 0.72,
+        "at NA 0.30 the {:.2} um drift is {:.0}% of the {:.2} um depth",
         growth.in_um(),
+        tight_used * 100.0,
         tighter.in_um()
     );
 
