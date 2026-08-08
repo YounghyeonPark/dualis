@@ -1,6 +1,6 @@
 # Scenes
 
-Nine worlds described as data, covering four of the five domains. Nothing here is Rust: the
+Ten worlds described as data, covering all five domains. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
 
@@ -38,7 +38,7 @@ tells them apart.
 
 | Scene | What it shows |
 | --- | --- |
-| `06-orbits` | Four satellites on circular orbits round one mass. The inner ones lap the outer ones, which is Kepler's third law drawn rather than asserted |
+| `06-orbits` | Four satellites on circular orbits round one mass, each tilted out of the reference plane. The inner ones lap the outer ones, which is Kepler's third law drawn rather than asserted |
 | `07-bouncing-ball` | A penalty contact with a dashpot, losing height each bounce — and a thermal lump taking the joules it dissipates |
 
 `07` needs that lump. Without a consumer the contact publishes heat that arrives nowhere and
@@ -52,17 +52,25 @@ the kernel refuses the step, which is correct and is worth seeing once.
 | `09-atoms-liquid` | The same 108 at `T* = 1.4`: the lattice is gone and they wander |
 
 Same seed, same density, same box — only the temperature differs, so the two pictures side by
-side are melting.
+side are melting. The periodic cell is drawn as a wireframe, because it is a real boundary
+rather than the edge of a picture.
 
 ## Light — `dualis-optics`
 
-Nothing yet, and the reason is in [`../FRICTION.md`](../FRICTION.md): optics has no `Domain`
-in the library, so a scene would need one written in the application first.
+| Scene | What it shows |
+| --- | --- |
+| `10-lamp-on-a-mirror` | A 100 W tungsten lamp on an aluminium mirror. The mirror is worse in the blue, so the lamp's *colour* decides how much becomes heat |
+
+`dualis-optics` has no `Domain` in it — spectra and Fresnel coefficients answer questions
+rather than march a state — so this one is written in the application, like the heater and the
+beam. A flat reflectance would make the colour temperature irrelevant and the whole spectral
+apparatus an expensive way to multiply by a constant, which is why the test compares 2800 K
+against 6500 K rather than checking one number.
 
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all nine on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all ten on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is
@@ -85,3 +93,16 @@ place, so `Bar1D` puts it in the first cell and conduction has not finished leve
 
 **The bouncing ball ends at zero.** `07` prints the last frame, and by one second the ball has
 stopped. The bounces are in the middle of the strip, not at its end.
+
+## Three dimensions
+
+The physics always had them: `NBody`, `ContactSystem` and `Fluid` all carry `DVec3`, and
+flattening to a plane was the renderer's simplification rather than the simulation's. Bodies
+are drawn in an axonometric projection now, sorted back to front, with radius growing toward
+the viewer and colour mixed toward the plate for distance. Without all three the picture is
+flat however true the coordinates are.
+
+Not isometric, deliberately: a true isometric view puts the axes at 120 degrees and makes a
+cube ambiguous, which is a bad way to read a periodic box. Rooms and bars stay as they are —
+`Room` is two-dimensional by construction, and the crate says why: a third dimension costs a
+factor of √3 in the stability limit as well as the obvious one in cells.

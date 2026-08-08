@@ -22,7 +22,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 356 tests, all against closed forms
+cargo test --workspace                       # 357 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -59,7 +59,7 @@ checking a *rate*. There are two tests for that rate now.
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with nine scenes across four domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with ten scenes across all five domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
 dualis-units       no dependencies but glam and serde

@@ -295,8 +295,13 @@ None of this was visible from inside.
 
 ## What this report does not cover
 
-**Optics.** Mechanics and molecular have scene variants now; optics does not, because it has no
-`Domain` in the library at all — the workspace's own coupling tests define an absorbing surface
-locally. So `SpectralPower`, `Spectrum` and `SurfaceOptics` have still never been driven from a
-file. An application writing that domain is the obvious next thing, and it would be the fourth
-`Domain` written outside the library rather than the first.
+All five domains have scenes now, so the gap this section used to name is closed. What is left
+is smaller and more specific.
+
+**`TreeNBody`, `RigidBody` and the rest of mechanics.** Four types took `as_any` in this pass
+but only `NBody` and `ContactSystem` have scene variants, so Barnes-Hut and rigid rotation are
+still driven only from inside.
+
+**A room in three dimensions.** `Room` is two-dimensional by construction and the crate says
+why, so this is a limit of the physics rather than of the scene format — but it does mean the
+only fields anyone can draw are flat, while every *body* domain is now drawn in space.

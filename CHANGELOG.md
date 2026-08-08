@@ -59,7 +59,7 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   validating a scene's schedule against its domains at build time, which an application can
   already do with `Domain::max_stable_dt`. The report also says what it does *not* cover.
 
-  **Nine scenes ship**, in `crates/dualis-world/scenes/`, covering four of the five domains,
+  **Ten scenes ship**, in `crates/dualis-world/scenes/`, covering all five domains,
   and CI runs every one through the real binary as well as the test harness. Three acoustic —
   two room modes and a clap that reflects off all four walls; two thermal, which are the same
   heat told over a plain channel and over a shared boundary and are the argument for
@@ -72,6 +72,21 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   A room can be released as a Gaussian pulse now and not only as a mode, and a panel can hold
   bodies as well as a sampled field — an orbit is a countable number of things at places, and
   rasterising one would invent a continuum it does not have.
+
+  **Bodies are drawn in three dimensions.** The physics always had them: `NBody`,
+  `ContactSystem` and `Fluid` all carry `DVec3`, and flattening to a plane was the renderer's
+  simplification. They are projected axonometrically now, sorted back to front, with radius
+  growing toward the viewer and colour mixed toward the plate for distance — all three are
+  needed or the picture is flat however true the coordinates are. Periodic cells get a
+  wireframe, because they are a real boundary. The orbit scene tilts its satellites out of one
+  plane, which is what makes the third axis carry anything.
+
+  **Optics has a scene**, and it is the fifth `Domain` written outside the library: a
+  blackbody lamp on an aluminium mirror whose reflectance falls off in the blue, so the
+  colour temperature decides how much of a hundred watts becomes heat. Asserted as the
+  difference between 2800 K and 6500 K rather than as one number, because a flat reflectance
+  would make `Spectrum` and `SurfaceOptics::absorptance` an expensive way to multiply by a
+  constant.
 
   The scene format couples both ways. On a plain channel, a heater defined **in the
   application** publishes joules and a bar takes them. Over a shared boundary, a beam

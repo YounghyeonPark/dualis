@@ -10,8 +10,8 @@ fn room_scene(duration_s: f64, frames: usize, cells: usize) -> Scene {
           "title": "test", "schedule": "multirate",
           "duration_s": {duration_s}, "frames": {frames},
           "domains": [{{ "kind": "room", "name": "room", "width_m": 4.4,
-            "height_m": 3.1, "cells_across": {cells}, "mode": [1, 1],
-            "amplitude_pa": 1.0 }}]
+            "height_m": 3.1, "cells_across": {cells},
+            "release": {{ "as": "mode", "nx": 1, "ny": 1, "amplitude_pa": 1.0 }} }}]
         }}"#
     ))
     .expect("the test scene parses")
@@ -529,18 +529,24 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     (peak / want - 1.0).abs() < 0.02,
                     "{name}: the innermost should be at {want:.1} m/s, got {peak:.1}"
                 );
-                // And every satellite is still in orbit rather than having been flung out.
-                let (_, _, bounds) = match &last.panels[0].data {
+                let (positions, bounds) = match &last.panels[0].data {
                     dualis_world::PanelData::Points {
-                        positions,
-                        values,
-                        bounds,
-                    } => (positions, values, bounds),
+                        positions, bounds, ..
+                    } => (positions, bounds),
                     _ => panic!("{name}: an orbit is bodies, not a field"),
                 };
+                // The frame holds the widest orbit, in all three axes.
                 assert!(
-                    bounds[2] > 2.0e7,
+                    bounds[3] > 2.0e7,
                     "{name}: the frame should hold the widest orbit"
+                );
+                // And the satellites are genuinely out of one plane, which is what the third
+                // axis is for. A flat system would leave every z at zero and the projection
+                // would be an expensive way to draw a circle.
+                let out_of_plane = positions.iter().map(|p| p[2].abs()).fold(0.0f64, f64::max);
+                assert!(
+                    out_of_plane > 5.0e6,
+                    "{name}: the orbits should be inclined, largest |z| is {out_of_plane:.3e}"
                 );
             }
             // The dashpot takes the height away. Restitution is about 0.51, so after a
@@ -567,7 +573,69 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     "{name}: at nine times the temperature the atoms are quicker, got {peak:.3}"
                 );
             }
+            // Every joule the lamp paid arrived in the mirror.
+            //
+            // Against what the lamp actually spent, not against its 12 J budget: at 3.6 W of
+            // absorbed light the three-second run only gets through about 10.9 J, so asserting
+            // the budget would be asserting the scene's arithmetic rather than the coupling's.
+            // The absorbed *fraction* — the optics' own answer — is checked separately.
+            "10-lamp-on-a-mirror.json" => {
+                let capacity = Substance::aluminium_6061()
+                    .heat_capacity(Volume::from_si(20e-3 * 100e-6))
+                    .unwrap();
+                let lamp = world
+                    .simulation()
+                    .domain_as::<dualis_world::light::Light>("lamp")
+                    .expect("the lamp is still there");
+                let paid = 12.0 - lamp.reserve().to_si();
+                assert!(
+                    paid > 8.0,
+                    "{name}: the lamp should have spent most of its budget, got {paid:.3} J"
+                );
+                let want = paid / capacity.to_si();
+                let bar = world
+                    .simulation()
+                    .domain_as::<Bar1D>("mirror")
+                    .expect("the mirror bar is still there");
+                let mean = bar.mean_temperature().to_si() - Temperature::celsius(20.0).to_si();
+                assert!(
+                    (mean / want - 1.0).abs() < 1e-6,
+                    "{name}: {paid:.4} J is {want:.4} K, got {mean:.4}"
+                );
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }
+}
+
+/// **The lamp's colour changes how much of it becomes heat**, and that is the whole point of
+/// carrying spectra around.
+///
+/// The mirror is aluminium-like: about 90.5% reflective at 380 nm and 96.8% at 700 nm, so it
+/// absorbs roughly three times as much in the blue as in the red. A blackbody at 6500 K puts
+/// far more of its visible output at the blue end than one at 2800 K, so the same hundred
+/// watts leaves more heat behind.
+///
+/// A flat reflectance would make this ratio exactly 1 and the entire spectral apparatus —
+/// `Spectrum`, `SpectralPower`, `SurfaceOptics::absorptance` — would be an expensive way to
+/// multiply by a constant. Asserting the *difference between two colour temperatures* is what
+/// makes this a test of the optics rather than of a number.
+#[test]
+fn a_hotter_lamp_leaves_more_heat_on_a_mirror_that_is_worse_in_the_blue() {
+    use dualis_world::light::{aluminium_mirror, Light};
+
+    let at = |k: f64| Light::new("lamp", 100.0, k, aluminium_mirror()).absorbed_fraction();
+    let (warm, cool) = (at(2800.0), at(6500.0));
+
+    // Both are small: a good mirror absorbs a few percent, which is exactly why a hundred
+    // watts on one is a thermal problem and not a catastrophe.
+    assert!(
+        (0.02..0.12).contains(&warm) && (0.02..0.12).contains(&cool),
+        "a mirror absorbs a few percent, got {warm:.4} and {cool:.4}"
+    );
+    assert!(
+        cool > warm,
+        "6500 K is bluer than 2800 K and the mirror is worse in the blue: \
+         {cool:.4} against {warm:.4}"
+    );
 }

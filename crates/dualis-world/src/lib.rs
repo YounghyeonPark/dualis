@@ -22,10 +22,12 @@ use dualis::prelude::Room as AcousticRoom;
 
 pub mod beam;
 pub mod heater;
+pub mod light;
 pub mod render;
 
 use beam::Beam;
 use heater::Heater;
+use light::Light;
 
 /// What to simulate, in a form that can be written down rather than compiled in.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -141,6 +143,10 @@ pub enum DomainSpec {
         /// One satellite per radius, each started at the circular speed for that radius and
         /// spaced evenly in angle so they do not begin on top of each other.
         radii_m: Vec<f64>,
+        /// Inclination of each orbit to the reference plane, in degrees. Repeats or pads
+        /// with zero. Flat orbits make a flat picture and waste the third axis.
+        #[serde(default)]
+        inclinations_deg: Vec<f64>,
         /// Mass of each satellite. Small against the central one, or "circular" is a lie.
         satellite_kg: f64,
     },
@@ -195,6 +201,24 @@ pub enum DomainSpec {
         ambient_c: f64,
         /// Surface area exposed to that air.
         area_cm2: f64,
+    },
+    /// A lamp on a coated surface: real spectra deciding how much becomes heat.
+    ///
+    /// `dualis-optics`. The absorbed fraction is the overlap of a blackbody at `colour_k`
+    /// with the coating's absorptance across the visible range, so changing the colour
+    /// temperature changes it — a cooler lamp puts more of its output where the coating is
+    /// worse. It has no field, so it shows in the numbers and the bar shows in the picture.
+    Light {
+        /// Domain name.
+        name: String,
+        /// Lamp power over the visible range.
+        watts: f64,
+        /// Colour temperature of the blackbody, in kelvin. 3200 is tungsten.
+        colour_k: f64,
+        /// The surface. Only `aluminium` for now, whose reflectance falls off in the blue.
+        finish: String,
+        /// Joules it may spend before it goes dark.
+        reserve_j: f64,
     },
     /// A one-dimensional conducting bar.
     Bar {
@@ -279,7 +303,8 @@ impl DomainSpec {
             | DomainSpec::Orbit { name, .. }
             | DomainSpec::Bounce { name, .. }
             | DomainSpec::Atoms { name, .. }
-            | DomainSpec::Lump { name, .. } => name,
+            | DomainSpec::Lump { name, .. }
+            | DomainSpec::Light { name, .. } => name,
         }
     }
 
@@ -348,6 +373,7 @@ impl DomainSpec {
                 name,
                 central_kg,
                 radii_m,
+                inclinations_deg,
                 satellite_kg,
             } => {
                 let mut bodies = vec![Body::new(
@@ -361,10 +387,17 @@ impl DomainSpec {
                     // integrator's opinion and not the initial condition's.
                     let a = k as f64 * std::f64::consts::TAU / radii_m.len().max(1) as f64;
                     let v = NBody::circular_speed(Mass::kg(*central_kg), Length::m(*r)).to_si();
+                    // Tilt the orbit by rotating both position and velocity about the x axis,
+                    // which keeps the speed exactly circular — inclining the position alone
+                    // would put the body on an ellipse and call it an integrator error.
+                    let inc = inclinations_deg.get(k).copied().unwrap_or(0.0).to_radians();
+                    let (si, ci) = (inc.sin(), inc.cos());
+                    let (px, py) = (r * a.cos(), r * a.sin());
+                    let (vx, vy) = (-v * a.sin(), v * a.cos());
                     bodies.push(Body::new(
                         Mass::kg(*satellite_kg),
-                        LengthVec::m(r * a.cos(), r * a.sin(), 0.0),
-                        VelocityVec::from_si(glam::DVec3::new(-v * a.sin(), v * a.cos(), 0.0)),
+                        LengthVec::m(px, py * ci, py * si),
+                        VelocityVec::from_si(glam::DVec3::new(vx, vy * ci, vy * si)),
                     ));
                 }
                 Box::new(NBody::new(name.clone(), &bodies))
@@ -415,6 +448,34 @@ impl DomainSpec {
                     None => fluid,
                 })
             }
+            DomainSpec::Light {
+                name,
+                watts,
+                colour_k,
+                finish,
+                reserve_j,
+            } => Box::new(
+                Light::new(
+                    name.clone(),
+                    *watts,
+                    *colour_k,
+                    // One surface so far, and the scene names it anyway: a field that can
+                    // hold only one value today is a field that says what would change, and
+                    // the alternative is a scene format that has to grow a key later.
+                    match finish.as_str() {
+                        "aluminium" => light::aluminium_mirror(),
+                        other => {
+                            return Box::new(Light::new(
+                                format!("{name} (unknown finish {other:?})"),
+                                0.0,
+                                *colour_k,
+                                light::aluminium_mirror(),
+                            ))
+                        }
+                    },
+                )
+                .with_reserve(*reserve_j),
+            ),
             DomainSpec::Lump {
                 name,
                 volume_cm3,
@@ -563,28 +624,36 @@ impl World {
 
     /// The domains that are bodies rather than fields, as dots.
     fn bodies(&self, spec: &DomainSpec) -> Option<Panel> {
-        let (positions, values, bounds, unit) = match spec {
+        let (positions, values, bounds, boxed, unit) = match spec {
             DomainSpec::Orbit { name, radii_m, .. } => {
                 let n = self.sim.domain_as::<NBody>(name)?;
-                let r = radii_m.iter().cloned().fold(1.0f64, f64::max) * 1.25;
+                let r = radii_m.iter().cloned().fold(1.0f64, f64::max) * 1.2;
                 let (mut p, mut v) = (Vec::new(), Vec::new());
                 for i in 0..n.count() {
                     let b = n.body(i);
-                    p.push([b.position.to_si().x, b.position.to_si().y]);
+                    let x = b.position.to_si();
+                    p.push([x.x, x.y, x.z]);
                     v.push(b.velocity.to_si().length());
                 }
-                (p, v, [-r, -r, r, r], "m/s")
+                (p, v, [-r, -r, -r, r, r, r], false, "m/s")
             }
             DomainSpec::Bounce { name, drop_m, .. } => {
                 let c = self.sim.domain_as::<ContactSystem>(name)?;
                 let (mut p, mut v) = (Vec::new(), Vec::new());
                 for i in 0..c.count() {
                     let b = c.body(i);
-                    p.push([b.position.to_si().x, b.position.to_si().z]);
+                    let x = b.position.to_si();
+                    p.push([x.x, x.y, x.z]);
                     v.push(b.velocity.to_si().length());
                 }
-                let half = drop_m * 0.5;
-                (p, v, [-half, 0.0, half, *drop_m * 1.05], "m/s")
+                let half = drop_m * 0.45;
+                (
+                    p,
+                    v,
+                    [-half, -half, 0.0, half, half, *drop_m * 1.05],
+                    true,
+                    "m/s",
+                )
             }
             DomainSpec::Atoms { name, .. } => {
                 let f = self.sim.domain_as::<Fluid>(name)?;
@@ -592,10 +661,11 @@ impl World {
                 let (mut p, mut v) = (Vec::new(), Vec::new());
                 for i in 0..f.count() {
                     let x = f.position(i);
-                    p.push([x.x, x.y]);
+                    p.push([x.x, x.y, x.z]);
                     v.push(f.velocity(i).length());
                 }
-                (p, v, [0.0, 0.0, l, l], "m/s")
+                // The periodic cell is a real boundary, so it gets drawn.
+                (p, v, [0.0, 0.0, 0.0, l, l, l], true, "m/s")
             }
             _ => return None,
         };
@@ -606,6 +676,7 @@ impl World {
                 positions,
                 values,
                 bounds,
+                boxed,
             },
         })
     }
@@ -640,7 +711,8 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
         | DomainSpec::Orbit { .. }
         | DomainSpec::Bounce { .. }
         | DomainSpec::Atoms { .. }
-        | DomainSpec::Lump { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
+        | DomainSpec::Lump { .. }
+        | DomainSpec::Light { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
         DomainSpec::Bar {
             cells, length_mm, ..
         } => (
@@ -716,15 +788,23 @@ pub enum PanelData {
         /// Row-major, `nx * ny` values.
         values: Vec<f64>,
     },
-    /// Bodies at positions, each carrying a value to colour it by.
+    /// Bodies at positions in space, each carrying a value to colour it by.
+    ///
+    /// Three dimensions, because the physics is three-dimensional and always was: `NBody`,
+    /// `ContactSystem` and `Fluid` all carry `DVec3`. Flattening to a plane was the
+    /// *renderer's* simplification, and it threw away a whole axis of every orbit and every
+    /// box of atoms. The projection is the picture's business, not the simulation's.
     Points {
-        /// Where each body is, in the plane being drawn.
-        positions: Vec<[f64; 2]>,
+        /// Where each body is, in metres.
+        positions: Vec<[f64; 3]>,
         /// One per body — a speed, a height, whatever the scene is about.
         values: Vec<f64>,
-        /// `[x0, y0, x1, y1]`, the region to draw. Fixed for the whole run so a body moving
-        /// is a body moving and not the frame rescaling underneath it.
-        bounds: [f64; 4],
+        /// `[x0, y0, z0, x1, y1, z1]`, the region to draw. Fixed for the whole run so a body
+        /// moving is a body moving and not the frame rescaling underneath it.
+        bounds: [f64; 6],
+        /// Whether to draw the bounding box as a wireframe. True for a periodic cell, which
+        /// is a real wall; false for an orbit, whose box is only the extent of the drawing.
+        boxed: bool,
     },
 }
 
