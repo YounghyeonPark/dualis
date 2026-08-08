@@ -127,9 +127,23 @@ aarch64, Windows x64 and an sdist, installs and runs the tests on every wheel it
 and warns on the cross-compiled ones rather than skipping them silently. It fires on a `v*` tag,
 or on a manual dispatch with the `publish` box ticked.
 
-It uses **PyPI trusted publishing**, so there is no token in the repository. That needs
-configuring once on PyPI — for a project that does not exist yet, as a *pending* publisher:
-owner `YounghyeonPark`, repository `dualis`, workflow `release-python.yml`, environment `pypi`.
+It uses **PyPI trusted publishing**, so there is no token in the repository. Configured on PyPI
+as owner `YounghyeonPark`, repository `dualis`, workflow `release-python.yml`, environment
+`pypi`.
+
+What has actually been exercised, since a release pipeline you have not run is a guess:
+
+| path | run | result |
+| --- | --- | --- |
+| dispatch, `publish=false` | build only | six artefacts, both gates skipped |
+| dispatch, `publish=true` | 0.3.0 to PyPI | five wheels and an sdist, installed from PyPI and tested |
+| tag, version mismatch | `v9.9.9` | refused at `check-version`; nothing built, nothing uploaded |
+| tag, version match | — | **not yet run.** Differs from the proven dispatch path only in that `check-version` succeeds instead of skipping, and `startsWith(github.ref, 'refs/tags/v')` is true instead of the input comparison |
+
+The publish job's `if` needs `always()` and the two results named. A skipped job propagates
+**transitively**, and `wheels`/`sdist` opting out with their own `always()` does not opt out for
+anything downstream of them — which cost two runs that built all six artefacts and then skipped
+the upload with a condition that was correct.
 
 The sdist is why `bindings/python/Cargo.toml` pins `dualis` with **both** a path and a version.
 An sdist is a tarball rooted at that directory, so `../../crates/dualis` points outside it;
