@@ -46,7 +46,18 @@ useful paragraph for a reader.
   *and* reported what it stored, so the entry cancelled itself; a mechanics domain kept counting
   joules it had already published, and energy grew 63%.
 - `checkpoint`/`restore`/`supports_restore` if the domain can take part in `Schedule::Iterative`.
-- `as_any` returning `Some(self)` if anything outside will want the concrete type.
+  Save **every** piece of state, including flags: `Room` carries a `velocity_staggered` bool and
+  a restore that forgot it would silently re-run the leapfrog startup.
+- `name` returns `&str` and the constructor takes `impl Into<String>`. Names are data, not
+  constants — an application reads them out of a scene file. `&'static str` was the old
+  signature and it forced consumers to leak.
+- `as_any` returning `Some(self)`. **Not optional in practice**: four mechanics domains skipped
+  it and `Simulation::domain_as` could not reach any of them, so a renderer drew an empty frame
+  with no error anywhere. If the domain has state anyone outside would read, take the opt-in.
+- `as_field` returning `Some(self)` if the domain *is* a field, so a renderer can sample it
+  without knowing what it is. Return `None` honestly if it is a countable number of bodies
+  instead — that is what `Fluid` and `NBody` do, and inventing a continuum for them would be
+  worse than declining.
 
 **6. Refuse rather than diverge.** If a caller exceeds a stability limit or violates a
 precondition, return a `Violation` naming the limit and by how much it was broken. `Bar1D`
@@ -81,7 +92,7 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
-cargo +1.78 check --locked --all-targets
+cargo +1.78 build --locked --workspace --exclude dualis-world
 cargo deny check
 ```
 

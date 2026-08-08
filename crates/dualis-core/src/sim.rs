@@ -657,7 +657,7 @@ mod tests {
     }
 
     impl Domain for Lamp {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "lamp"
         }
         fn kind(&self) -> Kind {
@@ -690,7 +690,7 @@ mod tests {
     }
 
     impl Domain for Block {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "block"
         }
         fn max_stable_dt(&self, _now: Time) -> Time {
@@ -792,7 +792,7 @@ mod tests {
     }
 
     impl Domain for Settling {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "settling"
         }
         fn step(&mut self, _t: Time, _dt: Time, _bus: &mut Exchange) -> Result<(), Violation> {
@@ -859,7 +859,7 @@ mod tests {
     fn iteration_refuses_a_domain_that_cannot_rewind() {
         struct NoRewind;
         impl Domain for NoRewind {
-            fn name(&self) -> &'static str {
+            fn name(&self) -> &str {
                 "no-rewind"
             }
             fn step(&mut self, _t: Time, _dt: Time, _b: &mut Exchange) -> Result<(), Violation> {

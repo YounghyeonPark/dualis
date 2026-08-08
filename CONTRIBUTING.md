@@ -18,7 +18,7 @@ cargo deny check                       # needs `cargo install cargo-deny`
 And the examples, which are tests that print:
 
 ```sh
-for e in beam_hot_spot airy_pattern detector_snr room_modes melting readme_check; do
+for e in beam_hot_spot airy_pattern detector_snr room_modes melting agents_quickstart readme_check; do
   cargo run --locked --release --example "$e" || break
 done
 ```
@@ -79,7 +79,7 @@ dependency is not there, and `-D warnings` turns that into a build failure.
 
 ### Every public item is documented
 
-`#![deny(missing_docs)]` in all eight crates. A one-line summary that names the unit is enough
+`#![deny(missing_docs)]` in all nine crates. A one-line summary that names the unit is enough
 for a constructor; anything with a trap in it should say what the trap is.
 
 ### Say what was wrong, not only what changed
@@ -95,7 +95,8 @@ nothing. If you find something like that, write it down.
 - One idea. A fix and a refactor in the same change are two changes.
 - Tests that would fail without it, checked against something independent.
 - No new dependency without saying what it buys. The workspace has twelve, three of which
-  reach a built artifact, and `deny.toml` gates the licences.
+  reach a *published* artifact — the unpublished application links four more — and `deny.toml`
+  gates the licences.
 - `cargo fmt` clean and `clippy -D warnings` clean.
 
 ## Reporting something

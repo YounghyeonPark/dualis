@@ -1261,7 +1261,7 @@ mod tests {
             taken: f64,
         }
         impl Domain for Sink {
-            fn name(&self) -> &'static str {
+            fn name(&self) -> &str {
                 "sink"
             }
             fn step(&mut self, _t: Time, _dt: Time, bus: &mut Exchange) -> Result<(), Violation> {

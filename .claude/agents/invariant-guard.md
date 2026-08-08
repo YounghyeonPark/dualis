@@ -80,13 +80,13 @@ alters that constant, that is the finding** — it is never the fix.
 cargo clippy --workspace --lib -- -W missing_docs 2>&1 | grep -c "^warning: missing"
 ```
 
-Must be `0`. All eight crates carry `#![deny(missing_docs)]`, so a regression is a build
+Must be `0`. All nine crates carry `#![deny(missing_docs)]`, so a regression is a build
 failure — but check that the attribute is still present and still positioned before any item,
 since an inner attribute after the first item is a compile error and it is easy to reintroduce
 while editing the top of a file.
 
 ```sh
-grep -c "deny(missing_docs)" crates/*/src/lib.rs   # eight ones
+grep -c "deny(missing_docs)" crates/*/src/lib.rs   # nine ones
 ```
 
 ## 5. The promises CI makes
@@ -97,7 +97,7 @@ Run these exactly as CI does:
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
-cargo +1.78 check --locked --all-targets     # the declared MSRV
+cargo +1.78 build --locked --workspace --exclude dualis-world     # the declared MSRV
 cargo deny check                             # licences and advisories
 ```
 
@@ -106,7 +106,8 @@ cargo deny check                             # licences and advisories
 - **`--locked` throughout.** A change that needs `Cargo.lock` updated must update it in the
   same commit.
 - **A new dependency** must be justified and must pass `deny.toml`'s allow-list. The workspace
-  has twelve external crates, three of which reach a built artifact. If a change adds one,
+  has twelve external crates, three of which reach a *published* artifact; `dualis-world`
+  links four more and is not published. If a change adds one,
   report what it costs and whether the licence is on the list.
 
 ## 6. Licence texts ship with the crates
@@ -120,7 +121,30 @@ non-compliant with both.
 for d in crates/*/; do printf "%s " "$d"; ls "$d" | grep -c LICENSE; done   # each must be 2
 ```
 
-## 7. Prose that states a number
+## 7. The version, against what is already published
+
+New since the workspace went to crates.io, and the one invariant here that cannot be fixed after
+the fact: a published version is permanent. You may yank it, you may not replace it.
+
+`dualis` 0.1.0 is on crates.io and the tree is 0.2.0. So a change to the public API has a
+version consequence, and `0.x` semantics mean **a breaking change needs the minor bumped**.
+
+```sh
+grep -m1 '^version' Cargo.toml                    # what the tree says
+curl -s https://crates.io/api/v1/crates/dualis | grep -o '"max_version":"[^"]*"'
+```
+
+Breaking, in this workspace, has concretely meant: a trait method's signature (`Domain::name`
+went from `&'static str` to `&str`), a public field or a struct's shape (`Report::substeps`
+became owned, `Panel` became an enum), a removed re-export, a constructor's parameter types. It
+has *not* meant adding a defaulted trait method or a new `serde(default)` field — those are
+additive, and both have been done without a bump.
+
+The eight crates share one version and are published together. Check that every
+`workspace.dependencies` entry's `version` matches `workspace.package.version`: a mismatch
+publishes a facade that depends on a version of its own crates that does not exist.
+
+## 8. Prose that states a number
 
 The README and doc comments quote measured values — test counts, error percentages, timings,
 dependency counts. Those drift. If a change moves a number that prose asserts, the prose is part

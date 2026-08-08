@@ -3,7 +3,8 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found three places the API should probably change — see `dualis-world` below.
+has already found twelve places it is awkward, seven of which have been changed — see
+`dualis-world` below.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
@@ -53,11 +54,13 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
 - **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
   into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
   the SDK from outside rather than to be a good application, and it reports what that was like
-  in `crates/dualis-world/FRICTION.md`: ten findings, six fixed. Two are declined in
-  writing rather than actioned — sharing the examples' SVG plotting, which would mean
-  committing to a public drawing API in a workspace whose scope excludes rendering, and
-  validating a scene's schedule against its domains at build time, which an application can
-  already do with `Domain::max_stable_dt`. The report also says what it does *not* cover.
+  in `crates/dualis-world/FRICTION.md`: twelve findings, seven fixed. Five are recorded rather
+  than actioned, and the reasons differ: sharing the examples' SVG plotting would mean
+  committing to a public drawing API in a workspace whose scope excludes rendering; validating
+  a scene's schedule against its domains at build time is something an application can already
+  do with `Domain::max_stable_dt`; and a duplicated face count needs no format change because
+  `Exchange::publish_on` already refuses the mismatch by name. The report also says what it
+  does *not* cover.
 
   **Ten scenes ship**, in `crates/dualis-world/scenes/`, covering all five domains,
   and CI runs every one through the real binary as well as the test harness. Three acoustic —

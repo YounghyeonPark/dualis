@@ -83,7 +83,7 @@ impl ProfiledBeam {
 }
 
 impl Domain for ProfiledBeam {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "beam"
     }
 

@@ -1208,7 +1208,7 @@ mod tests {
             paid: f64,
         }
         impl Domain for Heater {
-            fn name(&self) -> &'static str {
+            fn name(&self) -> &str {
                 "heater"
             }
             fn kind(&self) -> Kind {

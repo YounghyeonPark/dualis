@@ -2,15 +2,15 @@
 
 `dualis-world` exists to use the SDK from outside and write down where that is awkward. A
 library with no consumers is a library whose ergonomics nobody has measured, and none of the
-345 tests inside the workspace can answer this question about themselves — they are written by
+357 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it, couples
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Eight of the twelve are fixed**, and four are recorded rather than actioned — three of
-those because the kernel already refuses the mistake they describe. The entries are
+**Seven of the twelve are fixed**, and five are recorded rather than actioned — one of
+those because the kernel already refuses the mistake it describes. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
 to see that the answer to "this is awkward" was to change the library rather than to work
 around it. Each fixed entry says what was done.
@@ -96,7 +96,7 @@ Not obviously wrong — the examples are meant to be self-contained, and a plott
 commitment. But it means the first thing a consumer wants to do after running a simulation is
 something the workspace already solved and cannot share.
 
-**Not fixed, and the only one of the six that is not.** Sharing it means either a `dualis-plot`
+**Not fixed, and declined on scope rather than deferred.** Sharing it means either a `dualis-plot`
 crate or a feature-gated module in the facade, and either way it is a public API for drawing
 that would have to be supported, versioned and documented — for a workspace whose stated
 scope excludes rendering. Two overlapping private renderers is the cheaper mistake for now.
@@ -125,6 +125,11 @@ is second:
   61 cells   0.0265       481 cells  0.0039
  121 cells   0.0151
 ```
+
+Measured through this crate's own harness — `World::run` over 0.02 s in forty advances, each
+multirate-subcycled. Stepping the room directly at its stability limit gives the same second
+order and smaller absolute numbers, because the substep pattern differs. The *rate* is the
+claim; the column is only reproducible where it was taken.
 
 Halving on refinement, not quartering. The cause looks like the leapfrog's startup:
 `Room::released_from` sets the velocity array to zero at `t = 0`, but a staggered scheme
@@ -272,7 +277,7 @@ least debuggable outcome there is.
 
 Twelve findings from about eight hundred lines of application code: eight ergonomic, one a real
 defect in the physics, and three notes about where a check belongs or why one is already in the
-right place. Eight are fixed.
+right place. Seven are fixed.
 
 Findings 1, 2, 3 and 7 were the same shape. **The API was comfortable when the set of domains
 was known at compile time and awkward the moment it was not** — and that was never a decision

@@ -836,7 +836,7 @@ mod tests {
         for mu in [0.0f64, 0.08, 0.5] {
             struct Sink;
             impl Domain for Sink {
-                fn name(&self) -> &'static str {
+                fn name(&self) -> &str {
                     "sink"
                 }
                 fn step(

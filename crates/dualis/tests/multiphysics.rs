@@ -53,7 +53,7 @@ impl AbsorbingSurface {
 }
 
 impl Domain for AbsorbingSurface {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "optics"
     }
 
@@ -315,7 +315,7 @@ fn a_lossy_interface_is_refused() {
     /// interpolation would.
     struct LeakySink;
     impl Domain for LeakySink {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "leaky"
         }
         fn step(&mut self, _t: Time, _dt: Time, bus: &mut Exchange) -> Result<(), Violation> {

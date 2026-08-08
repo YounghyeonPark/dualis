@@ -36,11 +36,11 @@ Stated in full in CONTRIBUTING.md. The compressed version:
    counts, and there is a pinned digest that says so.
 4. **The kernel must never depend on a domain**, and no domain may depend on another. That
    claim is the reason for the crate split and has now been held through five domains.
-5. **Every public item is documented.** `#![deny(missing_docs)]` in all eight crates.
+5. **Every public item is documented.** `#![deny(missing_docs)]` in all nine crates.
 
 ## The subagent team
 
-`.claude/agents/` holds five reviewers, each built from a defect this repository actually
+`.claude/agents/` holds seven reviewers, each built from a defect this repository actually
 shipped rather than from a generic role. They are for developing dualis and are useless to a
 consumer.
 
@@ -48,6 +48,8 @@ consumer.
 | --- | --- |
 | `physics-checker` | Is this claim true? Finds an independent check for it |
 | `numerics-reviewer` | Would this test *notice* if the code were wrong? |
+| `silent-failure-hunter` | What here can come out *empty* and look fine? |
+| `consumer-advocate` | What is this API like from outside? |
 | `invariant-guard` | Kernel purity, cross-domain deps, determinism, docs, licence, MSRV |
 | `domain-builder` | Scaffolds a new physics crate on the kernel |
 | `prose-auditor` | Do the numbers in the README and doc comments still match the code? |
@@ -72,16 +74,20 @@ some shells — write the message to a file and use `git commit -F`.
 
 `crates/dualis-world` is an application, not a library: `publish = false`, and excluded from
 the wasm, determinism and 1.78 jobs, because those are promises the *library* makes to people
-who depend on it from crates.io. It is covered by `lint`, `test` and `release`.
+who depend on it from crates.io. It is covered by `lint`, `test`, `release`, `examples` — which is where every scene is run
+through the real binary — and `deny`.
 
 Its purpose is to use the SDK the way a stranger would and report back. Read
 `crates/dualis-world/FRICTION.md` before changing the public API — it is the only record of
-what the library feels like from outside, and three of its six findings are the same
+what the library feels like from outside, and four of its twelve findings are the same
 underlying decision: **the API is comfortable when the set of domains is known at compile time
 and awkward the moment it is not.**
 
-Finding 6 is a live defect in `Room`, pinned by a test that asserts the wrong behaviour on
-purpose. Fixing the startup will fail that test. That is intended; update the table in it.
+Finding 6 was a live defect in `Room` and in `Tube`, and it is fixed: the first velocity update
+of the staggered leapfrog now travels half a step. Two tests in `dualis-acoustic` and one in
+`dualis-world` pin the second-order rate. The startup no longer conserves energy exactly at the
+first step, by design — `Room::startup_adjustment` reports the `O(h²)` difference, measured
+0.42% at 31 cells and quartering on refinement.
 
 ## What is deliberately not here
 

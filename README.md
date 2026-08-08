@@ -41,8 +41,8 @@ There is now one consumer, `dualis-world`, and its first job was not to be a goo
 application but to use the SDK the way a stranger would. It came back with five places the
 API is awkward and one real defect in the acoustic startup, all in
 [`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) — twelve of them now,
-eight fixed and four argued down in writing, three of those because the kernel already refuses
-the mistake they describe. Not
+seven fixed and five argued down in writing, one of those because the kernel already refuses
+the mistake it describes. Not
 one of the library's own tests could have found them — the ergonomic ones because a test is
 written by somebody who already knows the shape, and the defect because nothing here was
 checking a *rate*. There are two tests for that rate now.
@@ -518,7 +518,8 @@ would either fail on correct code or hide a real leak.
 
 ## What is not here
 
-No scene graph, no renderer.
+No scene graph, and no renderer *in the library*. `dualis-world` has both — a JSON scene
+format and an SVG filmstrip — which is why it is a separate crate and is not published.
 
 Rigid bodies are spheres where they collide. `RigidBody` rotates with an applied torque
 and an arbitrary inertia tensor, but `Sphere` and `Rolling` are the only things that
@@ -537,7 +538,7 @@ piece of work than everything currently in the crate. No constraints, no barosta
 free-energy machinery.
 
 Both acoustic domains had a boundary defect until recently, and how it was found is worth
-more than the fix. See the section below.
+more than the fix. See [the section above](#a-boundary-defect-and-the-thing-that-found-it).
 
 **There is no fluid domain, and that is deliberate.** Sound *is* the fluid domain here:
 it is what a fluid does when the variations are small enough to linearise, which is
@@ -553,7 +554,7 @@ exact momentum** — each body sees its own approximation of the rest, so their 
 forces no longer cancel. The drift is a knob rather than a defect, closing with the
 opening angle and vanishing at `θ = 0`, and the audit tolerance has to be the one the
 angle earns. The expansion carries the quadrupole as well as the monopole, which buys
-back most of that accuracy at close angles — a factor of six at `θ = 0.3` — but nothing
+back most of that accuracy at close angles — a factor of 6.5 at `θ = 0.3` — but nothing
 past it, so `θ` above about 1 is still asking a centre of mass to stand in for a group
 that is not far enough away.
 
@@ -610,9 +611,17 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo test --locked --workspace
 cargo test --locked --workspace --release
-cargo build --locked --workspace --target wasm32-unknown-unknown
-cargo test  --locked --workspace --target wasm32-wasip1   # needs wasmtime on PATH
+cargo build --locked --workspace --exclude dualis-world --target wasm32-unknown-unknown
+cargo test  --locked --workspace --exclude dualis-world --target wasm32-wasip1   # wasmtime
+cargo +1.78 build --locked --workspace --exclude dualis-world
+cargo deny check
 ```
+
+The three `--exclude`s are deliberate: WebAssembly, determinism and the 1.78 floor are
+promises the *library* makes to the people who depend on it, and `dualis-world` is an
+unpublished application with no dependents. CI additionally *runs* every example and every
+scene rather than only compiling them — see [Examples](#examples) and
+`crates/dualis-world/scenes/`.
 
 Two of those exist to enforce claims rather than to catch typos. The test suite runs
 on Linux, macOS and Windows because `rng::tests::the_stream_is_pinned` asserts a
@@ -656,5 +665,6 @@ without any additional terms or conditions.
 
 Every dependency is permissive too, and that is checked rather than remembered: `deny.toml`
 holds an allow-list and CI fails on anything outside it. Twelve external crates at the time of
-writing, of which three reach a built artifact — `glam`, `serde` and `serde_core`, all under
-the same `MIT OR Apache-2.0`. The rest are compile-time or test-only.
+writing, of which three reach a *published* artifact — `glam`, `serde` and `serde_core`, all under
+the same `MIT OR Apache-2.0`. `dualis-world` also links `serde_json` and its three
+transitive crates, but it is not published. The rest are compile-time or test-only.
