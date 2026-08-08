@@ -34,13 +34,14 @@
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
-use dualis::prelude::{
-    Area, Bar1D, Domain, Environment, Exchange, Kind, Ledger, Length, LumpedMass, Schedule,
-    Simulation as RustSimulation, Substance, Temperature, Time, Violation as RustViolation, Volume,
-    HEAT,
-};
 use dualis::prelude::{quantity, Energy};
+use dualis::prelude::{
+    Area, Bar1D, Conductance, Domain, Environment, Exchange, Kind, Ledger, Length, LumpedMass,
+    Schedule, Simulation as RustSimulation, Substance, Temperature, ThermalNetwork, Time,
+    Violation as RustViolation, Volume, HEAT,
+};
 
 create_exception!(
     dualis,
@@ -171,7 +172,10 @@ impl PySimulation {
         if cells < 2 {
             return Err(PyValueError::new_err("a bar needs at least two cells"));
         }
-        if !(length_m > 0.0) || !(area_m2 > 0.0) {
+        // `is_finite` first, and then the comparison. The original was `!(x > 0.0)`, which
+        // rejects NaN by the negation being true rather than by saying so — correct, and
+        // exactly the shape clippy asks you not to write, because the NaN case is invisible.
+        if !length_m.is_finite() || length_m <= 0.0 || !area_m2.is_finite() || area_m2 <= 0.0 {
             return Err(PyValueError::new_err(
                 "length_m and area_m2 must be positive",
             ));
@@ -206,12 +210,193 @@ impl PySimulation {
                 Volume::from_si(volume_m3),
                 Length::from_si(thickness_m),
                 Temperature::from_si(initial_k),
-                Environment::still_air(
-                    Temperature::from_si(ambient_k),
-                    Area::from_si(area_m2),
-                ),
+                Environment::still_air(Temperature::from_si(ambient_k), Area::from_si(area_m2)),
             ))
         })
+    }
+
+    /// Several bodies joined by conductances: winding, stator, housing.
+    ///
+    /// The one shape `add_lump` cannot express. A lump reports the whole thing as one
+    /// temperature, and the number that decides whether a motor survives is the *winding*,
+    /// which is hotter than the case by however much the joint between them resists.
+    ///
+    /// `nodes` is a list of dicts: `name`, `material`, `volume_m3`, `thickness_m`, `initial_k`,
+    /// and optionally `ambient_k` **and** `area_m2` together to give the node somewhere to lose
+    /// heat to. `links` is a list of `{"from": ..., "to": ..., "w_per_k": ...}`. `absorbing`
+    /// names the node heat off the bus lands in.
+    ///
+    /// ```python
+    /// sim.add_network("motor",
+    ///     nodes=[{"name": "winding", "material": "copper", "volume_m3": 18e-6,
+    ///             "thickness_m": 2e-3, "initial_k": 298.15},
+    ///            {"name": "case", "material": "aluminium", "volume_m3": 220e-6,
+    ///             "thickness_m": 4e-3, "initial_k": 298.15,
+    ///             "ambient_k": 298.15, "area_m2": 0.042}],
+    ///     links=[{"from": "winding", "to": "case", "w_per_k": 0.9}],
+    ///     absorbing="winding")
+    /// ```
+    ///
+    /// **Dicts rather than handles.** The Rust API addresses nodes by a `Node` value that can
+    /// only come from a constructor, so a link to a node that does not exist cannot be written
+    /// — which matters, because a link adds `+q` to one node and `−q` to another in the same
+    /// sum, so a missing or misdirected link passes the conservation audit at machine precision.
+    /// That guarantee cannot cross into Python, where a name is just a string. So the names are
+    /// resolved here, once, at construction, and a name that is not a node raises **before** any
+    /// stepping happens and lists the ones that are.
+    #[pyo3(signature = (name, nodes, links, absorbing))]
+    fn add_network(
+        &mut self,
+        name: &str,
+        nodes: Vec<Bound<'_, PyDict>>,
+        links: Vec<Bound<'_, PyDict>>,
+        absorbing: &str,
+    ) -> PyResult<()> {
+        if nodes.is_empty() {
+            return Err(PyValueError::new_err(format!(
+                "{name:?}: a network needs at least one node"
+            )));
+        }
+
+        let mut net = ThermalNetwork::new(name.to_string());
+        for (i, n) in nodes.iter().enumerate() {
+            let at = format!("{name:?} node {i}");
+            let label = need_str(n, "name", &at)?;
+            let material = need_str(n, "material", &at)?;
+            let substance = match material.as_str() {
+                "copper" => Substance::copper(),
+                "aluminium" => Substance::aluminium_6061(),
+                "electrical_steel" => Substance::electrical_steel(),
+                "fr4" => Substance::fr4(),
+                "pla" => Substance::pla(),
+                other => {
+                    return Err(PyValueError::new_err(format!(
+                        "{at}: unknown material {other:?}; known are \"copper\", \"aluminium\", \
+                         \"electrical_steel\", \"fr4\", \"pla\""
+                    )))
+                }
+            };
+            let volume = Volume::from_si(need_f64(n, "volume_m3", &at)?);
+            let thickness = Length::from_si(need_f64(n, "thickness_m", &at)?);
+            let initial = Temperature::from_si(need_f64(n, "initial_k", &at)?);
+
+            // Both or neither. A node given an ambient with no area, or an area with no
+            // ambient, is a caller who meant it to lose heat and will get a node that does not
+            // — silently, and looking exactly like a hot interior node should look.
+            let ambient = optional_f64(n, "ambient_k", &at)?;
+            let area = optional_f64(n, "area_m2", &at)?;
+            match (ambient, area) {
+                (Some(a_k), Some(a_m2)) => {
+                    net.node_losing_to(
+                        label,
+                        substance,
+                        volume,
+                        thickness,
+                        initial,
+                        Environment::still_air(Temperature::from_si(a_k), Area::from_si(a_m2)),
+                    );
+                }
+                (None, None) => {
+                    net.node(label, substance, volume, thickness, initial);
+                }
+                (a, _) => {
+                    let (given, missing) = if a.is_some() {
+                        ("ambient_k", "area_m2")
+                    } else {
+                        ("area_m2", "ambient_k")
+                    };
+                    return Err(PyValueError::new_err(format!(
+                        "{at}: has {given} but not {missing}; a node loses heat only when it \
+                         has both, and one alone would give you an interior node that looks \
+                         like it is cooling and is not"
+                    )));
+                }
+            }
+        }
+
+        // Resolved before anything is linked, so a bad name raises rather than half-building.
+        let known = || {
+            net.handles()
+                .map(|(_, l)| l.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let mut wired = Vec::with_capacity(links.len());
+        for (i, l) in links.iter().enumerate() {
+            let at = format!("{name:?} link {i}");
+            let from = need_str(l, "from", &at)?;
+            let to = need_str(l, "to", &at)?;
+            let w = need_f64(l, "w_per_k", &at)?;
+            let a = net.node_named(&from).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "{at}: no node named {from:?}; this network has {}",
+                    known()
+                ))
+            })?;
+            let b = net.node_named(&to).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "{at}: no node named {to:?}; this network has {}",
+                    known()
+                ))
+            })?;
+            wired.push((a, b, w));
+        }
+        let sink = net.node_named(absorbing).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "{name:?}: absorbing names {absorbing:?}, which is not a node; this network \
+                 has {}",
+                known()
+            ))
+        })?;
+        for (a, b, w) in wired {
+            net.link(a, b, Conductance::w_per_k(w))
+                .map_err(|e| PyValueError::new_err(format!("{name:?}: {e}")))?;
+        }
+        net.absorbing(sink)
+            .map_err(|e| PyValueError::new_err(format!("{name:?}: {e}")))?;
+
+        self.push(name, |sim| sim.with(net))
+    }
+
+    /// One node's temperature, in kelvin.
+    fn node_temperature(&self, name: &str, node: &str) -> PyResult<f64> {
+        let net = self.network(name)?;
+        let handle = net.node_named(node).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "{name:?} has no node called {node:?}; it has {}",
+                net.handles().map(|(_, l)| l).collect::<Vec<_>>().join(", ")
+            ))
+        })?;
+        Ok(net.temperature(handle).to_si())
+    }
+
+    /// Every node's temperature, in kelvin, in the order the nodes were declared.
+    ///
+    /// Returned as pairs rather than a dict so the declaration order survives — which is the
+    /// order heat flows along a chain, and therefore the order you want to read them in.
+    fn node_temperatures(&self, name: &str) -> PyResult<Vec<(String, f64)>> {
+        let net = self.network(name)?;
+        Ok(net
+            .handles()
+            .map(|(n, l)| (l.to_string(), net.temperature(n).to_si()))
+            .collect())
+    }
+
+    /// Heat flowing along a link right now, in watts, positive from `a` to `b`.
+    ///
+    /// Zero for a pair with no link between them, which is the same answer as a link of zero
+    /// conductance and is not a mistake being hidden: ask `node_temperatures` what exists.
+    fn heat_flow_w(&self, name: &str, a: &str, b: &str) -> PyResult<f64> {
+        let net = self.network(name)?;
+        let pick = |who: &str| {
+            net.node_named(who).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "{name:?} has no node called {who:?}; it has {}",
+                    net.handles().map(|(_, l)| l).collect::<Vec<_>>().join(", ")
+                ))
+            })
+        };
+        Ok(net.heat_flow(pick(a)?, pick(b)?).to_si())
     }
 
     /// Advance every domain by `dt` seconds, auditing the crossing and the books.
@@ -251,6 +436,15 @@ impl PySimulation {
         if let Some(lump) = sim.domain_as::<LumpedMass>(name) {
             return Ok(lump.temperature().to_si());
         }
+        // A network has no single temperature and will not invent one by averaging: the whole
+        // reason to build one is that its nodes differ, and a mean would be a number that
+        // describes no part of it. Refused by name, pointing at the two calls that answer.
+        if sim.domain_as::<ThermalNetwork>(name).is_some() {
+            return Err(PyValueError::new_err(format!(
+                "{name:?} is a network, which has one temperature per node rather than one \
+                 overall; use node_temperatures({name:?}) or node_temperature({name:?}, node)"
+            )));
+        }
         Err(self.unknown(name))
     }
 
@@ -273,6 +467,9 @@ impl PySimulation {
         }
         if let Some(lump) = sim.domain_as::<LumpedMass>(name) {
             return Ok(lump.absorbed_energy().to_si());
+        }
+        if let Some(net) = sim.domain_as::<ThermalNetwork>(name) {
+            return Ok(net.absorbed_energy().to_si());
         }
         Err(self.unknown(name))
     }
@@ -346,6 +543,52 @@ impl PySimulation {
             "no domain called {name:?} of a type that answers this; known: {:?}",
             self.names
         ))
+    }
+
+    fn network(&self, name: &str) -> PyResult<&ThermalNetwork> {
+        self.borrow()?
+            .domain_as::<ThermalNetwork>(name)
+            .ok_or_else(|| self.unknown(name))
+    }
+}
+
+/// A required key, with the error naming the dict it was missing from.
+///
+/// `PyDict::get_item` returning `None` and a key holding `None` are different things and both
+/// are wrong here, so both take the same message rather than one of them extracting to a
+/// default. A silent default is how a node ends up with a volume of zero and a capacity of
+/// zero, which the network then refuses with a message about heat capacity rather than about
+/// the key the caller forgot.
+/// Concrete rather than generic over `FromPyObject`: the two types wanted are `str` and `f64`,
+/// and the generic form needs a `where` clause on pyo3's associated error type that buys
+/// nothing here.
+fn need_str(d: &Bound<'_, PyDict>, key: &str, at: &str) -> PyResult<String> {
+    match d.get_item(key)? {
+        Some(v) if !v.is_none() => v
+            .extract()
+            .map_err(|_| PyValueError::new_err(format!("{at}: {key} should be a string"))),
+        _ => Err(PyValueError::new_err(format!("{at}: missing {key:?}"))),
+    }
+}
+
+fn need_f64(d: &Bound<'_, PyDict>, key: &str, at: &str) -> PyResult<f64> {
+    match d.get_item(key)? {
+        Some(v) if !v.is_none() => v
+            .extract()
+            .map_err(|_| PyValueError::new_err(format!("{at}: {key} should be a number"))),
+        _ => Err(PyValueError::new_err(format!("{at}: missing {key:?}"))),
+    }
+}
+
+/// An optional key. Absent and explicitly `None` are the same answer here, deliberately:
+/// `{"area_m2": None}` reads as "no area" to anyone writing it.
+fn optional_f64(d: &Bound<'_, PyDict>, key: &str, at: &str) -> PyResult<Option<f64>> {
+    match d.get_item(key)? {
+        Some(v) if !v.is_none() => v
+            .extract()
+            .map(Some)
+            .map_err(|_| PyValueError::new_err(format!("{at}: {key} should be a number"))),
+        _ => Ok(None),
     }
 }
 

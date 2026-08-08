@@ -103,6 +103,7 @@ half of "pip install then import". Its own gate:
 
 ```sh
 cd bindings/python
+cargo fmt --check && cargo clippy --release --all-targets -- -D warnings
 python -m maturin build --release
 python -m pip install --force-reinstall target/wheels/dualis-0.2.0-*.whl
 python tests/test_dualis.py

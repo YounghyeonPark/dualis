@@ -132,12 +132,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: bindings/python
+      # The nested workspace is excluded from the root one, so the `lint` job above does not
+      # reach it and it had gone unlinted since it was written — a `!(x > 0.0)` sat in
+      # `add_bar` for as long as the file existed. Cheap to run here; the alternative is
+      # remembering.
+      - name: fmt and clippy
+        working-directory: bindings/python
+        run: |
+          cargo fmt --check
+          cargo clippy --release --all-targets -- -D warnings
       - name: build a wheel
         working-directory: bindings/python
         run: |

@@ -99,6 +99,138 @@ def test_the_ledger_is_readable():
     assert sim.domains == ["element", "bar"]
 
 
+def motor(watts=6.0, seconds=900):
+    """A winding inside a case, run to `seconds`. The shape a lump cannot express."""
+    sim = dualis.Simulation(schedule="staggered", conservation_tolerance=1e-9)
+    sim.add_heater("losses", watts=watts, reserve_j=watts * seconds + 1.0)
+    sim.add_network(
+        "motor",
+        nodes=[
+            {"name": "winding", "material": "copper", "volume_m3": 18e-6,
+             "thickness_m": 2e-3, "initial_k": 298.15},
+            {"name": "case", "material": "aluminium", "volume_m3": 220e-6,
+             "thickness_m": 4e-3, "initial_k": 298.15,
+             "ambient_k": 298.15, "area_m2": 0.042},
+        ],
+        links=[{"from": "winding", "to": "case", "w_per_k": 0.9}],
+        absorbing="winding",
+    )
+    for _ in range(seconds):
+        sim.advance(1.0)
+    return sim
+
+
+def test_a_network_carries_the_drop_across_the_joint():
+    sim = motor()
+    temps = dict(sim.node_temperatures("motor"))
+    assert set(temps) == {"winding", "case"}
+
+    drop = temps["winding"] - temps["case"]
+    # 6 W across 0.9 W/K is 6.67 K at steady state. Computed here, from the numbers this test
+    # passed in -- not read back off the simulation, which would be checking it against itself.
+    steady = 6.0 / 0.9
+    assert 5.5 < drop < steady, f"drop {drop:.3f} K against a {steady:.3f} K ceiling"
+
+    # The same number by the other route, and they must agree exactly: one reads a handle it
+    # resolved itself, the other walks every node.
+    assert sim.node_temperature("motor", "winding") == temps["winding"]
+
+    # And the flux is the drop times the conductance, which is the definition of a conductance
+    # and the one place the binding could have transposed a pair.
+    q = sim.heat_flow_w("motor", "winding", "case")
+    assert abs(q - 0.9 * drop) < 1e-9, f"{q:.6f} W against {0.9 * drop:.6f} W"
+    # Antisymmetric, so the sign convention is stated rather than assumed.
+    assert abs(sim.heat_flow_w("motor", "case", "winding") + q) < 1e-12
+
+
+def test_a_network_of_one_node_matches_the_lump_it_reduces_to():
+    """The reduction the Rust side checks bit-for-bit, verified across the binding boundary.
+
+    If a unit conversion were wrong in `add_network` but right in `add_lump` -- a millimetre
+    read as a metre, say -- both would still run and audit green. Only the comparison catches
+    it, and it has to be the *same* physical body described through the two calls.
+    """
+    volume, thickness, area = 1.2e-4, 3e-3, 0.0072
+    a = dualis.Simulation(schedule="staggered", conservation_tolerance=1e-9)
+    a.add_lump("plate", volume_m3=volume, thickness_m=thickness, area_m2=area,
+               initial_k=358.15, ambient_k=293.15)
+
+    b = dualis.Simulation(schedule="staggered", conservation_tolerance=1e-9)
+    b.add_network(
+        "plate",
+        nodes=[{"name": "only", "material": "aluminium", "volume_m3": volume,
+                "thickness_m": thickness, "initial_k": 358.15,
+                "ambient_k": 293.15, "area_m2": area}],
+        links=[],
+        absorbing="only",
+    )
+
+    # 2000 s against a time constant of about 5800 s (290 J/K over 0.050 W/K of convection
+    # plus radiation), so roughly a third of the decay -- enough trajectory that a unit error
+    # in one call and not the other could not stay hidden behind a barely-moving value.
+    for _ in range(4000):
+        a.advance(0.5)
+        b.advance(0.5)
+
+    lump = a.temperature("plate")
+    node = b.node_temperature("plate", "only")
+    assert lump == node, f"lump {lump!r} against network {node!r}"
+    # It has to have cooled, or this compared two identical starting values.
+    cooled = 358.15 - node
+    assert 10.0 < cooled < 65.0, f"the plate cooled {cooled:.3f} K"
+
+
+def test_the_networks_mistakes_are_refused_by_name():
+    sim = dualis.Simulation()
+    good = [{"name": "a", "material": "copper", "volume_m3": 1e-5,
+             "thickness_m": 1e-3, "initial_k": 300.0}]
+
+    def build(name, nodes, links, absorbing="a"):
+        return lambda: sim.add_network(name, nodes=nodes, links=links, absorbing=absorbing)
+
+    half_cooled = [dict(good[0], ambient_k=300.0)]
+    bad_material = [dict(good[0], material="unobtainium")]
+    missing_key = [{"name": "a", "material": "copper", "thickness_m": 1e-3, "initial_k": 300.0}]
+    wrong_type = [dict(good[0], volume_m3="big")]
+
+    for call, fragment in [
+        (build("n1", [], []), "at least one node"),
+        (build("n2", bad_material, []), "unknown material"),
+        (build("n3", missing_key, []), 'missing \"volume_m3\"'),
+        (build("n4", wrong_type, []), "volume_m3 should be a number"),
+        (build("n5", half_cooled, []), "has ambient_k but not area_m2"),
+        (build("n6", good, [{"from": "a", "to": "ghost", "w_per_k": 1.0}]), 'no node named \"ghost\"'),
+        (build("n7", good, [], absorbing="ghost"), "which is not a node"),
+        (build("n8", good, [{"from": "a", "to": "a", "w_per_k": 1.0}]), "itself"),
+    ]:
+        try:
+            call()
+            raise AssertionError(f"{fragment!r} should have been refused")
+        except ValueError as e:
+            assert fragment in str(e), f"{fragment!r} not in {e}"
+
+    # A network declines to average its own nodes, and says which call to use instead. The
+    # whole reason to build one is that its nodes differ, so a mean describes no part of it.
+    sim.add_network("ok", nodes=good, links=[], absorbing="a")
+    try:
+        sim.temperature("ok")
+        raise AssertionError("a network should not answer temperature()")
+    except ValueError as e:
+        assert "node_temperatures" in str(e), str(e)
+
+
+def test_a_network_that_loses_its_heat_is_still_audited():
+    """The audit is the reason to use this from Python rather than numpy, so it has to be live
+    on the new domain too. A network that takes joules and books fewer would be caught here --
+    and the run below crosses real energy, so there is something to be wrong about."""
+    sim = motor(watts=20.0, seconds=300)
+    absorbed = sim.absorbed_j("motor")
+    assert abs(absorbed - 20.0 * 300) < 1e-6, absorbed
+    book = dict(sim.ledger())
+    # The heater's remaining tank plus what the network stored and shed. Started at 6001 J.
+    assert abs(book["energy"] - (20.0 * 300 + 1.0)) < 1e-6, book
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

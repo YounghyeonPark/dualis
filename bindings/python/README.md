@@ -20,6 +20,44 @@ print(sim.temperature("bar"))     # 294.39 K
 print(sim.profile("bar")[:3])     # warmer at the fed end
 ```
 
+## Several bodies and the drop between them
+
+`add_lump` gives you one temperature for a whole assembly. The number that decides whether a
+motor survives is the *winding*, which is hotter than the case by however much the joint
+between them resists — so for that, a network:
+
+```python
+sim = dualis.Simulation(schedule="staggered")
+sim.add_heater("losses", watts=6.0, reserve_j=5_400.0)
+sim.add_network("motor",
+    nodes=[{"name": "winding", "material": "copper", "volume_m3": 18e-6,
+            "thickness_m": 2e-3, "initial_k": 298.15},
+           {"name": "case", "material": "aluminium", "volume_m3": 220e-6,
+            "thickness_m": 4e-3, "initial_k": 298.15,
+            "ambient_k": 298.15, "area_m2": 0.042}],   # both keys, or neither
+    links=[{"from": "winding", "to": "case", "w_per_k": 0.9}],
+    absorbing="winding")
+
+for _ in range(900):
+    sim.advance(1.0)
+
+dict(sim.node_temperatures("motor"))     # {'winding': 311.2, 'case': 304.9}
+sim.heat_flow_w("motor", "winding", "case")   # 5.585 W crossing the joint
+```
+
+Materials: `copper`, `aluminium`, `electrical_steel`, `fr4`, `pla`. A node with `ambient_k` and
+`area_m2` loses heat to still air; a node with neither is interior. Giving one without the other
+is refused rather than quietly producing a node that looks like it is cooling and is not.
+
+Names are resolved once, when the network is built, so a link to a node that does not exist
+raises before any stepping happens and lists the nodes that do. That matters more here than it
+looks: a link adds `+q` to one node and `−q` to another in the same sum, so a missing or
+misdirected link passes the conservation audit at machine precision and simply reports the wrong
+temperature forever.
+
+`temperature()` refuses a network rather than averaging it — the reason to build one is that its
+nodes differ, so a mean would describe no part of it.
+
 ## Why this rather than numpy
 
 Write physics in numpy and a wrong model runs happily, producing plausible output. There is no
