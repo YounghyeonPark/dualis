@@ -148,6 +148,39 @@ fn main() {
     });
     let _ = dt;
 
+    // ---- The other axis: many independent runs rather than one big one.
+    //
+    // Everything above asks how fast *one* simulation steps. A Monte Carlo study asks how fast
+    // ten thousand of them finish, which is a different question with a much better answer:
+    // the samples are independent, so this scales with cores rather than with instruction-level
+    // parallelism, and it does so without changing a single result.
+    println!("\ndualis-core, Ensemble — the Monte Carlo axis");
+    let work = |_: u64, mut rng: Rng| {
+        // Enough arithmetic per sample that thread overhead is not what is being measured.
+        let mut acc = 0.0;
+        for _ in 0..200 {
+            acc += rng.gaussian() * rng.unit();
+        }
+        acc
+    };
+    let mut one_thread = 0.0;
+    for threads in [1usize, 2, 4, 8, 16] {
+        let e = Ensemble::new(9, 20_000).with_threads(threads);
+        let t = time_it(
+            &format!("{threads:>2} thread(s), 20k"),
+            "sample",
+            20_000,
+            || {
+                std::hint::black_box(e.estimate(work));
+            },
+        );
+        if threads == 1 {
+            one_thread = t;
+        } else {
+            println!("       {:.2}x against one thread", one_thread / t);
+        }
+    }
+
     println!(
         "\nread it as: which loop would have to get faster for a run to get faster.\n\
          nothing here is asserted, and nothing here is a promise."

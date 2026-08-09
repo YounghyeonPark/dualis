@@ -97,6 +97,7 @@ pub mod prelude {
     // supply one were not exported. A consumer wanting a material the catalogue does not carry
     // had to reach through two module paths to say so.
     pub use dualis_core::substance::{AcousticProps, MechanicalProps, ThermalProps};
+    pub use dualis_core::{Ensemble, Estimate};
     pub use dualis_electrical::Winding;
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,

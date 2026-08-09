@@ -104,6 +104,7 @@
 // paragraph exists somewhere, and not in the sense a reader needs.
 #![deny(missing_docs)]
 pub mod conserved;
+pub mod ensemble;
 pub mod field;
 pub mod integrator;
 pub mod motion;
@@ -115,6 +116,7 @@ pub mod transform;
 pub mod vector;
 
 pub use conserved::{audit, Conserves, Ledger, Violation};
+pub use ensemble::{Ensemble, Estimate};
 pub use field::{ScalarField, VectorField};
 pub use integrator::{velocity_verlet, Dynamics, Integrator, Newtonian, State};
 pub use motion::{Motion, Strobe};

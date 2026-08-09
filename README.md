@@ -63,7 +63,7 @@ its own scheme. There are tests for those rates now.
 | Crate | |
 | --- | --- |
 | `dualis-units` | Dimensional analysis. SI quantities and vectors whose dimension lives in the type, so `Length + Time` does not compile |
-| `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, closed-form rigid motion |
+| `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, parallel ensembles for Monte Carlo, closed-form rigid motion |
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
 | `dualis-thermal` | Heat: lumped masses, explicit conduction, networks of bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
