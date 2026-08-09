@@ -159,21 +159,133 @@ impl Ensemble {
     where
         F: Fn(u64, Rng) -> f64 + Sync,
     {
-        let values = self.run(sample);
-        if values.len() < 2 {
+        if self.count < 2 {
             return None;
         }
-        let n = values.len() as f64;
-        // Two passes rather than the one-pass sum-of-squares, which loses catastrophically when
-        // the mean is large against the spread — the exact case a well-converged Monte Carlo is
-        // in. The second pass costs a read of a vector that is already in cache.
-        let mean = values.iter().sum::<f64>() / n;
-        let variance = values.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / (n - 1.0);
-        Some(Estimate {
-            mean,
-            standard_error: (variance / n).sqrt(),
-            samples: values.len() as u64,
-        })
+        // Per-block partials rather than every sample, so a study is bounded by its *block*
+        // count and not by its sample count. A hundred million f64 is 800 MB held for no reason;
+        // this holds one `Partial` per BLOCK samples, which is 24 bytes per 4096.
+        let blocks = self.blocks(
+            |from, to, sample| Partial::of(from, to, self.seed, sample),
+            &sample,
+        );
+        let total: Partial = blocks
+            .iter()
+            .copied()
+            .reduce(Partial::merge)
+            .expect("count >= 2 means at least one block");
+        Some(total.finish())
+    }
+
+    /// Run the samples in fixed-size blocks and return one value per block.
+    ///
+    /// **The block size does not depend on the thread count**, and that is the whole reason for
+    /// it. A reduction split per *thread* combines a different number of partial sums on four
+    /// cores than on sixteen, and floating-point addition is not associative, so the answer
+    /// moves — quietly, in the last bits, looking like nothing. Splitting per fixed block makes
+    /// the association a function of `count` alone.
+    ///
+    /// A caller wanting a reduction this crate does not provide — a histogram, a maximum, a
+    /// quantile — should build it here for the same reason.
+    pub fn blocks<B, M, F>(&self, of_block: M, sample: &F) -> Vec<B>
+    where
+        M: Fn(u64, u64, &F) -> B + Sync,
+        B: Send + Default + Clone,
+        F: Sync,
+    {
+        let n_blocks = self.count.div_ceil(BLOCK) as usize;
+        let mut out = vec![B::default(); n_blocks];
+        let threads = self.threads.min(n_blocks.max(1));
+        let (count, of_block) = (self.count, &of_block);
+
+        let one = |slice: &mut [B], base: usize| {
+            for (k, slot) in slice.iter_mut().enumerate() {
+                let from = (base + k) as u64 * BLOCK;
+                *slot = of_block(from, (from + BLOCK).min(count), sample);
+            }
+        };
+
+        if threads <= 1 {
+            one(&mut out, 0);
+            return out;
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let chunk = n_blocks.div_ceil(threads);
+            std::thread::scope(|scope| {
+                for (c, slice) in out.chunks_mut(chunk).enumerate() {
+                    let base = c * chunk;
+                    scope.spawn(move || one(slice, base));
+                }
+            });
+            out
+        }
+
+        #[cfg(target_family = "wasm")]
+        {
+            one(&mut out, 0);
+            out
+        }
+    }
+}
+
+/// Samples per reduction block. A power of two, and fixed: see [`Ensemble::blocks`].
+///
+/// 4096 doubles is 32 KB of intermediate per block, which stays in L1 while a block is folded,
+/// and it keeps the number of partials small enough that combining them costs nothing.
+const BLOCK: u64 = 4096;
+
+/// One block's contribution to a mean and a variance.
+///
+/// Carries a count, a mean and the sum of squared deviations rather than raw power sums.
+/// Merging two of these is Chan's parallel update, which is stable where `sum(x²) − n·mean²`
+/// is not: that form subtracts two large nearly-equal numbers and loses every significant digit
+/// exactly when a Monte Carlo has converged and the mean dwarfs the spread.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Partial {
+    n: f64,
+    mean: f64,
+    m2: f64,
+}
+
+impl Partial {
+    fn of<F: Fn(u64, Rng) -> f64>(from: u64, to: u64, seed: u64, sample: &F) -> Partial {
+        let mut p = Partial::default();
+        for i in from..to {
+            let x = sample(i, Rng::for_index(seed, i));
+            // Welford, in index order within the block.
+            p.n += 1.0;
+            let delta = x - p.mean;
+            p.mean += delta / p.n;
+            p.m2 += delta * (x - p.mean);
+        }
+        p
+    }
+
+    fn merge(a: Partial, b: Partial) -> Partial {
+        if a.n == 0.0 {
+            return b;
+        }
+        if b.n == 0.0 {
+            return a;
+        }
+        let n = a.n + b.n;
+        let delta = b.mean - a.mean;
+        Partial {
+            n,
+            mean: a.mean + delta * (b.n / n),
+            m2: a.m2 + b.m2 + delta * delta * (a.n * b.n / n),
+        }
+    }
+
+    fn finish(self) -> Estimate {
+        let variance = self.m2 / (self.n - 1.0);
+        Estimate {
+            mean: self.mean,
+            standard_error: (variance / self.n).sqrt(),
+            samples: self.n as u64,
+        }
     }
 }
 
@@ -284,6 +396,78 @@ mod tests {
         assert!(
             (e.standard_deviation() - (1.0f64 / 12.0).sqrt()).abs() < 0.01,
             "standard deviation {:.6}",
+            e.standard_deviation()
+        );
+    }
+
+    /// **Ten million samples, held in kilobytes rather than in eighty megabytes.**
+    ///
+    /// The reason `estimate` folds per block instead of collecting. `run` materialises every
+    /// sample and is right when you want them; a study that only wants a mean should not pay
+    /// 8 bytes times the sample count to get one, and at the sizes a Monte Carlo actually
+    /// reaches — 1e8, 1e9 — paying it is not merely wasteful but impossible.
+    ///
+    /// Still thread-independent, which is the harder half: the block size is fixed, so the
+    /// *association* of the additions is a function of the sample count alone and not of how
+    /// many cores turned up.
+    #[test]
+    fn a_run_too_large_to_hold_still_agrees_across_threads() {
+        let draw = |_: u64, mut rng: Rng| rng.unit();
+        let n = 10_000_000;
+
+        let one = Ensemble::new(5, n).estimate(draw).expect("plenty");
+        for threads in [4usize, 16] {
+            let many = Ensemble::new(5, n)
+                .with_threads(threads)
+                .estimate(draw)
+                .expect("plenty");
+            assert_eq!(
+                one.mean.to_bits(),
+                many.mean.to_bits(),
+                "mean moved at {threads} threads: {} against {}",
+                one.mean,
+                many.mean
+            );
+            assert_eq!(one.standard_error.to_bits(), many.standard_error.to_bits());
+            assert_eq!(one.samples, n);
+        }
+
+        // And it is right: a uniform draw has mean 1/2 and standard deviation 1/sqrt(12), and
+        // ten million samples pin the mean to about a ten-thousandth.
+        assert!(one.within(4.0, 0.5), "mean {:.8}", one.mean);
+        assert!(
+            (one.standard_deviation() - (1.0f64 / 12.0).sqrt()).abs() < 1e-3,
+            "spread {:.6}",
+            one.standard_deviation()
+        );
+    }
+
+    /// **The blocked fold is more accurate than a flat sum, not merely cheaper.**
+    ///
+    /// A mean far from zero against a tiny spread is where the naive `sum(x²) − n·mean²` form
+    /// loses every digit, and where a flat left-to-right sum of ten million values loses several
+    /// to accumulation. Welford within a block and Chan's merge between blocks keeps both.
+    ///
+    /// Checked against a case whose answer is exact: `x = 1e9 + (i mod 2)` has mean
+    /// `1e9 + 0.5` and variance exactly `0.25 · n/(n−1)`.
+    #[test]
+    fn the_estimator_survives_a_large_mean_and_a_small_spread() {
+        let n = 1_000_000u64;
+        let e = Ensemble::new(0, n)
+            .with_threads(8)
+            .estimate(|i, _| 1e9 + (i % 2) as f64)
+            .expect("plenty");
+
+        assert!(
+            (e.mean - (1e9 + 0.5)).abs() < 1e-6,
+            "mean {:.6} against 1000000000.5",
+            e.mean
+        );
+        // Population variance 0.25, so the sample variance is 0.25·n/(n−1).
+        let want = (0.25 * n as f64 / (n as f64 - 1.0)).sqrt();
+        assert!(
+            (e.standard_deviation() / want - 1.0).abs() < 1e-9,
+            "spread {:.9} against {want:.9}",
             e.standard_deviation()
         );
     }
