@@ -93,33 +93,66 @@ fn main() {
     // The claim is about a *distribution*, so it is checked by sampling. Variance equals
     // mean is the signature of a Poisson process, and a model with the right mean but the
     // wrong spread would pass every check above and fail this one.
-    let mut rng = Rng::new(0xD0_5E_11_A5);
+    // Two hundred thousand frames at three rates, spread over eight threads.
+    //
+    // This used to draw from one `Rng` in a loop and take the variance as
+    // `sum(k²)/N − mean²`. Both were worth changing, and the second more than the first: at a
+    // mean of 900 that expression subtracts 1.6e11 from itself to arrive at 900, and throws
+    // away most of the digits it needed. `Ensemble` folds with Welford inside a block and
+    // Chan's merge between blocks, so nothing large is ever subtracted from nothing large.
+    //
+    // The parallelism is free of consequences because `Rng::for_index` gives frame `i` the same
+    // draw wherever it runs — asserted below rather than assumed.
+    let tol = 4.0 * (2.0 / FRAMES as f64).sqrt();
     for mean in [4.0f64, 45.0, 900.0] {
-        let mut sum = 0.0;
-        let mut sum_sq = 0.0;
-        for _ in 0..FRAMES {
-            let k = rng.poisson(mean) as f64;
-            sum += k;
-            sum_sq += k * k;
-        }
-        let sampled_mean = sum / FRAMES as f64;
-        let variance = sum_sq / FRAMES as f64 - sampled_mean * sampled_mean;
+        let frames = Ensemble::new(0xD0_5E_11_A5, FRAMES as u64).with_threads(8);
+        let e = frames
+            .estimate(|_, mut rng| rng.poisson(mean) as f64)
+            .expect("two hundred thousand frames");
+
         // Tolerance from the sample size, not from taste: the standard error of a variance
         // estimate is about sqrt(2/N), which is 0.32% here. Four of those is a fair bound.
-        let tol = 4.0 * (2.0 / FRAMES as f64).sqrt();
         check(
             &format!("mean {mean:>5.0}: sampled mean"),
-            sampled_mean,
+            e.mean,
             mean,
             tol,
             "e-",
         );
         check(
             &format!("mean {mean:>5.0}: variance equals it"),
-            variance,
+            e.standard_deviation() * e.standard_deviation(),
             mean,
             tol,
             "e-",
+        );
+
+        // And the count is what a Monte Carlo result is meaningless without.
+        assert_eq!(e.samples, FRAMES as u64);
+    }
+
+    heading("The same frames, on a different number of threads");
+    // Not a physics claim — a claim about this library. A Monte Carlo drawing from a shared
+    // generator gives a different answer on eight cores than on one, and the difference looks
+    // exactly like statistical noise, so it is never investigated. Here it is compared on the
+    // bits, which noise cannot survive.
+    let one_frame = |_: u64, mut rng: Rng| rng.poisson(45.0) as f64;
+    let sequential = Ensemble::new(0xD0_5E_11_A5, FRAMES as u64)
+        .estimate(one_frame)
+        .expect("frames");
+    for threads in [2usize, 8, 32] {
+        let parallel = Ensemble::new(0xD0_5E_11_A5, FRAMES as u64)
+            .with_threads(threads)
+            .estimate(one_frame)
+            .expect("frames");
+        assert_eq!(
+            sequential.mean.to_bits(),
+            parallel.mean.to_bits(),
+            "{threads} threads moved the mean"
+        );
+        println!(
+            "  {threads:>2} threads: mean {:.9} e-, identical to the bit",
+            parallel.mean
         );
     }
     // The generator switches from inverse transform to a rounded normal at a mean of 30, and

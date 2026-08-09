@@ -95,6 +95,12 @@ What crosses instead is the audit, which is the part worth having.
 
 ## What this cannot do
 
+**You cannot run an ensemble from Python, and it is not an oversight.** `Ensemble` exists to run
+many independent samples across threads, and a Python sample function cannot: the GIL serialises
+it. A binding for it would look parallel, measure slower than a plain Python loop because of the
+crossing cost, and have nothing left of the one thing it is for. Write the sampler in Rust, or
+loop in Python and accept one core.
+
 **You cannot write a domain in Python.** That means calling back into the interpreter from inside
 the step loop, holding the GIL across it, and deciding what an exception raised mid-sweep does to
 a half-advanced simulation. All three are answerable and none cheaply, so this binds the physics
