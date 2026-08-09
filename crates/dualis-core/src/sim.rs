@@ -250,6 +250,16 @@ pub struct Exchange {
     interval: f64,
     /// How much of `interval` is still unclaimed, per channel. See `take_share`.
     unclaimed_time: BTreeMap<&'static str, f64>,
+    /// How many separate `take` calls each channel saw this step.
+    ///
+    /// Counted because the conservation audit structurally cannot see the failure it detects.
+    /// [`Exchange::take`] empties a channel, so a *second* consumer of the same channel gets
+    /// zero — and the books balance perfectly, because everything published was taken. Two
+    /// plates under one lamp warm at the rate of one plate, and the audit reports it clean.
+    ///
+    /// Every scene and every integration test in this workspace had at most one consumer per
+    /// channel, which is why this went unnoticed until a world with six domains was attempted.
+    takers: BTreeMap<&'static str, u32>,
 }
 
 impl Exchange {
@@ -269,6 +279,7 @@ impl Exchange {
     pub fn take(&mut self, channel: &'static str) -> f64 {
         let amount = self.published.insert(channel, 0.0).unwrap_or(0.0);
         *self.consumed.entry(channel).or_insert(0.0) += amount;
+        *self.takers.entry(channel).or_insert(0) += 1;
         amount
     }
 
@@ -324,6 +335,7 @@ impl Exchange {
     pub fn covering(&mut self, dt: Time) {
         self.interval = dt.to_si().max(0.0);
         self.unclaimed_time.clear();
+        self.takers.clear();
     }
 
     /// Offer an amount that knows where on a boundary it landed.
@@ -477,6 +489,17 @@ impl Exchange {
         self.published.clear();
         self.spatial.clear();
         self.unclaimed_time.clear();
+        self.takers.clear();
+    }
+
+    /// How many times each channel has been taken from this sweep.
+    ///
+    /// Raw counts, because the bus cannot interpret them: a domain subcycling ten times takes
+    /// ten times, and ten domains taking once each also takes ten times. Only
+    /// [`Simulation`] knows whose turn it was, and it compares this between turns — see
+    /// `Simulation::sweep`, where the check that a channel had at most one *consumer* lives.
+    pub fn takes_per_channel(&self) -> impl Iterator<Item = (&'static str, u32)> + '_ {
+        self.takers.iter().map(|(c, n)| (*c, *n))
     }
 }
 
@@ -708,9 +731,45 @@ impl Simulation {
             };
             let h = dt / n as f64;
             let mut t = now;
+            // Which channels had already been drawn on before this domain's turn.
+            let before: Vec<(&'static str, u32)> = self.bus.takes_per_channel().collect();
             for _ in 0..n {
                 domain.step(t, h, &mut self.bus)?;
                 t += h;
+            }
+
+            // A channel this domain took from that an *earlier* domain had already emptied.
+            //
+            // `Exchange::take` empties a channel, so the second consumer gets zero — and every
+            // total agrees, because everything published was consumed. Two plates under one lamp
+            // warm at the rate of one plate and the books balance to the bit. The conservation
+            // audit structurally cannot see it.
+            //
+            // Counted per *turn* rather than per call, because a subcycling domain takes once
+            // per substep and that is one consumer collecting its own interval in pieces.
+            //
+            // Refused rather than apportioned: splitting needs a rule the kernel has no way to
+            // choose — equally, by heat capacity, by area? — and any rule it picked would be
+            // silently wrong for someone, which is the failure being fixed rather than a fresh
+            // one. A caller who knows the answer can publish on channels of their own.
+            for (channel, now_taken) in self.bus.takes_per_channel() {
+                let was = before
+                    .iter()
+                    .find(|(c, _)| *c == channel)
+                    .map_or(0, |(_, n)| *n);
+                if was > 0 && now_taken > was {
+                    return Err(Violation {
+                        quantity: channel.to_string(),
+                        site: format!(
+                            "{} (a second domain took from a channel already emptied)",
+                            domain.name()
+                        ),
+                        before: was as f64,
+                        after: now_taken as f64,
+                        scale: now_taken as f64,
+                        tolerance: 0.0,
+                    });
+                }
             }
             substeps.push((domain.name().to_string(), n));
         }
