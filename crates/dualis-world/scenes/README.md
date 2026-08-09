@@ -10,9 +10,22 @@ cargo run --release -p dualis-world -- scenes/03-room-pulse.json
 cargo run --release -p dualis-world -- scenes/03-room-pulse.json out.svg
 ```
 
-No second argument prints the numbers and checks them. A second argument also writes an SVG
-filmstrip — one panel per captured frame, drawn left to right, on one colour scale so the
-frames are comparable with each other. Nothing generated is committed.
+No second argument prints the numbers and checks them. A second argument writes an asset, and
+**the extension chooses which** — because a run has several shapes and only one is a picture:
+
+| | |
+| --- | --- |
+| `out.svg` | A filmstrip: every frame on one page, one colour scale throughout so frames compare |
+| `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
+| `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
+
+`.csv` is the one that reaches the domains a picture cannot. Eight of these fourteen scenes have
+a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
+winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
+shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
+going 3.11 to 4.00 Ω beside it.
+
+Nothing generated is committed.
 
 `cargo run -p dualis-world -- --emit-default scene.json` writes a starting point.
 

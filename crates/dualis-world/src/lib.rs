@@ -918,6 +918,12 @@ impl World {
     /// `ScalarField` was for, and was not reachable until the trait had a way to offer one.
     fn capture(&self) -> Frame {
         let t = self.sim.time();
+        let readings = self
+            .scene
+            .domains
+            .iter()
+            .flat_map(|spec| self.readings_of(spec))
+            .collect();
         let panels = self
             .scene
             .domains
@@ -935,6 +941,112 @@ impl World {
         Frame {
             time_s: t.to_si(),
             panels,
+            readings,
+        }
+    }
+
+    /// The scalars one domain reports, whether or not it has a picture.
+    ///
+    /// One arm per domain, and each returns what that domain is *for* rather than a uniform
+    /// summary: a bar's mean temperature, a room's peak pressure, a heater's remaining tank,
+    /// every node of a thermal network by name. A mean over a room's pressure field is zero by
+    /// symmetry and would be a column of noise.
+    ///
+    /// Empty for a domain this crate cannot read back, which is not a silent failure here —
+    /// `Simulation::domain_as` returns `None` for a domain that declines `as_any`, and a
+    /// missing column in a table is visible in a way a missing panel was not.
+    fn readings_of(&self, spec: &DomainSpec) -> Vec<Reading> {
+        let sim = &self.sim;
+        let name = spec.name().to_string();
+        let one = |label: &str, value: f64, unit: &'static str| Reading {
+            domain: name.clone(),
+            label: label.to_string(),
+            value,
+            unit,
+        };
+        match spec {
+            DomainSpec::Bar { .. } => sim
+                .domain_as::<Bar1D>(spec.name())
+                .map(|b| {
+                    let cells: Vec<f64> = (0..b.cell_count())
+                        .map(|i| b.temperature_at(i).to_si() - 273.15)
+                        .collect();
+                    vec![
+                        one("mean", b.mean_temperature().to_si() - 273.15, "C"),
+                        one("peak", cells.iter().cloned().fold(f64::MIN, f64::max), "C"),
+                        one("absorbed", b.absorbed_energy().to_si(), "J"),
+                    ]
+                })
+                .unwrap_or_default(),
+            DomainSpec::Lump { .. } => sim
+                .domain_as::<LumpedMass>(spec.name())
+                .map(|l| {
+                    vec![
+                        one("temperature", l.temperature().to_si() - 273.15, "C"),
+                        one("absorbed", l.absorbed_energy().to_si(), "J"),
+                    ]
+                })
+                .unwrap_or_default(),
+            DomainSpec::Network { .. } => sim
+                .domain_as::<ThermalNetwork>(spec.name())
+                .map(|net| {
+                    net.handles()
+                        .map(|(node, label)| {
+                            one(label, net.temperature(node).to_si() - 273.15, "C")
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            DomainSpec::Winding { .. } => sim
+                .domain_as::<Winding>(spec.name())
+                .map(|w| {
+                    vec![
+                        one("dissipating", w.dissipation().to_si(), "W"),
+                        one("resistance", w.resistance().to_si(), "ohm"),
+                        one("spent", w.dissipated_energy().to_si(), "J"),
+                    ]
+                })
+                .unwrap_or_default(),
+            DomainSpec::Room { .. } => sim
+                .field(spec.name())
+                .map(|field| {
+                    // A room's mean pressure is zero by symmetry, so the peak is the number a
+                    // reader wants — and it is what a mode's decay would show.
+                    let panel = sample(spec, field, sim.time());
+                    let peak = panel.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                    vec![one("peak", peak, "Pa")]
+                })
+                .unwrap_or_default(),
+            DomainSpec::Heater { .. } | DomainSpec::Beam { .. } | DomainSpec::Light { .. } => {
+                // Sources. What is left in the tank is the whole state, and it is the number
+                // that says whether the run outlasted its energy.
+                let left = sim
+                    .domain_as::<Heater>(spec.name())
+                    .map(|h| h.reserve().to_si())
+                    .or_else(|| {
+                        sim.domain_as::<Beam>(spec.name())
+                            .map(|b| b.reserve().to_si())
+                    })
+                    .or_else(|| {
+                        sim.domain_as::<Light>(spec.name())
+                            .map(|l| l.reserve().to_si())
+                    });
+                left.map(|j| vec![one("reserve", j, "J")])
+                    .unwrap_or_default()
+            }
+            DomainSpec::Orbit { .. } | DomainSpec::Bounce { .. } | DomainSpec::Atoms { .. } => {
+                // Bodies. A summary of many is a different thing from the bodies themselves,
+                // so this reports the extremes rather than pretending to a single value.
+                self.bodies(spec)
+                    .map(|panel| {
+                        let v = panel.values();
+                        vec![
+                            one("fastest", v.iter().cloned().fold(f64::MIN, f64::max), "m/s"),
+                            one("slowest", v.iter().cloned().fold(f64::MAX, f64::min), "m/s"),
+                        ]
+                    })
+                    .unwrap_or_default()
+            }
         }
     }
 
@@ -1075,6 +1187,30 @@ pub struct Frame {
     pub time_s: f64,
     /// One per drawable domain, in scene order.
     pub panels: Vec<Panel>,
+    /// Named scalars from every domain, drawable or not, in scene order.
+    ///
+    /// **The asset most of this crate's domains actually have.** Eight of the fourteen shipped
+    /// scenes contain a domain that produces no picture — a heater, a lamp, a winding, a thermal
+    /// network — and for several of them the scalar *is* the result: the winding temperature is
+    /// what decides whether a motor survives, and it was reachable only by reading the terminal.
+    ///
+    /// A field has a picture and a number; a source has only a number. Collecting both makes a
+    /// run exportable as a table, which is the shape a plot wants and the shape a spreadsheet
+    /// wants, and neither was available before.
+    pub readings: Vec<Reading>,
+}
+
+/// One named scalar from one domain at one instant.
+#[derive(Clone, Debug)]
+pub struct Reading {
+    /// Which domain it came from.
+    pub domain: String,
+    /// What it is — `"mean"`, `"peak"`, `"reserve"`, a node's name.
+    pub label: String,
+    /// SI, except temperatures, which are celsius because that is what the column is read in.
+    pub value: f64,
+    /// The unit, for a header row or an axis.
+    pub unit: &'static str,
 }
 
 /// One domain, captured for drawing.

@@ -1,0 +1,1 @@
+{"title": "four satellites, tilted out of one plane, and Kepler's third law", "schedule": "multirate", "duration_s": 7200.0, "frames": 240, "conservation_tolerance": 1e-06, "domains": [{"kind": "orbit", "name": "system", "central_kg": 5.972e+24, "radii_m": [7000000.0, 10000000.0, 15000000.0, 22000000.0], "satellite_kg": 1000.0, "inclinations_deg": [0.0, 22.0, 45.0, 68.0]}]}

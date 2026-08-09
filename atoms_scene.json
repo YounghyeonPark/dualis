@@ -1,0 +1,1 @@
+{"title": "the same atoms at T* = 1.4: the lattice is gone and they wander", "schedule": "multirate", "duration_s": 6e-12, "frames": 180, "conservation_tolerance": 0.05, "domains": [{"kind": "atoms", "name": "liquid", "cells": 3, "density": 0.8442, "temperature": 1.4, "thermostat_t": 1.4, "seed": 20260808}]}
