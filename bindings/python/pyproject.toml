@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "dualis"
-version = "0.5.0"
+version = "0.6.0"
 description = "Coupled physics whose conservation audit is an exception you can catch"
 readme = "README.md"
 requires-python = ">=3.10"

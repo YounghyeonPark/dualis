@@ -10,6 +10,48 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [0.6.0] — 2026-08-09
+
+### Added
+
+- **`Domain::as_any_mut` and `Simulation::domain_as_mut`.** A caller could read a domain and not
+  write one, which made a whole class of coupling closable from *nowhere*: not inside the step
+  loop by design, and not outside it by omission.
+
+  The case is a copper winding whose resistance rises 0.393%/K. Its temperature lives in
+  `dualis-thermal`, its resistance in `dualis-electrical`, and neither can see the other's state
+  — correctly, since domains meeting only on `Exchange` is the property the crate split defends.
+  The caller between frames can see both.
+
+  This does **not** weaken that rule: it is about what happens inside `step`, and this runs in
+  code holding `&mut Simulation` that could drop the domain and rebuild it. It is also
+  deliberately *not* a state channel on the bus, which a true in-loop coupling would need and
+  which stays undecided.
+
+  `as_any_mut` defaults to `None`, so a domain that forgets it is silently unwritable — the
+  opt-in hazard of `FRICTION.md` findings 7 and 12, handled in the same change rather than
+  rediscovered: all twelve implementors got the counterpart beside `as_any`, including the
+  `Box<dyn Domain>` forwarding impl. `FRICTION.md` 18.
+
+- **`Winding::dissipation_at(T)` and `resistance_at(T)`** — pure functions rather than `Domain`
+  methods, so `P(T)` composes for whoever holds both sides. `dissipation()` is now
+  `dissipation_at(its own temperature)` rather than a second copy of the arithmetic, checked on
+  `to_bits()` at four temperatures.
+
+- **`Winding::runaway_current(g)`**: `√(g/(R₂₀α))`, where `dP/dT` overtakes `dQ_out/dT`. The test
+  measures the slope from two dissipations a kelvin apart and asserts the inequality *flips*
+  across it, rather than reproducing the formula from itself. `None` for a voltage drive, which
+  cannot run away because `V²/R` falls as it warms.
+
+  `g` is the **whole** path to ambient. A winding reaching air through 0.9 and 2.4 W/K of joints
+  and then 0.294 W/K of convection has a series conductance of 0.203, and the threshold falls
+  from 4.95 A to 4.11 A — 17% of margin a lumped model reports as present when it is not.
+
+- **Scene 13**, the feedback closed between frames and measured. The amplification is `1/(1−g)`,
+  checked as a ratio against the same scene without it: 1.281 measured. Convection alone predicts
+  1.310; including the housing's linearised radiative conductance at its operating point gives
+  1.280, so the 2.2% is radiation stiffening the heat path rather than error.
+
 ## [0.5.0] — 2026-08-09
 
 ### Added
@@ -475,7 +517,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.6.0
 [0.5.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.5.0
 [0.4.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.4.0
 [0.3.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.3.0
