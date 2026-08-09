@@ -1,6 +1,7 @@
 # Scenes
 
-Thirteen worlds described as data, covering all six of the library's domains. Nothing here is Rust: the
+Fourteen worlds described as data, covering all six of the library's domains — thirteen of them
+one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
 
@@ -79,6 +80,33 @@ the housing's linearised radiative conductance at 74.6 °C is 0.036 W/K against 
 convection, and including it gives 1.280 — so the 2.2% gap is radiation stiffening the heat path,
 not error.
 
+## A world — four crates at once
+
+| Scene | What it shows |
+| --- | --- |
+| `14-a-world` | A laser and a lamp both heating one bar, sound crossing a room, three planets orbiting. Five domains, one clock, one bus, one audit at 1e-9 |
+
+Every other scene here is one physics, or two meeting. This is the first with more than two, and
+it exists because the crate split's claim is that domains *compose* — a claim verified in pairs
+and never beyond. Building it found two things pairwise coupling cannot reach.
+
+**A second consumer of one channel silently got nothing.** `Exchange::take` empties a channel, so
+the second domain to take gets zero while every total agrees, because everything published was
+consumed. Two plates under one lamp warm at the rate of one plate. That is refused now, and it
+had been in every released version.
+
+**A world's tolerance is set by its loosest domain.** The first attempt included the atom box,
+which runs at 5e-2 over six picoseconds; the rest of this scene holds 1e-9 over 0.2 seconds.
+Those are not reconcilable, and that is physics rather than a defect — a Lennard-Jones fluid and
+a planetary orbit do not share a clock. "Physics for simulated worlds" means *a* world, not all
+of them at once.
+
+Two consequences that shape any scene like this. Declaration order is execution order, so a
+producer declared after its consumer publishes into a step that has already taken — the audit
+catches it as *published but not consumed*, which is how the lamp got moved above the bar. And
+the plain channel is a single global resource: many producers may write to it, exactly one domain
+may consume it.
+
 ## Motion — `dualis-mechanics`
 
 | Scene | What it shows |
@@ -115,7 +143,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all thirteen on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all fourteen on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

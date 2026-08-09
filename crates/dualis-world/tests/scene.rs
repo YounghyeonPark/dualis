@@ -617,6 +617,49 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     hot - cold
                 );
             }
+            // The first scene with more than two domains, and the reason it exists: the crate
+            // split's claim is that domains compose, and it had been verified in pairs and
+            // never beyond. Building this found two things pairwise coupling cannot reach —
+            // a second consumer of one channel silently getting nothing, and the fact that a
+            // world's tolerance is set by its loosest domain.
+            //
+            // Four crates on one bus: optics publishes twice (spatially onto the bar's face,
+            // and as a plain amount from the lamp), thermal consumes both, acoustics and
+            // mechanics conserve alongside without exchanging anything. All at 1e-9.
+            "14-a-world.json" => {
+                assert_eq!(world.scene().domains.len(), 5);
+
+                // The bar took from *both* couplings, which is the composition being tested.
+                let bar = world
+                    .simulation()
+                    .domain_as::<Bar1D>("bar")
+                    .expect("the bar is there");
+                let took = bar.absorbed_energy().to_si();
+                assert!(
+                    took > 0.5,
+                    "{name}: the bar should have absorbed from beam and lamp, got {took:.4} J"
+                );
+
+                // Both producers reached it, and neither reached it whole.
+                //
+                // The beam's 0.4 J is a flux onto a face and arrives entire. The lamp's 2.0 J
+                // is *spent*, not delivered: it lands on an aluminium coating that reflects
+                // most of it, and only the absorbed fraction becomes heat. Asserting 2.4 J
+                // here — which I did first — reads the reserve as though a mirror were a
+                // blackbody, and the run said 0.708 instead.
+                assert!(
+                    took > 0.4,
+                    "{name}: {took:.4} J is no more than the beam alone, so the lamp gave nothing"
+                );
+                assert!(
+                    took < 2.4,
+                    "{name}: {took:.4} J means the mirror absorbed everything it reflected"
+                );
+
+                // The room is still ringing and the orbits still moving, which is what makes
+                // this a world rather than a coupling with spectators.
+                assert!(peak > 0.1, "{name}: the room went quiet, peak {peak:.4} Pa");
+            }
             // The scene that computes its own watts. `11` states 12 W; this one derives them
             // from 62 m of 0.35 mm² copper at 1.75 A, and the point is that the number is now
             // wrong if the geometry is wrong. Checked against `I²R` written out here, with

@@ -72,7 +72,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature |
 | `dualis` | A facade over the other eight, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with thirteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with fourteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
 dualis-units       no dependencies but glam and serde
