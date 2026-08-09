@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Thirteen of the eighteen are fixed**, and five are recorded rather than actioned. The reasons
+**Fifteen of the twenty-one are fixed**, and five are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -417,13 +417,13 @@ Scene 13 is the loop closed, and it measures what the application-level version 
 
 ## What this says about the exercise
 
-Eighteen findings, and the source has shifted three times. The first twelve came from writing the
+Twenty-one findings, and the source has shifted four times. The first twelve came from writing the
 application; four came from **running the two subagents built out of what the first twelve
 taught** — one hunting outcomes that come out empty, one building against the *published* 0.1.0
 rather than the working tree. The seventeenth came from a third source again: adding a domain the
 library did not have, and finding that the *new* API had the old shape.
 
-Thirteen are fixed. That line said "ten" until this edit counted them, which is the failure
+Fifteen are fixed. That line said "ten" until this edit counted them, which is the failure
 `prose-auditor` exists for and the second time this file has been the one carrying it.
 
 Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was

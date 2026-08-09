@@ -485,6 +485,40 @@ product!(Conductance, Time => HeatCapacity);
 product!(HeatCapacity, Temperature => Energy);
 product!(Frequency, Time => Dimensionless);
 
+impl Volume {
+    /// Cubic metres.
+    pub fn m3(v: f64) -> Volume {
+        Qty(v)
+    }
+    /// Cubic centimetres — the unit a person actually has for a part.
+    pub fn cm3(v: f64) -> Volume {
+        Qty(v * 1e-6)
+    }
+    /// Cubic millimetres.
+    pub fn mm3(v: f64) -> Volume {
+        Qty(v * 1e-9)
+    }
+    /// Litres.
+    pub fn litres(v: f64) -> Volume {
+        Qty(v * 1e-3)
+    }
+}
+
+impl Area {
+    /// Square metres.
+    pub fn m2(v: f64) -> Area {
+        Qty(v)
+    }
+    /// Square centimetres.
+    pub fn cm2(v: f64) -> Area {
+        Qty(v * 1e-4)
+    }
+    /// Square millimetres — wire cross-sections live here.
+    pub fn mm2(v: f64) -> Area {
+        Qty(v * 1e-6)
+    }
+}
+
 impl Area {
     /// The side of a square of this area. The one root worth naming, because it
     /// is how a beam radius comes back out of a spot area.

@@ -258,6 +258,14 @@ impl Winding {
     /// reports as present when it is not. That difference is the argument for
     /// [`ThermalNetwork`](https://docs.rs/dualis-thermal) over one body.
     ///
+    /// **Do not assemble `g` by hand.** Those three numbers are a convection-only path, and the
+    /// real one on that motor is 0.220 W/K because the housing also radiates at its operating
+    /// temperature — so the hand-computed 4.11 A understates the true 4.28 A by 4%. Ask the
+    /// network: `ThermalNetwork::path_conductance(node, at)` takes the slope of its own solved
+    /// balance and therefore includes every path out, radiative terms and interior environments
+    /// alike. The hand formula was found to be wrong by a sizing tool written against 0.6.0,
+    /// which is what `FRICTION.md` 20 is about.
+    ///
     /// Returns `None` for a voltage-driven winding, which cannot run away: `P = V²/R` *falls*
     /// as it warms, so the feedback has the opposite sign and there is no threshold to report.
     pub fn runaway_current(&self, path: dualis_units::Conductance) -> Option<Current> {

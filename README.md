@@ -41,7 +41,7 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good application
 but to use the SDK the way a stranger would.
 [`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
-**eighteen findings, thirteen fixed and five argued down in writing.** The first twelve came from
+**twenty-one findings, fifteen fixed and six argued down in writing.** The first twelve came from
 writing the application. The next four came from running the subagents that were built out of
 what the first twelve taught — and one of those is a first-order accuracy defect in the
 kernel's own scheduler, in the schedule chosen *for* accuracy, which the conservation audit

@@ -379,3 +379,48 @@ fn a_kilowatt_on_one_node_solves_where_bisection_says() {
          against {want:.0} K"
     );
 }
+
+/// **The path conductance is the series conductance, exactly, when nothing radiates.**
+///
+/// `1/g = 1/K₁ + 1/K₂ + 1/G₃` — resistances in series, the same formula the ladder settles to,
+/// so this is checked against arithmetic in this file rather than against another solve. Exact
+/// because the balance is linear: the slope `ΔP/ΔT` is the same wherever it is taken, which the
+/// test confirms by taking it at two operating points a factor of a hundred apart.
+///
+/// It exists because a caller was assembling this by hand out of numbers the network already
+/// held, to hand to `Winding::runaway_current`. `FRICTION.md` 20.
+#[test]
+fn the_path_conductance_is_resistances_in_series() {
+    let (net, [n1, n2, n3], g3) = ladder(grey);
+    let series = 1.0 / (1.0 / 1.5 + 1.0 / 0.8 + 1.0 / g3);
+
+    let g = net.path_conductance(n1, Power::w(4.0)).unwrap().to_si();
+    assert!(
+        (g / series - 1.0).abs() < 1e-9,
+        "{g:.9} W/K against {series:.9} W/K"
+    );
+
+    // Linear, so the operating point does not matter.
+    let far = net.path_conductance(n1, Power::w(400.0)).unwrap().to_si();
+    assert!((far / g - 1.0).abs() < 1e-9, "{far:.9} against {g:.9}");
+
+    // A node further down the path sees less resistance, and exactly how much less.
+    let g2 = net.path_conductance(n2, Power::w(4.0)).unwrap().to_si();
+    let g3n = net.path_conductance(n3, Power::w(4.0)).unwrap().to_si();
+    assert!((g2 - 1.0 / (1.0 / 0.8 + 1.0 / g3)).abs() < 1e-9, "{g2:.9}");
+    assert!(
+        (g3n - g3).abs() < 1e-9,
+        "{g3n:.9} against the environment's {g3:.9}"
+    );
+    assert!(g < g2 && g2 < g3n, "further from the air is a worse path");
+
+    // With radiation it is the local slope and must be *better* than the grey path, because
+    // radiating is a second way out. Sign, not size: the size is the whole point of it being
+    // local rather than a constant.
+    let (radiating, nodes, _) = ladder(Substance::aluminium_6061);
+    let hot = radiating
+        .path_conductance(nodes[0], Power::w(40.0))
+        .unwrap()
+        .to_si();
+    assert!(hot > g, "radiating {hot:.6} should beat grey {g:.6}");
+}

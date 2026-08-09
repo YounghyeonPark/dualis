@@ -10,6 +10,36 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [Unreleased]
+
+### Added
+
+- **`ThermalNetwork::path_conductance(node, at)`** — the conductance of the whole heat path from
+  a node to ambient, as the slope of its own solved balance. Exact and operating-point
+  independent when nothing radiates; the local slope when something does, which is the right
+  answer because everything asking for this is asking a derivative question.
+
+- **`Volume::cm3`/`mm3`/`m3`/`litres` and `Area::cm2`/`mm2`/`m2`.** Building a three-node network
+  was six lines of `Volume::from_si(x * 1e-6)`, because the constructors take dimensioned types
+  and the numbers a person has are cubic centimetres.
+
+### Fixed
+
+- **A number this workspace was quoting was wrong, and the fix is an API rather than an edit.**
+  `runaway_current`'s documentation said a motor's threshold falls from 4.95 A to 4.11 A once the
+  joints are counted. The 4.11 is a *convection-only* path: the real one is 0.220 W/K rather than
+  0.203, because the housing also radiates at its operating temperature, and the true threshold
+  is **4.28 A**. The hand-assembled formula understated the margin by 4%.
+
+  Found by a sizing tool written against the published 0.6.0 — a consumer deliberately unlike
+  `dualis-world`: no scenes, no rendering, no fields, asking for settled answers rather than
+  stepping. It had to assemble that conductance out of numbers the network already held, which
+  is `FRICTION.md` 20 and is what `path_conductance` now answers.
+
+  It also cross-checked something worth keeping: the tool's fixed-point iteration on
+  `steady_state` lands the winding at 99.0 °C, and scene 13's marching with a between-frames
+  feedback lands at 99.02 °C. Two unrelated routes to the same coupled answer.
+
 ## [0.6.0] — 2026-08-09
 
 ### Added

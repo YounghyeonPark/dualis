@@ -297,6 +297,44 @@ impl ThermalNetwork {
             })
     }
 
+    /// The conductance of the whole heat path from a node to ambient, at an operating point.
+    ///
+    /// `ΔP/ΔT` at the node: solve the balance twice a little apart and take the slope. For a
+    /// network with no radiation this is exact and independent of `at` — it is the series
+    /// conductance of the links and environments between this node and the air, so a winding
+    /// reaching air through 0.9 and 2.4 W/K of joints and then 0.294 W/K of convection reports
+    /// 0.203 W/K. With radiation it is the *local* slope, which is the right thing rather than a
+    /// compromise: everything asking for this quantity is asking a derivative question.
+    ///
+    /// The reason it exists is that the caller was computing it by hand. A sizing tool built
+    /// against 0.6.0 had to assemble `1/(1/0.9 + 1/2.4 + 1/(7·A))` out of numbers this network
+    /// already holds, in order to hand the result to
+    /// [`Winding::runaway_current`](https://docs.rs/dualis-electrical) — and a network with one
+    /// more joint, or an environment on a middle node, is a formula the caller would have got
+    /// wrong silently. See `FRICTION.md` 20.
+    ///
+    /// Errors for the same reasons [`ThermalNetwork::steady_state`] does: no environment
+    /// anywhere, a singular balance, a solve that would not converge.
+    pub fn path_conductance(&self, node: Node, at: Power) -> Result<Conductance, Violation> {
+        let p = at.to_si();
+        // A relative step, floored so an operating point of zero still has one. The linear case
+        // is exact for any step; this size keeps the radiative slope local while staying far
+        // above the 1e-12 residual the solve converges to, so the difference is signal.
+        let step = (p.abs() * 1e-4).max(1e-6);
+        let lo = self.steady_state(Power::from_si(p))?;
+        let hi = self.steady_state(Power::from_si(p + step))?;
+        let dt = hi.temperature(node).to_si() - lo.temperature(node).to_si();
+        // NaN rejected by the branch that reads as rejecting it, not by a negated comparison.
+        if !dt.is_finite() || dt <= 0.0 {
+            return Err(Violation::at(
+                format!("{}/{}", self.name, self.nodes[node.index as usize].label),
+                "more power did not make this node hotter, so it has no path conductance",
+                dt,
+            ));
+        }
+        Ok(Conductance::w_per_k(step / dt))
+    }
+
     /// Every node, in the order they were added, with its label.
     ///
     /// A [`Node`] can only come from [`node`](ThermalNetwork::node) or
