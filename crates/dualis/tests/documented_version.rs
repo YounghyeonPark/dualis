@@ -80,3 +80,61 @@ fn the_install_lines_quote_the_current_series() {
         );
     }
 }
+
+/// **The subagents' own statements of the current version are current.**
+///
+/// `invariant-guard` has a section on the one invariant that cannot be fixed after the fact — a
+/// published version is permanent — and it opens by stating what is on crates.io and what the
+/// tree is. That line was a release behind at 0.3.0 and a release behind again at 0.4.0: the
+/// document whose subject is checking things was the last place in the repository stating a
+/// version with nothing standing behind it.
+///
+/// Only the *tree's* version is checked. What is on crates.io is a fact about the outside world
+/// that no test here can know, and the agent is told to run `curl` for it rather than trust the
+/// prose — which is the right division, and the reason this checks one number and not two.
+#[test]
+fn the_agents_know_what_version_the_tree_is() {
+    let full = env!("CARGO_PKG_VERSION");
+    let needle = "the tree is ";
+    let mut checked = 0;
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.claude/agents");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return; // packaged build: the agents are not part of any crate
+    };
+    let mut files: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    files.sort(); // deterministic order, as everything here must be
+
+    for path in files {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (line_no, line) in text.lines().enumerate() {
+            let Some(at) = line.find(needle) else {
+                continue;
+            };
+            let stated: String = line[at + needle.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            let stated = stated.trim_end_matches('.');
+            if stated.is_empty() {
+                continue;
+            }
+            checked += 1;
+            assert_eq!(
+                stated,
+                full,
+                "{}:{} says the tree is {stated:?}, and it is {full:?}",
+                path.file_name().unwrap_or_default().to_string_lossy(),
+                line_no + 1
+            );
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "no agent states what version the tree is — if that sentence was reworded, update this \
+         test rather than letting it pass on finding nothing"
+    );
+}
