@@ -1,7 +1,6 @@
 # Scenes
 
-Eleven worlds described as data, covering five of the library's six domains — electricity
-has none yet, which is the obvious next scene. Nothing here is Rust: the
+Twelve worlds described as data, covering all six of the library's domains. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
 
@@ -48,6 +47,22 @@ the thing you can measure.
 The scene test carries a matching list, so an undrawable scene has to earn its place with an
 explicit check rather than passing by having nothing to check.
 
+## Electricity — `dualis-electrical`
+
+| Scene | What it shows |
+| --- | --- |
+| `12-winding-heats-a-motor` | The same motor as `11`, with the watts **computed** instead of stated: 62 m of 0.35 mm² copper at 1.75 A |
+
+`11` says 12 W. This one derives 11.93 W from a length of wire, and the two settle within a
+fifth of a kelvin of each other — so the guess was a good one, and this scene is what would have
+caught it if it had not been. A stated number cannot be wrong, which is another way of saying it
+is not a model.
+
+Evaluated at 90 °C, which is worth 27.5%: copper gains 0.393% per kelvin, so the same coil on a
+cold bench dissipates 9.35 W. The temperature is a parameter rather than an omission, and it is
+one the *simulation* does not set — a domain cannot read another's state inside the step loop,
+so closing that feedback is the caller's job and `dualis-electrical` says why.
+
 ## Motion — `dualis-mechanics`
 
 | Scene | What it shows |
@@ -84,7 +99,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all eleven on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all twelve on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

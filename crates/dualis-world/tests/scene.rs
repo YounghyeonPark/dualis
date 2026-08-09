@@ -1,6 +1,7 @@
 //! The app holds itself to the library's standard: every number checked against something
 //! the code did not compute.
 
+use dualis::electrical::Winding;
 use dualis::prelude::*;
 use dualis_world::{DomainSpec, Scene, World};
 
@@ -528,7 +529,10 @@ fn every_scene_that_ships_runs_and_says_something_true() {
         // not positions, so `as_field` declines — but then it owes an arm in the match below,
         // and this list is how it says so. Adding a name here without an arm reintroduces
         // exactly the hole: a scene that runs, draws nothing, checks nothing, and passes.
-        const NOTHING_TO_DRAW: [&str; 1] = ["11-motor-thermal-network.json"];
+        const NOTHING_TO_DRAW: [&str; 2] = [
+            "11-motor-thermal-network.json",
+            "12-winding-heats-a-motor.json",
+        ];
         // Zero for a scene with no panel, which never reads it — the arms below that do are all
         // in the drawn branch.
         let peak = last.panels.first().map_or(0.0, |p| {
@@ -549,6 +553,55 @@ fn every_scene_that_ships_runs_and_says_something_true() {
         }
 
         match name.as_str() {
+            // The scene that computes its own watts. `11` states 12 W; this one derives them
+            // from 62 m of 0.35 mm² copper at 1.75 A, and the point is that the number is now
+            // wrong if the geometry is wrong. Checked against `I²R` written out here, with
+            // copper's resistivity and coefficient as literals rather than read from the
+            // library — otherwise this compares the library with itself.
+            "12-winding-heats-a-motor.json" => {
+                let rho_20 = 1.724e-8;
+                let r_20 = rho_20 * 62.0 / 0.35e-6;
+                let r_90 = r_20 * (1.0 + 0.00393 * 70.0);
+                let watts = 1.75 * 1.75 * r_90;
+
+                let coil = world
+                    .simulation()
+                    .domain_as::<Winding>("coil")
+                    .expect("the coil is a winding");
+                assert!(
+                    (coil.dissipation().to_si() / watts - 1.0).abs() < 1e-9,
+                    "{name}: dissipating {:.4} W against {watts:.4} W",
+                    coil.dissipation().to_si()
+                );
+
+                // Evaluated hot, and that is worth 27.5% — the whole reason the temperature is
+                // a parameter rather than an omission.
+                let cold = 1.75 * 1.75 * r_20;
+                assert!(
+                    (watts / cold - 1.2751).abs() < 1e-3,
+                    "{name}: hot/cold is {:.4}",
+                    watts / cold
+                );
+
+                // Every joule it spent reached the network, which is the coupling itself.
+                let net = world
+                    .simulation()
+                    .domain_as::<ThermalNetwork>("motor")
+                    .expect("the motor is a network");
+                assert!(
+                    (net.absorbed_energy().to_si() / coil.dissipated_energy().to_si() - 1.0).abs()
+                        < 1e-12,
+                    "{name}: {} J absorbed against {} J dissipated",
+                    net.absorbed_energy().to_si(),
+                    coil.dissipated_energy().to_si()
+                );
+
+                // And it lands where `11` put it with a stated 12 W, which is the scene's
+                // argument: the guess was reasonable, and this one would have caught it if not.
+                let winding = net.node_named("winding").expect("there is a winding");
+                let hot = net.temperature(winding).to_si() - 273.15;
+                assert!((hot - 54.85).abs() < 0.5, "{name}: winding at {hot:.2} C");
+            }
             // The ordering a network exists to produce, and the reason a `lump` will not do:
             // heat enters the winding and leaves through the housing, so the temperatures must
             // fall along the chain and every drop must be positive. A transposed index or a

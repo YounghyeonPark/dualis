@@ -427,8 +427,7 @@ None of this was visible from inside.
 
 ## What this report does not cover
 
-Five of the six domains have scenes now, so the gap this section used to name is closed for
-those; `dualis-electrical` arrived after this was written and has none. What is left
+All six domains have scenes now, so the gap this section used to name is closed. What is left
 is smaller and more specific.
 
 **`TreeNBody`, `RigidBody` and the rest of mechanics.** Four types took `as_any` in this pass

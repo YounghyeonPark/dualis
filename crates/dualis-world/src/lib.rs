@@ -250,6 +250,33 @@ pub enum DomainSpec {
         #[serde(default)]
         exposes: Option<Boundary>,
     },
+    /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
+    ///
+    /// `dualis-electrical`. Every other source in this format states its watts; this one
+    /// *computes* them from a length of wire, a cross-section and a current, so getting the
+    /// geometry wrong makes the number wrong in a way a closed form can catch. A stated number
+    /// cannot be wrong, which is another way of saying it is not a model.
+    ///
+    /// Resistance rises with temperature — 0.393% per kelvin for copper — but the winding is not
+    /// told what temperature it is by the simulation: a domain cannot read another's state
+    /// inside the step loop. `at_c` is where you say it, and the feedback that causes thermal
+    /// runaway is deliberately outside what this format expresses. See `dualis-electrical`'s
+    /// module documentation.
+    Winding {
+        /// Domain name.
+        name: String,
+        /// Length of wire.
+        length_m: f64,
+        /// Cross-section, in square millimetres. 0.35 is roughly AWG 22.
+        cross_section_mm2: f64,
+        /// Current through it.
+        amps: f64,
+        /// The temperature its resistance is evaluated at.
+        at_c: f64,
+        /// Joules it may dissipate before it goes quiet. Not optional: without it the winding
+        /// supplies energy from nowhere and the audit cannot see that, so the domain refuses.
+        reserve_j: f64,
+    },
     /// Several lumped bodies joined by conductances: junction, case, ambient.
     ///
     /// The one shape a `lump` cannot express. A `lump` reports the temperature of the whole
@@ -382,6 +409,7 @@ impl DomainSpec {
             | DomainSpec::Atoms { name, .. }
             | DomainSpec::Lump { name, .. }
             | DomainSpec::Network { name, .. }
+            | DomainSpec::Winding { name, .. }
             | DomainSpec::Light { name, .. } => name,
         }
     }
@@ -576,6 +604,23 @@ impl DomainSpec {
                     Area::from_si(area_cm2 * 1e-4),
                 ),
             )),
+            DomainSpec::Winding {
+                name,
+                length_m,
+                cross_section_mm2,
+                amps,
+                at_c,
+                reserve_j,
+            } => Box::new(
+                dualis::electrical::Winding::of_copper(
+                    name.clone(),
+                    Length::m(*length_m),
+                    cross_section_mm2 * 1e-6,
+                    Temperature::celsius(*at_c),
+                )
+                .driven_at(Current::a(*amps))
+                .with_reserve(*reserve_j),
+            ),
             DomainSpec::Network {
                 name,
                 nodes,
@@ -888,6 +933,7 @@ fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
         // A network declines a field on purpose: its nodes have capacities, not positions, and
         // a conductance is not a distance. See `ThermalNetwork::as_field`.
         | DomainSpec::Network { .. }
+        | DomainSpec::Winding { .. }
         | DomainSpec::Light { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
         DomainSpec::Bar {
             cells, length_mm, ..
