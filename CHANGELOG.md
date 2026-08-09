@@ -10,7 +10,7 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
-## [Unreleased]
+## [0.7.0] — 2026-08-09
 
 ### Added
 
@@ -547,7 +547,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.7.0
 [0.6.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.6.0
 [0.5.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.5.0
 [0.4.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.4.0
