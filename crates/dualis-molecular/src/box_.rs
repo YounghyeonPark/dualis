@@ -193,7 +193,10 @@ impl CellList {
     {
         let rc2 = cutoff * cutoff;
         let length = bounds.length;
-        let consider = |i: usize, j: usize, visit: &mut F| {
+        // Takes `i`'s position rather than its index: the inner loop runs over `j`, so
+        // `positions[i]` was being loaded and bounds-checked once per *candidate* when it is
+        // constant across the whole run of them. Same subtraction, same operands, same bits.
+        let consider = |i: usize, pi: DVec3, j: usize, visit: &mut F| {
             // The minimum image, with the wrap skipped when it provably does not apply.
             //
             // `PeriodicBox::shortest` costs three divisions and three `round()` calls, and it
@@ -218,14 +221,14 @@ impl CellList {
             // It is also deterministic. The same input takes the same branch on every platform,
             // which is the property this workspace actually promises — not that `shortest` and
             // this agree on a tie, but that a run gives the same answer everywhere.
-            let direct = positions[i] - positions[j];
+            let direct = pi - positions[j];
             let d = if 2.0 * direct.x.abs() < length
                 && 2.0 * direct.y.abs() < length
                 && 2.0 * direct.z.abs() < length
             {
                 direct
             } else {
-                bounds.shortest(positions[i], positions[j])
+                bounds.shortest(pi, positions[j])
             };
             let r2 = d.length_squared();
             if r2 < rc2 {
@@ -235,8 +238,9 @@ impl CellList {
 
         if self.divisions == 1 {
             for i in 0..positions.len() {
+                let pi = positions[i];
                 for j in (i + 1)..positions.len() {
-                    consider(i, j, &mut visit);
+                    consider(i, pi, j, &mut visit);
                 }
             }
             return;
@@ -255,8 +259,9 @@ impl CellList {
                         &self.entries[self.starts[here] as usize..self.starts[here + 1] as usize];
                     // Inside the cell, ordered so each pair appears once.
                     for (a, &i) in mine.iter().enumerate() {
+                        let pi = positions[i as usize];
                         for &j in &mine[a + 1..] {
-                            consider(i as usize, j as usize, &mut visit);
+                            consider(i as usize, pi, j as usize, &mut visit);
                         }
                     }
                     // And the thirteen forward neighbours.
@@ -265,8 +270,9 @@ impl CellList {
                         let theirs = &self.entries
                             [self.starts[there] as usize..self.starts[there + 1] as usize];
                         for &i in mine {
+                            let pi = positions[i as usize];
                             for &j in theirs {
-                                consider(i as usize, j as usize, &mut visit);
+                                consider(i as usize, pi, j as usize, &mut visit);
                             }
                         }
                     }
