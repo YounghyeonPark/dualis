@@ -344,19 +344,28 @@ impl Fluid {
         let mut energy = 0.0;
         let mut virial = 0.0;
         let (potential, mass) = (self.potential, self.mass);
+        // Hoisted: `at_squared` would otherwise redo `shift()` and four products on every pair.
+        let prepared = potential.prepared();
         let accelerations = &mut self.accelerations;
         list.for_each_pair(
             self.bounds,
             potential.cutoff,
             &self.positions,
             |i, j, d, r2| {
-                if let Some(pair) = potential.at_squared(r2) {
+                if let Some(pair) = prepared.at_squared(r2) {
                     let force = d * pair.force_over_r;
                     // Equal and opposite, applied from one evaluation. This is what makes the
                     // momentum exact rather than nearly: the same bits are added to one
                     // particle and subtracted from the other.
-                    accelerations[i] += force / mass;
-                    accelerations[j] -= force / mass;
+                    //
+                    // Divided **once** rather than once per particle. Two `force / mass` are six
+                    // divisions on a `DVec3` where three will do, and computing the quotient a
+                    // second time cannot give a different answer — so this is the same bits for
+                    // half the divisions, which is the only kind of speed-up allowed to touch a
+                    // pinned result.
+                    let a = force / mass;
+                    accelerations[i] += a;
+                    accelerations[j] -= a;
                     energy += pair.energy;
                     virial += pair.force_over_r * r2;
                 }

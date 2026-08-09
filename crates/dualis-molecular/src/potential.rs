@@ -44,6 +44,41 @@ pub struct LennardJones {
     pub cutoff: f64,
 }
 
+/// A [`LennardJones`] with its loop-invariant arithmetic already done.
+///
+/// Made by [`LennardJones::prepared`] and cheap to copy. Holds no reference to the potential it
+/// came from, so a caller can keep one beside a cell list for as long as the parameters do not
+/// change — and if they do, the potential is `Copy` and preparing again is five operations.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Prepared {
+    cutoff_sq: f64,
+    sigma_sq: f64,
+    four_epsilon: f64,
+    twentyfour_epsilon: f64,
+    shift: f64,
+}
+
+impl Prepared {
+    /// Energy and force for one pair, given the *square* of their separation.
+    ///
+    /// Bit-for-bit what [`LennardJones::at_squared`] returns, and pinned as such by a test that
+    /// sweeps separations across the cutoff.
+    pub fn at_squared(&self, r2: f64) -> Option<Pair> {
+        if r2 >= self.cutoff_sq || r2 <= 0.0 {
+            return None;
+        }
+        let inv2 = self.sigma_sq / r2;
+        let inv6 = inv2 * inv2 * inv2;
+        let inv12 = inv6 * inv6;
+        Some(Pair {
+            energy: self.four_epsilon * (inv12 - inv6) - self.shift,
+            // -du/dr = 24 e (2 s^12/r^13 - s^6/r^7), and dividing by r gives
+            // 24 e (2 inv12 - inv6) / r^2 without ever forming r.
+            force_over_r: self.twentyfour_epsilon * (2.0 * inv12 - inv6) / r2,
+        })
+    }
+}
+
 /// What a pair contributes: energy in joules, and the scalar `−du/dr / r` that turns a
 /// separation vector into a force.
 ///
@@ -112,18 +147,29 @@ impl LennardJones {
     /// `None` past the cutoff, so a caller cannot accidentally add a contribution it meant to
     /// skip.
     pub fn at_squared(&self, r2: f64) -> Option<Pair> {
-        if r2 >= self.cutoff * self.cutoff || r2 <= 0.0 {
-            return None;
+        self.prepared().at_squared(r2)
+    }
+
+    /// The loop-invariant parts of [`at_squared`](LennardJones::at_squared), computed once.
+    ///
+    /// Hoist this out of a pair loop. `at_squared` is a convenience that prepares and discards,
+    /// which is free for one call and is not free for a hundred thousand: it was recomputing
+    /// `shift()` — a division and six multiplies for a number that depends only on constants —
+    /// on **every pair**, which at 2048 atoms is about 113 000 evaluations per step of the same
+    /// value.
+    ///
+    /// Every field here is exactly the expression it replaces, so a prepared potential and a
+    /// bare one agree to the bit. That is not a nicety: this crate's results are pinned across
+    /// four platforms, and an optimisation that moved the last bit would be a change in the
+    /// physics wearing a performance change's clothes.
+    pub fn prepared(&self) -> Prepared {
+        Prepared {
+            cutoff_sq: self.cutoff * self.cutoff,
+            sigma_sq: self.sigma * self.sigma,
+            four_epsilon: 4.0 * self.epsilon,
+            twentyfour_epsilon: 24.0 * self.epsilon,
+            shift: self.shift(),
         }
-        let inv2 = self.sigma * self.sigma / r2;
-        let inv6 = inv2 * inv2 * inv2;
-        let inv12 = inv6 * inv6;
-        Some(Pair {
-            energy: 4.0 * self.epsilon * (inv12 - inv6) - self.shift(),
-            // -du/dr = 24 e (2 s^12/r^13 - s^6/r^7), and dividing by r gives
-            // 24 e (2 inv12 - inv6) / r^2 without ever forming r.
-            force_over_r: 24.0 * self.epsilon * (2.0 * inv12 - inv6) / r2,
-        })
     }
 
     /// Energy alone, at a separation. For checking against the closed forms.
@@ -347,5 +393,62 @@ mod tests {
         }
         // And linear in density, since it counts pairs against a uniform background.
         assert!((near.energy_tail(2.0 * rho) / near.energy_tail(rho) - 2.0).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod prepared_tests {
+    use super::*;
+
+    /// **A prepared potential is the bare one, to the bit, across the whole range.**
+    ///
+    /// The optimisation is only allowed to exist because of this. `Prepared` hoists five
+    /// loop-invariant expressions out of a pair loop, and every one of them is *exactly* the
+    /// expression it replaces — `sigma_sq / r2` for `sigma * sigma / r2`, `four_epsilon * x` for
+    /// `4.0 * epsilon * x`. If any had been rearranged into something algebraically equal and
+    /// numerically different, this workspace's results would have moved on four platforms at
+    /// once, and it would have looked like a performance change rather than a physics one.
+    ///
+    /// Swept across the cutoff rather than checked at a point, so the `None` boundary is
+    /// compared too.
+    #[test]
+    fn preparing_changes_the_speed_and_not_a_single_bit() {
+        for lj in [
+            LennardJones::reduced(),
+            LennardJones {
+                epsilon: 1.65e-21,
+                sigma: 3.4e-10,
+                cutoff: 8.5e-10,
+            },
+        ] {
+            let prepared = lj.prepared();
+            let rc = lj.cutoff;
+            for k in 0..2000 {
+                // From well inside the core out past the cutoff, including r2 exactly at rc².
+                let r2 = if k == 1999 {
+                    rc * rc
+                } else {
+                    (0.2 + 1.2 * k as f64 / 1999.0).powi(2) * rc * rc
+                };
+                match (lj.at_squared(r2), prepared.at_squared(r2)) {
+                    (None, None) => {}
+                    (Some(a), Some(b)) => {
+                        assert_eq!(
+                            a.energy.to_bits(),
+                            b.energy.to_bits(),
+                            "energy at r2 = {r2:e}: {} against {}",
+                            a.energy,
+                            b.energy
+                        );
+                        assert_eq!(
+                            a.force_over_r.to_bits(),
+                            b.force_over_r.to_bits(),
+                            "force at r2 = {r2:e}"
+                        );
+                    }
+                    (a, b) => panic!("disagreed about the cutoff at r2 = {r2:e}: {a:?} / {b:?}"),
+                }
+            }
+        }
     }
 }
