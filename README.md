@@ -26,7 +26,7 @@ cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot 
 cargo test --workspace                       # 395 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are five of them; the table
+Add `out.svg` to either example and it draws the result. There are six of them; the table
 is [further down](#examples).
 
 > **Reading this as an AI agent, or in a hurry?** [AGENTS.md](AGENTS.md) is the whole API on
@@ -285,6 +285,7 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `detector_snr` | Why read noise is the first number on a datasheet, with the Poisson statistics sampled rather than asserted |
 | `room_modes` | Why a small room booms at one note, and why that note is not a note. Four mode shapes and a corner trace |
 | `melting` | A Lennard-Jones crystal melting, read off its own radial distribution rather than declared |
+| `lens_spots` | An achromatic doublet *solved* from the Abbe numbers and then traced ray by ray in 3D — focal length, spherical aberration and colour, each against a formula the trace did not compute |
 
 Two more are run by CI without being in the table, because they are checks rather than
 showcases: `agents_quickstart`, the runnable form of [AGENTS.md](AGENTS.md), and
