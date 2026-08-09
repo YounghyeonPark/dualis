@@ -192,8 +192,41 @@ impl CellList {
         F: FnMut(usize, usize, DVec3, f64),
     {
         let rc2 = cutoff * cutoff;
+        let length = bounds.length;
         let consider = |i: usize, j: usize, visit: &mut F| {
-            let d = bounds.shortest(positions[i], positions[j]);
+            // The minimum image, with the wrap skipped when it provably does not apply.
+            //
+            // `PeriodicBox::shortest` costs three divisions and three `round()` calls, and it
+            // runs on every *candidate* — roughly four hundred per atom, of which about fifty
+            // are inside the cutoff. The cost is in the ones that fail, which measurement put at
+            // ~10 ns each and made the dominant term in `Fluid::step`.
+            //
+            // When every component satisfies `2|dₖ| < L` the nearest image is the direct
+            // difference. `2 * x` is exact in binary floating point, so that comparison is the
+            // exact `|dₖ| < L/2` and not an approximation of it.
+            //
+            // No pair is *missed*: a component at or beyond `L/2` takes the slow path, so the
+            // wrap still happens wherever it might matter.
+            //
+            // And where the fast path is taken it returns the same bits, with one degenerate
+            // exception worth naming rather than glossing. `round(dₖ/L)` is zero whenever
+            // `|dₖ| < L/2`, *unless* the quotient rounds to exactly `0.5` — which needs `|dₖ|`
+            // within an ulp of half a box. There the two answers are `d` and `d − L`, the two
+            // periodic images of a pair exactly half a box apart, and they are equidistant: the
+            // minimum image is genuinely ambiguous and either is as correct as the other.
+            //
+            // It is also deterministic. The same input takes the same branch on every platform,
+            // which is the property this workspace actually promises — not that `shortest` and
+            // this agree on a tie, but that a run gives the same answer everywhere.
+            let direct = positions[i] - positions[j];
+            let d = if 2.0 * direct.x.abs() < length
+                && 2.0 * direct.y.abs() < length
+                && 2.0 * direct.z.abs() < length
+            {
+                direct
+            } else {
+                bounds.shortest(positions[i], positions[j])
+            };
             let r2 = d.length_squared();
             if r2 < rc2 {
                 visit(i, j, d, r2);
