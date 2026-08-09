@@ -1,7 +1,7 @@
 [package]
 name = "dualis-py"
 description = "Python bindings for dualis: coupled physics whose conservation audit is an exception"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["Younghyeon Park and dualis contributors"]
@@ -34,5 +34,5 @@ crate-type = ["cdylib"]
 # `../../crates/dualis` points outside it. Without the version the sdist builds here and is
 # unbuildable for anyone who downloads it — which is the worst shape for a failure, since the
 # wheels would install fine and only the fallback path would be broken.
-dualis = { path = "../../crates/dualis", version = "0.7.0" }
+dualis = { path = "../../crates/dualis", version = "0.8.0" }
 pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }

@@ -10,6 +10,53 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [0.8.0] — 2026-08-09
+
+### Added
+
+- **`Ensemble`** in `dualis-core`: many independent samples, run in parallel, with an answer that
+  does not depend on how many threads produced it. The other axis of parallelism — `TreeNBody`
+  splits one evaluation across cores, this splits many evaluations, which is the shape a Monte
+  Carlo study and a parameter sweep both have. Measured 8.74× on sixteen threads.
+
+  It is bit-for-bit across thread counts because two existing decisions meet: `Rng::for_index` is
+  stateless and index-addressed, so sample `i` draws the same numbers wherever it runs, and
+  results land in a slot chosen by index rather than being appended. The failure this avoids is
+  the usual one and is nearly undetectable — a Monte Carlo drawing from a shared generator gives
+  a different answer per core, and the difference looks exactly like statistical noise.
+
+  `estimate` folds in **fixed-size blocks**, so a study is bounded by its block count and not its
+  sample count: ten million samples in kilobytes, tested. The block size is fixed rather than
+  derived from the thread count on purpose — a per-thread split combines a different number of
+  partial sums on four cores than on sixteen, and floating-point addition is not associative.
+  `Ensemble::blocks` is public so a caller building a histogram or a quantile has the same
+  discipline available.
+
+  Welford within a block, Chan's merge between them, rather than `sum(x²) − n·mean²` — which
+  subtracts two large nearly-equal numbers and loses every digit exactly when a Monte Carlo has
+  converged. Pinned against a case with an exact answer.
+
+- **`Estimate`**, with `mean`, `standard_error`, `samples`, and `standard_deviation()` kept
+  distinct from the error on the mean, because confusing those is the usual way to misreport a
+  Monte Carlo result.
+
+### Changed
+
+- **`Fluid` is about 1.95× faster**, in changes that move no result: the Lennard-Jones potential's
+  loop invariants hoisted out of the pair loop, the force quotient taken once instead of twice,
+  and the periodic wrap skipped where it provably does not apply. Verified on four platforms
+  against a pinned digest. Two techniques that should have helped did not — a cell-ordered copy
+  of the positions is *slower*, because the counting sort is stable in index order and the reads
+  were never a random gather.
+
+- **`detector_snr`** runs on `Ensemble`, which also fixes a variance it was computing as
+  `sum(k²)/N − mean²` — at a mean of 900 that subtracts 1.6e11 from itself to reach 900.
+
+- **`where_the_time_goes`**, a new dependency-free example, because this workspace had never
+  measured itself and every claim about which loop mattered was a guess. It takes the best of
+  five trials: consecutive runs vary by 8%, which is wider than several differences that were
+  nearly reported as wins.
+
 ## [0.7.0] — 2026-08-09
 
 ### Added
@@ -547,7 +594,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.8.0
 [0.7.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.7.0
 [0.6.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.6.0
 [0.5.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.5.0
