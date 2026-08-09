@@ -10,6 +10,47 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [0.5.0] — 2026-08-09
+
+### Added
+
+- **`dualis-electrical`**, the sixth domain and the tenth crate. `Winding` computes
+  `R = ρ(T)·L/A` and publishes `I²R` onto the channel `dualis-thermal` already takes from, with
+  neither crate naming the other.
+
+  It closes a real gap rather than adding a sixth for its own sake. Every other producer of heat
+  here answers a question about *something else* that happens to warm a thing — light landing on
+  a mirror, a dashpot damping a bounce. A winding is the case where getting hot is the entire
+  subject, and until now the workspace's own examples stood a stated number of watts in its
+  place. A stated number cannot be wrong, which is another way of saying it is not a model.
+
+  Two mistakes it made, both caught by something other than its author. It first declared its own
+  `HEAT = "heat"` channel, which reads correctly and is a *different* channel from
+  `quantity::ENERGY` — so it published joules nothing consumed, and the audit named it on the
+  first step with the amount. And an infinite reserve turned out not to *fail* the audit but to
+  **disable** it: `inf` before, `inf` after, `inf` equals itself, and a winding pouring joules
+  into a plate runs green at any tolerance. `Winding::step` refuses that itself, because the
+  audit structurally cannot.
+
+  The electro-thermal feedback that causes thermal runaway is deliberately **not** expressible:
+  a domain would have to read another's temperature inside the step loop, and `Exchange` carries
+  amounts, not state. Resistance is evaluated at a temperature the caller states.
+
+- **`Resistance`** in `dualis-units`, with `product!(Resistance, Current => Voltage)` — that line
+  compiling is the check that ohms times amperes are volts. Plus `Current::a`, `Voltage::v` and
+  `Resistance::ohm`/`milliohm` constructors.
+
+- **Scene 12**, `12-winding-heats-a-motor`: the same motor as scene 11 with the watts computed
+  from a length of wire rather than stated. The two settle within a fifth of a kelvin of each
+  other, so the guess was good — and this is the scene that would have caught it if it had not
+  been. Twelve scenes now cover all six domains.
+
+- **Two tests that keep prose from aging.** `documented_version.rs` reads every `dualis = "x.y"`
+  in the documentation and every "the tree is X.Y.Z" in `.claude/agents/`, and compares them
+  against `CARGO_PKG_VERSION`. Both fail if they find *nothing*, because a check that stopped
+  matching would pass forever. The `invariant-guard` line they now cover had been a release
+  behind twice running, in the one file whose subject is checking things.
+
 ## [0.4.0] — 2026-08-09
 
 ### Added
@@ -434,7 +475,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.5.0
 [0.4.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.4.0
 [0.3.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.3.0
 [0.2.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.2.0

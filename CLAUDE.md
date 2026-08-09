@@ -105,7 +105,7 @@ half of "pip install then import". Its own gate:
 cd bindings/python
 cargo fmt --check && cargo clippy --release --all-targets -- -D warnings
 python -m maturin build --release
-python -m pip install --force-reinstall target/wheels/dualis-0.4.0-*.whl
+python -m pip install --force-reinstall target/wheels/dualis-0.5.0-*.whl
 python tests/test_dualis.py
 ```
 
@@ -115,6 +115,30 @@ operation to catch an error a Python caller does not make. And **a `Domain` cann
 Python**: that needs callbacks into the interpreter from inside the step loop, the GIL held
 across it, and an answer for what an exception raised mid-sweep does to a half-advanced
 simulation.
+
+### How often to release, and the order
+
+Nine crates are published together and share one version. A published version is permanent — it
+can be yanked, never replaced — so the cost of a release is nine permanent version numbers on
+crates.io, one on PyPI, and a prose sweep.
+
+**Release on new public API that somebody outside would reach for.** A new crate, a new type, a
+new method on an existing one. Not on a docs fix, not on a CI change, not to exercise the release
+pipeline — batch those and let them ride along with the next real one. `main` being ahead of the
+registries is the normal state, and the changelog's `[Unreleased]` section is where the batch
+accumulates.
+
+The order matters: each crate must be live on the index before the next one resolves it.
+
+```sh
+for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis; do
+  cargo publish -p "$c" --locked || break
+done
+git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel
+```
+
+A *new* crate hits crates.io's new-crate rate limit — a burst of five, then roughly one per ten
+minutes. Existing crates do not, so a release that adds no crate goes through in one pass.
 
 ### Releasing the wheel
 

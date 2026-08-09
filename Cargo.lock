@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "dualis"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-acoustic",
  "dualis-core",
@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-acoustic"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -28,7 +28,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-units",
  "glam",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-electrical"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -47,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-mechanics"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -56,7 +56,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-molecular"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-optics"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-thermal"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-units"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "glam",
  "serde",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-world"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "dualis",
  "glam",
