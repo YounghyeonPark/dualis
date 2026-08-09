@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Fifteen of the twenty-one are fixed**, and five are recorded rather than actioned. The reasons
+**Fifteen of the twenty-one are fixed**, and six are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -104,6 +104,13 @@ scope excludes rendering. Two overlapping private renderers is the cheaper mista
 
 Revisit when there is a second consumer. One application writing its own hundred lines of SVG
 is not evidence; two would be.
+
+**There is one now, and it declined to be evidence.** The sizing tool behind findings 19–21 draws
+nothing at all — it prints five numbers and exits, because a sizing question wants a settled
+answer rather than a picture. So the second application did not want the plotting, which leaves
+this finding exactly where it was rather than settling it. That is a real answer and not a
+dodge: the case for a `dualis-plot` needs two consumers that want to plot, and there is still
+one.
 
 ## 5. `Room` is not in the prelude
 
@@ -414,6 +421,52 @@ broken. All twelve domains that implement `as_any` got the counterpart beside it
 `Box<dyn Domain>` forwarding impl, and the kernel's own front-page example.
 
 Scene 13 is the loop closed, and it measures what the application-level version costs.
+
+## 19. Dimensioned constructors have no unit a person types
+
+Building a three-node network was six lines of `Volume::from_si(x * 1e-6)`. `Length` has `mm`,
+`m` and `cm`; `Volume` had only `from_si`, and `Area` had none at all.
+
+The type system's whole promise is that a factor of a thousand appears in exactly one place — a
+unit-bearing constructor. Where there is no such constructor the factor moves to the call site,
+which is precisely where the promise said it would not be.
+
+**Fixed.** `Volume::cm3`/`mm3`/`m3`/`litres`, `Area::cm2`/`mm2`/`m2`.
+
+## 20. `runaway_current` wanted a number the network held, and the hand version was wrong
+
+`Winding::runaway_current(g)` takes the conductance of the whole path to ambient. A caller with a
+`ThermalNetwork` had to assemble it — `1/(1/K₁ + 1/K₂ + 1/(h·A))` — out of the links and
+environment the network is already holding.
+
+Tedious, and worse than tedious. That formula is convection-only: the housing also radiates at
+its operating temperature, so it gave 0.203 W/K where the truth is 0.220, and a threshold of
+4.11 A where the truth is 4.28. **The library's own documentation was quoting the wrong number**,
+and a network with one more joint, or an environment on an interior node, would have been wrong
+by more with nothing to say so.
+
+**Fixed.** `ThermalNetwork::path_conductance(node, at)` takes the slope of its own solved
+balance, so every path out is in it by construction rather than by the caller remembering.
+Shipped as 0.7.0 on its own rather than batched, because a wrong number in published
+documentation is something a reader copies.
+
+## 21. The electro-thermal fixed point is eight lines every consumer writes
+
+Dissipation depends on winding temperature, which depends on dissipation. Closing it is a loop
+over `steady_state` and `dissipation_at` — eight lines, and the same eight lines for anyone who
+wants a settled coupled answer.
+
+**Not fixed, and declined rather than deferred.** The library cannot close it: a domain has no
+way to read another's state, and that is the property the crate split defends. A helper would
+have to depend on both crates, which only the facade may do, and a physics-specific solver in
+the facade is a worse precedent than eight lines in a consumer.
+
+The general form is a state channel on `Exchange`, which stays undecided — and this entry is
+evidence *against* it. Twice the hand-written loop has agreed with the stepped answer: 99.0 °C
+from the sizing tool's fixed point, 99.02 °C from scene 13's marching. Nothing has yet needed
+the kernel to carry state.
+
+---
 
 ## What this says about the exercise
 
