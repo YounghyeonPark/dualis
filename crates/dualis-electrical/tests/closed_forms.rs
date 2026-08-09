@@ -8,7 +8,7 @@
 
 use dualis_core::{Domain, Exchange};
 use dualis_electrical::{Winding, COPPER_ALPHA, COPPER_RESISTIVITY_20C, HEAT};
-use dualis_units::{Current, Length, Resistance, Temperature, Time, Voltage};
+use dualis_units::{Conductance, Current, Length, Resistance, Temperature, Time, Voltage};
 
 /// **`R = ρL/A`, against the resistivity written out here.**
 ///
@@ -151,4 +151,104 @@ fn an_undriven_winding_publishes_nothing_at_all() {
     .driven_from(Voltage::v(12.0));
     assert_eq!(shorted.dissipation().to_si(), 0.0);
     assert_eq!(shorted.current().to_si(), 0.0);
+}
+
+/// **The runaway threshold, and that it is a threshold rather than a number.**
+///
+/// `dP/dT > dQ_out/dT` is the condition, and for a constant-current winding both sides are
+/// closed forms: `I²R₂₀α` against `g`. So `I_crit = √(g/(R₂₀α))` is exact, and the check is that
+/// the *inequality flips* across it — a formula reproduced from itself would pass any single
+/// point.
+#[test]
+fn the_runaway_current_is_where_the_feedback_overtakes_the_heat_path() {
+    let coil = Winding::of_copper("coil", Length::m(62.0), 0.35e-6, Temperature::celsius(20.0))
+        .driven_at(Current::a(1.0));
+    let g = Conductance::w_per_k(0.203);
+    let crit = coil.runaway_current(g).expect("a current drive has one");
+
+    // Against the formula written out here.
+    let r_20 = 1.724e-8 * 62.0 / 0.35e-6;
+    let want = (0.203_f64 / (r_20 * 0.00393)).sqrt();
+    assert!(
+        (crit.to_si() / want - 1.0).abs() < 1e-12,
+        "{} A against {want} A",
+        crit.to_si()
+    );
+
+    // And that it separates. `dP/dT` is `I²R₂₀α`, computed here from two dissipations a kelvin
+    // apart rather than from the same expression the threshold uses — so this compares the
+    // slope the model actually has against the conductance, not a formula with itself.
+    let slope_at = |amps: f64| {
+        let w = Winding::of_copper("c", Length::m(62.0), 0.35e-6, Temperature::celsius(20.0))
+            .driven_at(Current::a(amps));
+        (w.dissipation_at(Temperature::celsius(21.0)).to_si()
+            - w.dissipation_at(Temperature::celsius(20.0)).to_si())
+            / 1.0
+    };
+    let below = crit.to_si() * 0.9;
+    let above = crit.to_si() * 1.1;
+    assert!(slope_at(below) < 0.203, "below: {} W/K", slope_at(below));
+    assert!(slope_at(above) > 0.203, "above: {} W/K", slope_at(above));
+    // At the threshold itself the two are equal, which is what makes it one.
+    assert!(
+        (slope_at(crit.to_si()) / 0.203 - 1.0).abs() < 1e-12,
+        "at the threshold: {} W/K",
+        slope_at(crit.to_si())
+    );
+
+    // **The joints move it.** Reaching air through 0.9 and 2.4 W/K of joints and then 0.294 W/K
+    // of convection is a series conductance of 0.203, not 0.294 — and the threshold falls from
+    // 4.95 A to 4.11 A. A lumped model reports 17% of margin that is not there.
+    let surface_only = coil
+        .runaway_current(Conductance::w_per_k(0.294))
+        .expect("still a current drive");
+    let series = 1.0 / (1.0 / 0.9 + 1.0 / 2.4 + 1.0 / 0.294);
+    let with_joints = coil
+        .runaway_current(Conductance::w_per_k(series))
+        .expect("still a current drive");
+    assert!(
+        (surface_only.to_si() - 4.949).abs() < 1e-3,
+        "{}",
+        surface_only.to_si()
+    );
+    assert!(
+        (with_joints.to_si() - 4.111).abs() < 1e-3,
+        "{}",
+        with_joints.to_si()
+    );
+    assert!(with_joints.to_si() < surface_only.to_si());
+
+    // A voltage-driven winding cannot run away: `V²/R` falls as it warms, so there is no
+    // threshold and reporting one would be worse than reporting none.
+    let from_volts = Winding::of_copper("v", Length::m(62.0), 0.35e-6, Temperature::celsius(20.0))
+        .driven_from(Voltage::v(12.0));
+    assert!(from_volts.runaway_current(g).is_none());
+    assert!(
+        from_volts
+            .dissipation_at(Temperature::celsius(120.0))
+            .to_si()
+            < from_volts
+                .dissipation_at(Temperature::celsius(20.0))
+                .to_si()
+    );
+}
+
+/// `dissipation()` is `dissipation_at(its own temperature)`, to the bit.
+///
+/// The pure function and the method must not be two implementations that happen to agree —
+/// which is the state `linearised_loss_conductance` was extracted to prevent in `dualis-thermal`.
+#[test]
+fn the_pure_function_and_the_method_are_the_same_arithmetic() {
+    for c in [-40.0, 20.0, 75.0, 180.0] {
+        let w = Winding::of_copper("coil", Length::m(24.0), 0.35e-6, Temperature::celsius(c))
+            .driven_at(Current::a(3.0));
+        assert_eq!(
+            w.dissipation().to_si().to_bits(),
+            w.dissipation_at(Temperature::celsius(c)).to_si().to_bits()
+        );
+        assert_eq!(
+            w.resistance().to_si().to_bits(),
+            w.resistance_at(Temperature::celsius(c)).to_si().to_bits()
+        );
+    }
 }

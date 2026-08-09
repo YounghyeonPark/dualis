@@ -139,7 +139,7 @@ of them are commentary.
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
 | `dualis-acoustic` | The wave equation on a staggered grid: `Tube`, `Room`, impedance boundaries |
 | `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
-| `dualis-electrical` | `Winding`: `I²R` onto the heat channel, with copper's resistance rising 0.393%/K |
+| `dualis-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path |
 
 `Schedule` picks how they interact: `OneWay`, `Staggered` (declaration order is execution
 order), `Iterative { max_iter, tol }` for strong coupling, `Multirate` for domains with very

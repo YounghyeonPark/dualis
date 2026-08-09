@@ -208,7 +208,30 @@ impl Winding {
 
     /// Power it is dissipating right now.
     pub fn dissipation(&self) -> Power {
-        let r = self.resistance().to_si();
+        self.dissipation_at(Temperature::from_si(self.temperature))
+    }
+
+    /// Resistance at an arbitrary temperature, without changing the winding.
+    pub fn resistance_at(&self, at: Temperature) -> Resistance {
+        let dt = at.to_si() - Temperature::celsius(20.0).to_si();
+        Resistance::from_si(self.resistance_20c * (1.0 + self.alpha * dt))
+    }
+
+    /// What it would dissipate at a temperature, without changing the winding.
+    ///
+    /// **A pure function, and that is the point.** Everything else here is a `Domain` method,
+    /// which means it can only be reached by stepping — and the electro-thermal feedback needs
+    /// `P(T)` evaluated at a temperature the electrical domain has no way to learn, since
+    /// [`Exchange`] carries amounts and not state.
+    ///
+    /// As a plain function it is composable by whoever *does* hold both sides. A caller with a
+    /// thermal network and a winding can write `coil.dissipation_at(net.temperature(node))`
+    /// between frames — which is what `dualis-world`'s scene 13 does — and any future in-loop
+    /// coupling needs this same function rather than a different one. So it is correct under
+    /// every answer to that design question, which is why it exists before the question is
+    /// settled.
+    pub fn dissipation_at(&self, at: Temperature) -> Power {
+        let r = self.resistance_at(at).to_si();
         Power::from_si(match self.drive {
             Drive::Current(i) => i * i * r,
             // A short across an ideal source is not a physical answer, and returning an infinity
@@ -216,6 +239,38 @@ impl Winding {
             Drive::Voltage(v) if r > 0.0 => v * v / r,
             Drive::Voltage(_) => 0.0,
         })
+    }
+
+    /// The current at which this winding's feedback overcomes a heat path of conductance `g`.
+    ///
+    /// Thermal runaway is `dP/dT > dQ_out/dT`. For a constant-current winding `P = I²R₂₀(1+αΔT)`
+    /// so `dP/dT = I²R₂₀α`, and against a path that sheds `g` watts per kelvin the threshold is
+    /// exact:
+    ///
+    /// ```text
+    ///     I_crit = √( g / (R₂₀ α) )
+    /// ```
+    ///
+    /// `g` is the conductance of the **whole** path to ambient, which for anything with joints
+    /// in it is not the surface's. A motor whose winding reaches air through 0.9 W/K and
+    /// 2.4 W/K of joints and then 0.294 W/K of convection has a series `g` of 0.203 W/K, not
+    /// 0.294 — and the threshold falls from 4.95 A to 4.11 A, a 17% margin a lumped model
+    /// reports as present when it is not. That difference is the argument for
+    /// [`ThermalNetwork`](https://docs.rs/dualis-thermal) over one body.
+    ///
+    /// Returns `None` for a voltage-driven winding, which cannot run away: `P = V²/R` *falls*
+    /// as it warms, so the feedback has the opposite sign and there is no threshold to report.
+    pub fn runaway_current(&self, path: dualis_units::Conductance) -> Option<Current> {
+        match self.drive {
+            Drive::Voltage(_) => None,
+            Drive::Current(_) => {
+                let denom = self.resistance_20c * self.alpha;
+                if denom <= 0.0 || !path.to_si().is_finite() || path.to_si() <= 0.0 {
+                    return None;
+                }
+                Some(Current::from_si((path.to_si() / denom).sqrt()))
+            }
+        }
     }
 
     /// The current through it, whichever way it is driven.
