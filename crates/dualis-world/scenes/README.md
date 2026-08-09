@@ -15,6 +15,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 
 | | |
 | --- | --- |
+| `out.html` | A report that **picks a view per domain from its shape**, and opens in a browser |
 | `out.svg` | A filmstrip: every frame on one page, one colour scale throughout so frames compare |
 | `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
@@ -24,6 +25,16 @@ a domain with no field and no bodies, and for several the scalar *is* the result
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
 going 3.11 to 4.00 Ω beside it.
+
+`.html` is for someone who can state a simulation and does not want to decide how to draw it.
+The shape of the data makes the choice, not the domain's name: scalars over time become a line
+chart, a 1D field a profile over a ghost of the whole run, a 2D field an animated heatmap, and
+bodies a rotatable depth-sorted scene. A new domain gets a sensible picture without the reporter
+learning about it — which is the same reason `Domain::as_field` exists.
+
+One scale per panel, fixed across every frame, in all four views. A frame that rescales makes a
+quantity *look* constant while it changes by orders of magnitude, and that is the one thing a
+picture of a simulation must never do.
 
 Nothing generated is committed.
 

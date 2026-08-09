@@ -24,6 +24,7 @@ pub mod beam;
 pub mod heater;
 pub mod light;
 pub mod render;
+pub mod report;
 
 use beam::Beam;
 use heater::Heater;

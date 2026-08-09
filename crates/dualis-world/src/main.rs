@@ -5,19 +5,23 @@
 //!
 //! ```sh
 //! dualis-world                        # the built-in scene, checked, nothing written
+//! dualis-world scene.json out.html    # a report: a view per domain, chosen from its shape
 //! dualis-world scene.json out.svg     # a filmstrip: every frame, one page, still
 //! dualis-world scene.json out.csv     # every domain's scalars over time, one row per frame
 //! dualis-world scene.json out.json    # the frames themselves — fields, bodies and readings
 //! dualis-world --emit-default s.json  # write the built-in scene out to start from
 //! ```
 //!
-//! `.csv` is the one that changed what this crate can say. Eight of the fourteen shipped scenes
+//! `.html` is the one to reach for if you do not already know how you want this drawn. It picks
+//! a view from each domain's *shape* — a profile for a 1D field, a heatmap for a 2D one, a
+//! rotatable scene for bodies, a line chart for scalars — and opens in a browser with nothing
+//! installed. `.csv` is the one that changed what this crate can say. Eight of the fourteen shipped scenes
 //! have a domain the filmstrip cannot draw, and for several of them the scalar *is* the result —
 //! scene 13's whole subject is a winding whose resistance follows its own temperature, and it
 //! drew nothing at all.
 
 use dualis::prelude::ThermalNetwork;
-use dualis_world::{render, Frame, PanelData, Scene, World};
+use dualis_world::{render, report, Frame, PanelData, Scene, World};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -160,6 +164,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         csv.len(),
                         frames.first().map_or(0, |f| f.readings.len()),
                         frames.len()
+                    );
+                }
+                "html" => {
+                    let page = report::html(world.scene().title.as_str(), &frames);
+                    std::fs::write(path, &page)?;
+                    println!(
+                        "  wrote {path} ({} bytes, a report that opens in a browser)",
+                        page.len()
                     );
                 }
                 "json" => {
