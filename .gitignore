@@ -10,3 +10,13 @@ node_modules/
 __pycache__/
 *.pyd
 *.so
+
+# Anything a run produces. The scenes README says nothing generated is committed, and saying it
+# was not enough: an `add -A` put a 302 KB filmstrip and a 927 KB frame dump into history.
+# Assets belong beside the scene that made them, in the working tree, and nowhere else.
+/*.svg
+/*.html
+/*.csv
+/world.json
+/orbits*.json
+/atoms*.json
