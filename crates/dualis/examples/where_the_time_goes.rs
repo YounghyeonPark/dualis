@@ -23,13 +23,25 @@ fn time_it(label: &str, work: &str, count: usize, mut f: impl FnMut()) -> f64 {
     // One untimed pass, so a first-touch page fault or a lazily built cell list is not counted
     // as the steady-state cost of a step.
     f();
-    let start = Instant::now();
-    let mut steps = 0u64;
-    while start.elapsed().as_secs_f64() < 0.6 {
-        f();
-        steps += 1;
+
+    // The **best** of five trials, not the mean. Consecutive runs of the same binary vary by
+    // about 8% here — scheduler preemption, frequency scaling, a neighbour process — and every
+    // one of those makes a step look slower than the machine can do it, never faster. The
+    // minimum is the estimate least contaminated by them.
+    //
+    // This matters for reading the output rather than for producing it: two changes measured
+    // one run each and differing by 5% have not been distinguished, and an earlier round of
+    // this work drew a conclusion from exactly that gap before the variance was known.
+    let mut per_step = f64::INFINITY;
+    for _ in 0..5 {
+        let start = Instant::now();
+        let mut steps = 0u64;
+        while start.elapsed().as_secs_f64() < 0.15 {
+            f();
+            steps += 1;
+        }
+        per_step = per_step.min(start.elapsed().as_secs_f64() / steps as f64);
     }
-    let per_step = start.elapsed().as_secs_f64() / steps as f64;
     let per_unit = per_step / count as f64;
     println!(
         "  {label:<24} {:>9.3} ms/step   {:>8.1} ns per {work}   ({count} of them)",
@@ -43,10 +55,12 @@ fn main() {
     println!("where the time goes — one step of each, release build\n");
     let dt = Time::ms(1.0);
 
-    // ---- Molecular: the densest inner loop in the workspace.
+    // ---- Molecular: the densest inner loop in the workspace. Two sizes because the per-atom
+    // cost falls with N — 2467 ns at 2048 against 1819 at 10976 — so one size understates how
+    // well the cell list already scales.
     println!("dualis-molecular");
     let mut totals = Vec::new();
-    for cells in [4usize, 6, 8] {
+    for cells in [8usize, 14] {
         let atoms = 4 * cells * cells * cells;
         let mut fluid = Fluid::lattice(
             "argon",
