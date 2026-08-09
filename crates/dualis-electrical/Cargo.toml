@@ -1,0 +1,16 @@
+[package]
+name = "dualis-electrical"
+description = "Electricity as a simulation domain: resistive dissipation into the heat channel, temperature-dependent conductors"
+keywords = ["electrical", "resistance", "joule", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+dualis-core = { workspace = true }
+dualis-units = { workspace = true }
+serde = { workspace = true }

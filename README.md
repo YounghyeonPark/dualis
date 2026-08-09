@@ -5,8 +5,8 @@
 [![docs.rs](https://docs.rs/dualis/badge.svg)](https://docs.rs/dualis)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
-physics, and five domains built on it that do: **light, heat, motion, sound, and matter
-one atom at a time.**
+physics, and six domains built on it that do: **light, heat, motion, sound, electricity,
+and matter one atom at a time.**
 
 Dimensions live in the type system, so `Length + Time` does not compile. Conservation is
 audited rather than assumed, and a `Violation` names what went missing and where. Every
@@ -14,7 +14,7 @@ result is reproducible bit for bit — across platforms, across optimisation lev
 WebAssembly, and under sixteen threads as readily as one.
 
 ```sh
-cargo add dualis                             # one dependency, all eight crates
+cargo add dualis                             # one dependency, all nine crates
 pip install dualis                           # or from Python, see bindings/python
 ```
 
@@ -23,7 +23,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 378 tests, all against closed forms
+cargo test --workspace                       # 395 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are five of them; the table
@@ -69,9 +69,10 @@ its own scheme. There are tests for those rates now.
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
-| `dualis` | A facade over the other seven, and where the cross-domain integration tests live |
+| `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature |
+| `dualis` | A facade over the other eight, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with eleven scenes across all five domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with eleven scenes across five of the six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 ```text
 dualis-units       no dependencies but glam and serde
@@ -80,7 +81,8 @@ dualis-optics      depends on core     ─┐
 dualis-thermal     depends on core      ├─  none of these knows about
 dualis-mechanics   depends on core      │   any of the others
 dualis-acoustic    depends on core      │
-dualis-molecular   depends on core     ─┘
+dualis-molecular   depends on core      │
+dualis-electrical  depends on core     ─┘
 dualis             depends on all of them
 dualis-world       depends on the facade, and nothing depends on it
 ```
@@ -89,12 +91,19 @@ dualis-world       depends on the facade, and nothing depends on it
 changed, the kernel was wrong — that rule is what makes "add sound, add fluids" a
 matter of writing a crate rather than editing this one.
 
-Five domains are now the proof rather than an assertion. Optics publishes absorbed
+Six domains are now the proof rather than an assertion. Optics publishes absorbed
 light as heat and thermal consumes it; mechanics publishes a dashpot's dissipation on
 the same channel and the same thermal domain consumes that too, with nothing changed
 on either side; acoustics publishes what an absorbing duct end radiates onto the same
-channel again; and molecular dynamics arrived last without asking for anything. None of
-the five names another and none of them needed the kernel changed.
+channel again; molecular dynamics arrived without asking for anything; and electricity
+arrived last, publishing `I²R` onto that same channel. None of the six names another and
+none of them needed the kernel changed.
+
+Electricity is the one that closes a circle. Every other producer of heat here answers a
+question about *something else* that happens to warm a thing — light landing on a mirror,
+a dashpot damping a bounce. A winding is the case where getting hot is the entire subject,
+and until that crate existed the workspace's own examples stood a stated number of watts in
+its place. A stated number cannot be wrong, which is another way of saying it is not a model.
 
 One thing did need the kernel changed, and it is worth being precise about why that is
 not a violation of the rule. The rule is that a *domain* must never force a kernel edit.

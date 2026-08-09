@@ -15,6 +15,7 @@ dualis-acoustic = { workspace = true }
 dualis-core = { workspace = true }
 dualis-mechanics = { workspace = true }
 dualis-molecular = { workspace = true }
+dualis-electrical = { workspace = true }
 dualis-optics = { workspace = true }
 dualis-thermal = { workspace = true }
 dualis-units = { workspace = true }

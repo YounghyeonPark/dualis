@@ -76,6 +76,7 @@
 #![deny(missing_docs)]
 pub use dualis_acoustic as acoustic;
 pub use dualis_core as core;
+pub use dualis_electrical as electrical;
 pub use dualis_mechanics as mechanics;
 pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
@@ -96,6 +97,7 @@ pub mod prelude {
     // supply one were not exported. A consumer wanting a material the catalogue does not carry
     // had to reach through two module paths to say so.
     pub use dualis_core::substance::{AcousticProps, MechanicalProps, ThermalProps};
+    pub use dualis_electrical::Winding;
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,
     };
@@ -113,9 +115,9 @@ pub mod prelude {
         Bar1D, Environment, LumpedMass, Node, SteadyState, ThermalNetwork, HEAT,
     };
     pub use dualis_units::{
-        AccelerationVec, Area, Conductance, Damping, Density, Energy, Force, ForceVec, Frequency,
-        HeatCapacity, Irradiance, Length, LengthVec, Mass, Momentum, MomentumVec, Power, Pressure,
-        SpecificHeat, Stiffness, Temperature, ThermalConductivity, ThermalExpansion, Time,
-        Velocity, VelocityVec, Volume, G0,
+        AccelerationVec, Area, Conductance, Current, Damping, Density, Energy, Force, ForceVec,
+        Frequency, HeatCapacity, Irradiance, Length, LengthVec, Mass, Momentum, MomentumVec, Power,
+        Pressure, Resistance, SpecificHeat, Stiffness, Temperature, ThermalConductivity,
+        ThermalExpansion, Time, Velocity, VelocityVec, Voltage, Volume, G0,
     };
 }

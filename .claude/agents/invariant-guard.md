@@ -86,7 +86,7 @@ since an inner attribute after the first item is a compile error and it is easy 
 while editing the top of a file.
 
 ```sh
-grep -c "deny(missing_docs)" crates/*/src/lib.rs   # nine ones
+grep -c "deny(missing_docs)" crates/*/src/lib.rs   # ten ones
 ```
 
 ## 5. The promises CI makes

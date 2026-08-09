@@ -79,7 +79,7 @@ dependency is not there, and `-D warnings` turns that into a build failure.
 
 ### Every public item is documented
 
-`#![deny(missing_docs)]` in all nine crates. A one-line summary that names the unit is enough
+`#![deny(missing_docs)]` in all ten crates. A one-line summary that names the unit is enough
 for a constructor; anything with a trap in it should say what the trap is.
 
 ### Say what was wrong, not only what changed

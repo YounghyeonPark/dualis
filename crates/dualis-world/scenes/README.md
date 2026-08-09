@@ -1,6 +1,7 @@
 # Scenes
 
-Ten worlds described as data, covering all five domains. Nothing here is Rust: the
+Eleven worlds described as data, covering five of the library's six domains — electricity
+has none yet, which is the obvious next scene. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
 
@@ -83,7 +84,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all ten on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all eleven on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

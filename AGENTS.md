@@ -139,6 +139,7 @@ of them are commentary.
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
 | `dualis-acoustic` | The wave equation on a staggered grid: `Tube`, `Room`, impedance boundaries |
 | `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
+| `dualis-electrical` | `Winding`: `I²R` onto the heat channel, with copper's resistance rising 0.393%/K |
 
 `Schedule` picks how they interact: `OneWay`, `Staggered` (declaration order is execution
 order), `Iterative { max_iter, tol }` for strong coupling, `Multirate` for domains with very
@@ -205,7 +206,7 @@ They are listed here so it does not have to be loudly.
   `rand::thread_rng`, and reductions over unordered collections all break this.
 - **Domains do not depend on each other.** If your new physics needs to `use dualis_thermal`,
   the design is wrong — publish on a channel instead. The kernel depends on no domain either.
-- **Every public item is documented.** `#![deny(missing_docs)]` is set in all nine crates.
+- **Every public item is documented.** `#![deny(missing_docs)]` is set in all ten crates.
 - **MSRV is 1.78**, checked by CI.
 - **Tolerances are earned.** A number in an `assert!` should trace to an effect — an
   integrator's order, `1/√N` for a sample count, a discretisation. If you cannot say which,

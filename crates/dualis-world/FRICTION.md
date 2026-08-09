@@ -2,7 +2,7 @@
 
 `dualis-world` exists to use the SDK from outside and write down where that is awkward. A
 library with no consumers is a library whose ergonomics nobody has measured, and none of the
-378 tests inside the workspace can answer this question about themselves — they are written by
+395 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it, couples
@@ -427,7 +427,8 @@ None of this was visible from inside.
 
 ## What this report does not cover
 
-All five domains have scenes now, so the gap this section used to name is closed. What is left
+Five of the six domains have scenes now, so the gap this section used to name is closed for
+those; `dualis-electrical` arrived after this was written and has none. What is left
 is smaller and more specific.
 
 **`TreeNBody`, `RigidBody` and the rest of mechanics.** Four types took `as_any` in this pass

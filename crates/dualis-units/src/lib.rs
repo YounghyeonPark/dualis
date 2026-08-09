@@ -400,6 +400,8 @@ pub type Damping = Qty<0, 1, -1, 0, 0, 0, 0>;
 pub type Charge = Qty<0, 0, 1, 1, 0, 0, 0>;
 /// Volts.
 pub type Voltage = Qty<2, 1, -3, -1, 0, 0, 0>;
+/// Ohms — volts per ampere.
+pub type Resistance = Qty<2, 1, -3, -2, 0, 0, 0>;
 /// J·K⁻¹ — mass times specific heat. How much heat a thing can hide before it
 /// shows up as a temperature.
 pub type HeatCapacity = Qty<2, 1, -2, 0, -1, 0, 0>;
@@ -468,6 +470,9 @@ product!(Irradiance, Area => Power);
 product!(Density, Volume => Mass);
 product!(Current, Time => Charge);
 product!(Voltage, Current => Power);
+// Ohm's law, declared rather than asserted: this line compiling is the check that ohms times
+// amperes are volts, and with the line above it that `I²R` comes out in watts.
+product!(Resistance, Current => Voltage);
 product!(Mass, Area => MomentOfInertia);
 product!(MomentOfInertia, Frequency => AngularMomentum);
 product!(Stiffness, Length => Force);
@@ -491,6 +496,39 @@ impl Area {
 // ---------------------------------------------------------------------------
 // Unit-bearing entry and exit. The only place a factor of 1000 may appear.
 // ---------------------------------------------------------------------------
+
+impl Resistance {
+    /// Ohms.
+    pub fn ohm(v: f64) -> Resistance {
+        Qty(v)
+    }
+    /// Milliohms — the range a motor winding or a shunt actually lives in.
+    pub fn milliohm(v: f64) -> Resistance {
+        Qty(v * 1e-3)
+    }
+}
+
+impl Current {
+    /// Amperes.
+    pub fn a(v: f64) -> Current {
+        Qty(v)
+    }
+    /// Milliamperes.
+    pub fn ma(v: f64) -> Current {
+        Qty(v * 1e-3)
+    }
+}
+
+impl Voltage {
+    /// Volts.
+    pub fn v(v: f64) -> Voltage {
+        Qty(v)
+    }
+    /// Millivolts.
+    pub fn mv(v: f64) -> Voltage {
+        Qty(v * 1e-3)
+    }
+}
 
 impl Length {
     /// Metres.
