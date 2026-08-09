@@ -149,6 +149,27 @@ pub trait Domain {
         None
     }
 
+    /// The same, mutably, so a caller can *write* to a domain between steps.
+    ///
+    /// **This does not weaken "domains never read each other."** That rule is about what happens
+    /// inside [`Domain::step`], where the only channel is [`Exchange`]. This is the owner of the
+    /// simulation, outside the step loop, holding `&mut Simulation` already — it could drop the
+    /// domain and rebuild it, so denying it a write was never protecting anything.
+    ///
+    /// What needs it is a feedback loop the bus cannot carry. A copper winding's resistance rises
+    /// with its temperature, and that temperature lives in a thermal domain: neither can see the
+    /// other's state, and neither should. A caller between frames can see both, and until this
+    /// existed it could read one and not write the other, which made the loop unclosable from
+    /// anywhere at all.
+    ///
+    /// Opt-in and `None` by default, like [`Domain::as_any`] — and that default is a hazard this
+    /// workspace has been bitten by twice, in `FRICTION.md` findings 7 and 12: a domain that
+    /// forgets it is not broken, it is silently absent from whatever asks. If you implement
+    /// `as_any`, implement this beside it.
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        None
+    }
+
     /// This domain as a [`ScalarField`], if it has one to show.
     ///
     /// Opt-in and `None` by default, in the same style as [`Domain::as_any`] and for a
@@ -198,6 +219,9 @@ impl Domain for Box<dyn Domain> {
     }
     fn supports_restore(&self) -> bool {
         (**self).supports_restore()
+    }
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        (**self).as_any_mut()
     }
     fn as_any(&self) -> Option<&dyn Any> {
         (**self).as_any()
@@ -623,6 +647,19 @@ impl Simulation {
     /// a field to sample: that one does not need the concrete type at all.
     pub fn domain_as<T: Any>(&self, name: &str) -> Option<&T> {
         self.domain(name)?.as_any()?.downcast_ref::<T>()
+    }
+
+    /// The same, mutably, for a caller closing a feedback loop between steps.
+    ///
+    /// `None` if there is no such domain, if it is not a `T`, or if it does not implement
+    /// [`Domain::as_any_mut`] — three different reasons that look alike from here, which is why
+    /// that method's documentation asks for it to be implemented beside `as_any`.
+    pub fn domain_as_mut<T: Any>(&mut self, name: &str) -> Option<&mut T> {
+        self.domains
+            .iter_mut()
+            .find(|d| d.name() == name)?
+            .as_any_mut()?
+            .downcast_mut::<T>()
     }
 
     /// Every domain's books, summed.

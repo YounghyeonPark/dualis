@@ -1,0 +1,37 @@
+{
+  "title": "a winding whose resistance follows its own temperature",
+  "schedule": "multirate",
+  "duration_s": 60000.0,
+  "frames": 40,
+  "conservation_tolerance": 1e-9,
+  "domains": [
+    {
+      "kind": "winding",
+      "name": "coil",
+      "length_m": 62.0,
+      "cross_section_mm2": 0.35,
+      "amps": 2.0,
+      "at_c": 25.0,
+      "reserve_j": 1000000.0,
+      "tracks": "motor/winding"
+    },
+    {
+      "kind": "network",
+      "name": "motor",
+      "absorbing": "winding",
+      "nodes": [
+        { "name": "winding", "material": "copper", "volume_cm3": 18.0,
+          "thickness_mm": 2.0, "initial_c": 25.0 },
+        { "name": "stator", "material": "electrical_steel", "volume_cm3": 140.0,
+          "thickness_mm": 8.0, "initial_c": 25.0 },
+        { "name": "housing", "material": "aluminium", "volume_cm3": 220.0,
+          "thickness_mm": 4.0, "initial_c": 25.0,
+          "loses_to": { "ambient_c": 25.0, "area_cm2": 420.0 } }
+      ],
+      "links": [
+        { "from": "winding", "to": "stator", "w_per_k": 0.9 },
+        { "from": "stator", "to": "housing", "w_per_k": 2.4 }
+      ]
+    }
+  ]
+}

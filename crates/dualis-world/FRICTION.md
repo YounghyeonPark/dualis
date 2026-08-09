@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Twelve of the seventeen are fixed**, and five are recorded rather than actioned. The reasons
+**Thirteen of the eighteen are fixed**, and five are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -389,15 +389,41 @@ findings with one underlying cause, and the count is the argument.
 
 ---
 
+## 18. A caller can read a domain and not write one, so a feedback loop is unclosable
+
+`Simulation::domain_as::<T>` hands back a `&T`. There was no `&mut T`.
+
+That is fine for the reader it was built for — a test asserting a profile, a renderer sampling a
+field. It is not fine for the one thing an application genuinely has to do that the library
+cannot: **close a feedback loop the bus cannot carry.**
+
+Copper's resistance rises 0.393% per kelvin, so a winding that heats up dissipates more. The
+temperature lives in `dualis-thermal`, the resistance in `dualis-electrical`, and neither can see
+the other's state — correctly, since domains meeting only on `Exchange` is the property the crate
+split exists to hold. The caller between frames can see both. It could read the temperature and
+had no way to write the resistance, so the loop was closable from *nowhere at all*.
+
+**Fixed.** `Domain::as_any_mut` and `Simulation::domain_as_mut`, mirroring the existing pair.
+This does not weaken the rule: it is about what happens inside `step`, and this runs between
+frames in code holding `&mut Simulation` that could drop the domain and rebuild it — so denying
+it a write was never protecting anything.
+
+The same opt-in hazard as findings 7 and 12, and this time it was handled in the same change:
+`as_any_mut` defaults to `None`, so a domain that forgets it is silently unwritable rather than
+broken. All twelve domains that implement `as_any` got the counterpart beside it, including the
+`Box<dyn Domain>` forwarding impl, and the kernel's own front-page example.
+
+Scene 13 is the loop closed, and it measures what the application-level version costs.
+
 ## What this says about the exercise
 
-Seventeen findings, and the source has shifted twice. The first twelve came from writing the
+Eighteen findings, and the source has shifted three times. The first twelve came from writing the
 application; four came from **running the two subagents built out of what the first twelve
 taught** — one hunting outcomes that come out empty, one building against the *published* 0.1.0
 rather than the working tree. The seventeenth came from a third source again: adding a domain the
 library did not have, and finding that the *new* API had the old shape.
 
-Twelve are fixed. That line said "ten" until this edit counted them, which is the failure
+Thirteen are fixed. That line said "ten" until this edit counted them, which is the failure
 `prose-auditor` exists for and the second time this file has been the one carrying it.
 
 Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was

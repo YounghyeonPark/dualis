@@ -276,6 +276,18 @@ pub enum DomainSpec {
         /// Joules it may dissipate before it goes quiet. Not optional: without it the winding
         /// supplies energy from nowhere and the audit cannot see that, so the domain refuses.
         reserve_j: f64,
+        /// If set, the winding's temperature is refreshed from a thermal network node between
+        /// frames — `"network/node"`, e.g. `"motor/winding"`.
+        ///
+        /// This is the electro-thermal feedback, closed **here** because it cannot be closed
+        /// inside the step loop: a domain has no way to read another's state, and that is the
+        /// property the crate split exists to hold. The caller between frames can see both, so
+        /// the loop lives at the application level or nowhere.
+        ///
+        /// It is not free. The temperature is refreshed once per *frame*, not once per substep,
+        /// so the feedback lags by up to one frame interval. Scene 13 measures what that costs.
+        #[serde(default)]
+        tracks: Option<String>,
     },
     /// Several lumped bodies joined by conductances: junction, case, ambient.
     ///
@@ -611,6 +623,7 @@ impl DomainSpec {
                 amps,
                 at_c,
                 reserve_j,
+                tracks: _,
             } => Box::new(
                 dualis::electrical::Winding::of_copper(
                     name.clone(),
@@ -753,6 +766,43 @@ impl World {
             return Err("a scene needs at least one frame".into());
         }
 
+        // A `tracks` naming something that is not there would produce a winding whose
+        // temperature never moves — which is indistinguishable from a correct run at a constant
+        // temperature, and is therefore exactly the shape of failure this crate keeps finding:
+        // not a wrong answer, an absent one that looks right. Refused here, where the message
+        // can list what the scene does define.
+        for spec in &scene.domains {
+            let DomainSpec::Winding {
+                name,
+                tracks: Some(path),
+                ..
+            } = spec
+            else {
+                continue;
+            };
+            let Some((net_name, node_name)) = path.split_once('/') else {
+                return Err(format!(
+                    "{name}: tracks is {path:?}; it should be \"network/node\""
+                ));
+            };
+            let target = scene.domains.iter().find_map(|d| match d {
+                DomainSpec::Network { name, nodes, .. } if name == net_name => Some(nodes),
+                _ => None,
+            });
+            let Some(nodes) = target else {
+                return Err(format!(
+                    "{name}: tracks names the network {net_name:?}, which this scene does not                      define"
+                ));
+            };
+            if !nodes.iter().any(|n| n.name == node_name) {
+                let known: Vec<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
+                return Err(format!(
+                    "{name}: {net_name:?} has no node {node_name:?}; it has {}",
+                    known.join(", ")
+                ));
+            }
+        }
+
         let mut sim = Simulation::new(match scene.schedule {
             ScheduleSpec::OneWay => Schedule::OneWay,
             ScheduleSpec::Staggered => Schedule::Staggered,
@@ -807,9 +857,57 @@ impl World {
         frames.push(self.capture());
         for _ in 0..self.scene.frames {
             self.sim.advance(dt)?;
+            self.close_feedback();
             frames.push(self.capture());
         }
         Ok(frames)
+    }
+
+    /// Refresh every tracking winding's temperature from the node it follows.
+    ///
+    /// **The one place in this application that couples two domains by hand**, and it is worth
+    /// being precise about why that is allowed. Domains never read each other *inside* the step
+    /// loop — they meet on the bus, which carries amounts and not state. This runs between
+    /// frames, in the code that owns the simulation and could rebuild either domain from
+    /// scratch, so nothing is being smuggled past the rule.
+    ///
+    /// It needed `Simulation::domain_as_mut`, which did not exist: a caller could read a domain
+    /// and not write one, so this loop was unclosable from anywhere at all. `FRICTION.md` 18.
+    ///
+    /// Silent when a name does not resolve, and that is the wrong shape — a `tracks` pointing at
+    /// a node that is not there produces a winding whose resistance never moves, which looks
+    /// exactly like a correct run at a constant temperature. `World::build` validates the target
+    /// up front so this cannot be reached with a bad name; the check there is the real one.
+    fn close_feedback(&mut self) {
+        let targets: Vec<(String, String, String)> = self
+            .scene
+            .domains
+            .iter()
+            .filter_map(|spec| match spec {
+                DomainSpec::Winding {
+                    name,
+                    tracks: Some(path),
+                    ..
+                } => {
+                    let (net, node) = path.split_once('/')?;
+                    Some((name.clone(), net.to_string(), node.to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        for (coil, net_name, node_name) in targets {
+            let Some(net) = self.sim.domain_as::<ThermalNetwork>(&net_name) else {
+                continue;
+            };
+            let Some(node) = net.node_named(&node_name) else {
+                continue;
+            };
+            let t = net.temperature(node);
+            if let Some(w) = self.sim.domain_as_mut::<dualis::electrical::Winding>(&coil) {
+                w.at_temperature(t);
+            }
+        }
     }
 
     /// Sample every drawable domain onto a grid at the current time.

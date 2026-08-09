@@ -412,6 +412,10 @@ impl Domain for NBody {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
+
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// A flat, immovable floor at a height along a normal.

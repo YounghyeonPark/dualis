@@ -5,6 +5,10 @@ use dualis::electrical::Winding;
 use dualis::prelude::*;
 use dualis_world::{DomainSpec, Scene, World};
 
+fn scene_from(text: &str) -> Scene {
+    serde_json::from_str(text).expect("it parsed once already")
+}
+
 fn room_scene(duration_s: f64, frames: usize, cells: usize) -> Scene {
     serde_json::from_str(&format!(
         r#"{{
@@ -529,9 +533,10 @@ fn every_scene_that_ships_runs_and_says_something_true() {
         // not positions, so `as_field` declines — but then it owes an arm in the match below,
         // and this list is how it says so. Adding a name here without an arm reintroduces
         // exactly the hole: a scene that runs, draws nothing, checks nothing, and passes.
-        const NOTHING_TO_DRAW: [&str; 2] = [
+        const NOTHING_TO_DRAW: [&str; 3] = [
             "11-motor-thermal-network.json",
             "12-winding-heats-a-motor.json",
+            "13-winding-that-heats-itself.json",
         ];
         // Zero for a scene with no panel, which never reads it — the arms below that do are all
         // in the drawn branch.
@@ -553,6 +558,65 @@ fn every_scene_that_ships_runs_and_says_something_true() {
         }
 
         match name.as_str() {
+            // The electro-thermal feedback, closed between frames because it cannot be closed
+            // inside the step loop. The claim is the *amplification*: a winding whose resistance
+            // follows its own temperature settles hotter than one held at ambient, by
+            // 1/(1 − g) where g = I²R₂₀·α·R_th is the loop gain.
+            //
+            // Checked as a ratio against the same scene without `tracks`, because a ratio
+            // cancels most of what the two runs share and isolates the feedback.
+            "13-winding-that-heats-itself.json" => {
+                let net = world
+                    .simulation()
+                    .domain_as::<ThermalNetwork>("motor")
+                    .expect("the motor is a network");
+                let node = |n: &str| net.node_named(n).expect("the node is there");
+                let hot = net.temperature(node("winding")).to_si() - 273.15;
+                let housing = net.temperature(node("housing")).to_si() - 273.15;
+
+                // The same scene with the feedback removed.
+                let mut open = scene_from(&text);
+                if let Some(DomainSpec::Winding { tracks, .. }) = open.domains.get_mut(0) {
+                    *tracks = None;
+                }
+                let mut open = World::build(open).expect("the open-loop scene builds");
+                open.run().expect("it conserves too");
+                let cold = open
+                    .simulation()
+                    .domain_as::<ThermalNetwork>("motor")
+                    .expect("the motor is a network")
+                    .temperature(node("winding"))
+                    .to_si()
+                    - 273.15;
+
+                let measured = (hot - 25.0) / (cold - 25.0);
+
+                // The loop gain, computed here. `R_th` is the series path winding → stator →
+                // housing → ambient, and the last term is **not** just convection: at 74.6 °C
+                // the housing's linearised radiative conductance `4εσAT³` is 0.036 W/K against
+                // 0.294 for convection, which is 12% of the path's weakest link and moves the
+                // prediction from 1.310 to 1.280. Leaving it out is a 2.2% error, which is
+                // larger than the agreement being asserted — so it is in.
+                let (rho_20, alpha, sigma, emissivity, area) =
+                    (1.724e-8, 0.00393, 5.670_374_419e-8, 0.09, 0.042);
+                let r_20 = rho_20 * 62.0 / 0.35e-6;
+                let radiative = 4.0 * emissivity * sigma * area * (housing + 273.15).powi(3);
+                let r_th = 1.0 / 0.9 + 1.0 / 2.4 + 1.0 / (7.0 * area + radiative);
+                let gain = 2.0 * 2.0 * r_20 * alpha * r_th;
+                let want = 1.0 / (1.0 - gain);
+
+                assert!(
+                    (measured / want - 1.0).abs() < 5e-3,
+                    "{name}: amplification {measured:.4} against {want:.4} from a loop gain of \
+                     {gain:.4}"
+                );
+                // And it is a real effect rather than a rounding one: 16 K of winding.
+                assert!(
+                    hot - cold > 10.0,
+                    "{name}: the feedback is worth only {:.2} K",
+                    hot - cold
+                );
+            }
             // The scene that computes its own watts. `11` states 12 W; this one derives them
             // from 62 m of 0.35 mm² copper at 1.75 A, and the point is that the number is now
             // wrong if the geometry is wrong. Checked against `I²R` written out here, with

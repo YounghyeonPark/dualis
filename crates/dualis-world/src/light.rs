@@ -167,4 +167,8 @@ impl Domain for Light {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
+
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
 }

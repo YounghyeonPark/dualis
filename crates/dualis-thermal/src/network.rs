@@ -889,6 +889,10 @@ impl Domain for ThermalNetwork {
         Some(self)
     }
 
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     /// **`None`, and not as an oversight.**
     ///
     /// A network is a graph with no embedding. Its nodes have capacities, not positions, and a

@@ -1,6 +1,6 @@
 # Scenes
 
-Twelve worlds described as data, covering all six of the library's domains. Nothing here is Rust: the
+Thirteen worlds described as data, covering all six of the library's domains. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
 
@@ -63,6 +63,22 @@ cold bench dissipates 9.35 W. The temperature is a parameter rather than an omis
 one the *simulation* does not set — a domain cannot read another's state inside the step loop,
 so closing that feedback is the caller's job and `dualis-electrical` says why.
 
+| Scene | What it shows |
+| --- | --- |
+| `13-winding-that-heats-itself` | The same coil with `tracks` set: its resistance follows its own temperature, so it settles 16 K hotter than one held at ambient |
+
+**The only place in this repository where two domains are coupled by hand**, and it is worth
+saying why that is allowed. Domains never read each other *inside* the step loop — they meet on
+the bus, which carries amounts and not state. This runs between frames, in the code that owns
+the simulation. It needed `Simulation::domain_as_mut`, which did not exist: a caller could read a
+domain and not write one, so this loop was closable from nowhere at all. FRICTION 18.
+
+The amplification is `1/(1 − g)` with `g = I²R₂₀·α·R_th`, and the test checks it as a ratio
+against the same scene with `tracks` removed. Measured 1.281. Convection alone predicts 1.310;
+the housing's linearised radiative conductance at 74.6 °C is 0.036 W/K against 0.294 for
+convection, and including it gives 1.280 — so the 2.2% gap is radiation stiffening the heat path,
+not error.
+
 ## Motion — `dualis-mechanics`
 
 | Scene | What it shows |
@@ -99,7 +115,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all twelve on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all thirteen on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

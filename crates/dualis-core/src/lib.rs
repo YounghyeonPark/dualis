@@ -77,6 +77,7 @@
 //!     // Opt in to being readable from outside. Without this, `domain_as` returns `None`:
 //!     // the coupling never needs the concrete type, so it is not given away by default.
 //!     fn as_any(&self) -> Option<&dyn std::any::Any> { Some(self) }
+//!     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> { Some(self) }
 //! }
 //!
 //! let mut sim = Simulation::new(Schedule::Staggered)

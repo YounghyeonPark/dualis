@@ -502,6 +502,10 @@ impl Domain for Room {
         Some(self)
     }
 
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     /// The room reads as a pressure field, so a renderer never has to know it is a room.
     fn as_field(&self) -> Option<&dyn dualis_core::ScalarField> {
         Some(self)
