@@ -53,7 +53,7 @@ use std::collections::BTreeMap;
 use dualis_units::Time;
 
 use crate::bodies::Bodies;
-use crate::conserved::{audit, Ledger, Violation};
+use crate::conserved::{audit_with, Ledger, Tolerances, Violation};
 use crate::field::ScalarField;
 use crate::integrator::substeps_for;
 use crate::scene::{mismatch, Flux, Interface};
@@ -662,7 +662,7 @@ pub struct Simulation {
     bus: Exchange,
     t: Time,
     transfer_tol: f64,
-    conservation_tol: f64,
+    conservation_tol: Tolerances,
 }
 
 impl Simulation {
@@ -677,7 +677,7 @@ impl Simulation {
             bus: Exchange::new(),
             t: Time::ZERO,
             transfer_tol: 1e-12,
-            conservation_tol: 1e-9,
+            conservation_tol: Tolerances::default(),
         }
     }
 
@@ -707,10 +707,39 @@ impl Simulation {
     }
 
     /// Relative tolerance on the whole-simulation conservation audit across a
-    /// step. Default 1e-9.
+    /// step, for every quantity that has no override. Default 1e-9.
     pub fn conservation_tolerance(mut self, tol: f64) -> Simulation {
-        self.conservation_tol = tol;
+        let overrides: Vec<(&'static str, f64)> = self.conservation_tol.overrides().collect();
+        self.conservation_tol = overrides
+            .into_iter()
+            .fold(Tolerances::uniform(tol), |t, (q, v)| t.with(q, v));
         self
+    }
+
+    /// Relative tolerance for **one** quantity, overriding the default.
+    ///
+    /// The reason this exists: a Barnes-Hut N-body gives up exact momentum by construction, and
+    /// energy in a rigid room is exact to `1e-15`. Under one number either the momentum check
+    /// refuses a correct run or the energy check stops being able to see anything. A quantity's
+    /// achievable accuracy is a property of the scheme carrying it.
+    ///
+    /// ```
+    /// # use dualis_core::{Schedule, Simulation};
+    /// # use dualis_core::conserved::quantity;
+    /// let sim = Simulation::new(Schedule::Staggered)
+    ///     .conservation_tolerance(1e-12)
+    ///     .conservation_tolerance_for(quantity::MOMENTUM, 1e-6);
+    /// assert_eq!(sim.tolerances().for_quantity(quantity::ENERGY), 1e-12);
+    /// assert_eq!(sim.tolerances().for_quantity(quantity::MOMENTUM), 1e-6);
+    /// ```
+    pub fn conservation_tolerance_for(mut self, quantity: &'static str, tol: f64) -> Simulation {
+        self.conservation_tol = std::mem::take(&mut self.conservation_tol).with(quantity, tol);
+        self
+    }
+
+    /// What this simulation checks each quantity against.
+    pub fn tolerances(&self) -> &Tolerances {
+        &self.conservation_tol
     }
 
     /// How far the simulation has been advanced.
@@ -803,7 +832,7 @@ impl Simulation {
         self.bus.audit_transfers("bus", self.transfer_tol)?;
         let after = self.ledger();
         if !before.is_empty() || !after.is_empty() {
-            audit("simulation", &before, &after, self.conservation_tol)?;
+            audit_with("simulation", &before, &after, &self.conservation_tol)?;
         }
         self.t += dt;
         Ok(report)

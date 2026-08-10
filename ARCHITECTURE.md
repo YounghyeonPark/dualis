@@ -188,10 +188,12 @@ These are not style. Each one is what makes some part of the goal reachable.
 6. **A number in prose is a number under test.** This repository has shipped stale figures
    repeatedly; the ones that stopped recurring are the ones a test now checks.
 
-Rule 4 has a known limit worth stating here: **the tolerance is one number for the whole
-simulation.** Mix a molecular fluid at 5e-2 with a room at 1e-9 and the loose domain sets what the
-strict one is checked against. A platform of many domains will need per-domain or per-quantity
-tolerances, and that is a kernel change nobody has needed yet.
+Rule 4 has a known limit worth stating here, now half closed. The tolerance used to be one
+number for the whole simulation; it is now **one per quantity**, so momentum at `1e-6` and energy
+at `1e-9` can coexist. What is still one number is the comparison *across domains*: a molecular
+fluid at 5e-2 and a room at 1e-9 both hold `energy`, their ledgers are summed before the check,
+and the small one's leak hides inside the large one's total. See gap 5 below for why the fix is
+per-domain attribution and why that is harder than it looks.
 
 ---
 
@@ -249,8 +251,25 @@ tolerances, and that is a kernel change nobody has needed yet.
    than a stability limit. An iterative solve stopped at its iteration cap returns a field that is
    smooth, bounded and shaped exactly like an answer, so `step` refuses one that did not converge
    and the residual is a *reading* rather than an internal number.
-5. **Per-quantity tolerances**, when a scene mixes domains whose achievable accuracies differ by
-   orders of magnitude.
+5. **Per-quantity tolerances.** Done. `Tolerances` and `Simulation::conservation_tolerance_for`
+   give each conserved quantity its own number, with a default for the rest. A Barnes-Hut tree
+   gives up exact momentum by construction while energy in a rigid room is exact to `1e-15`, and
+   under one number either the momentum check refuses a correct run or the energy check stops
+   being able to see anything. Both failures are demonstrated in
+   `per_quantity_tolerances.rs` rather than asserted.
+
+   **The other half is not done, and it is the harder one.** Two domains holding the *same*
+   quantity to different accuracies — a molecular fluid under a thermostat and an acoustic room,
+   both `energy` — are still checked together, because the audit sums their ledgers before
+   comparing. A small domain's leak is invisible against a large domain's total whatever
+   tolerance is set.
+
+   That needs **per-domain attribution**: knowing that this domain's ledger changed by exactly
+   what it took from the bus minus what it published. The scheduler already visits domains one at
+   a time and could measure it. What makes it hard is that several existing ledgers are honest
+   approximations rather than exact books — `Room::startup_adjustment` is an `O(h²)` correction
+   the domain reports about itself — so the check would refuse correct domains until each one's
+   books were made exact. Worth doing, and worth doing deliberately.
 6. **A renderer with depth.** The analysis layer draws with painter's algorithm on a 2D canvas.
    Real 3D content deserves real depth buffering — but content first: a better renderer of four
    points is still four points.

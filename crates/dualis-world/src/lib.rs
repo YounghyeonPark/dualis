@@ -70,6 +70,19 @@ pub struct Scene {
     /// dissipative boundary legitimately drifts where a closed one does not.
     #[serde(default = "default_tolerance")]
     pub conservation_tolerance: f64,
+    /// Per-quantity overrides, by channel name — `"energy"`, `"momentum"`, `"mass"`, `"charge"`,
+    /// `"photons"`.
+    ///
+    /// The default above applies to everything not named here. A scene mixing schemes of
+    /// different achievable accuracy needs this: a Barnes-Hut tree gives up exact momentum by
+    /// construction while energy in a rigid room is exact to `1e-15`, and under one number either
+    /// the momentum check refuses a correct run or the energy check stops seeing anything.
+    ///
+    /// A name this format does not know is **refused**, not ignored. A typo here would silently
+    /// leave a quantity at the default — which is the shape of failure that turns an audit off,
+    /// and this format has been bitten by exactly that once already with `aluminum`.
+    #[serde(default)]
+    pub tolerance_for: std::collections::BTreeMap<String, f64>,
 }
 
 fn default_tolerance() -> f64 {
@@ -979,6 +992,24 @@ impl World {
             ScheduleSpec::Multirate => Schedule::Multirate,
         })
         .conservation_tolerance(scene.conservation_tolerance);
+        for (name, tol) in &scene.tolerance_for {
+            // Matched against the kernel's constants rather than passed through, because
+            // `Tolerances::with` takes `&'static str` on purpose: two spellings of one channel are
+            // two channels, and a scene file is exactly where a second spelling comes from.
+            let channel = match name.as_str() {
+                "energy" => quantity::ENERGY,
+                "momentum" => quantity::MOMENTUM,
+                "mass" => quantity::MASS,
+                "charge" => quantity::CHARGE,
+                "photons" => quantity::PHOTONS,
+                other => {
+                    return Err(format!(
+                        "tolerance_for names an unknown quantity {other:?}; known:                          energy, momentum, mass, charge, photons"
+                    ))
+                }
+            };
+            sim = sim.conservation_tolerance_for(channel, *tol);
+        }
 
         // Two domains under one name is a scene that cannot describe a simulation, which is
         // what this function is for. `Simulation::domain` takes the *first* match, so without

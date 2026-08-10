@@ -227,7 +227,105 @@ impl std::error::Error for Violation {}
 /// Quantities present in only one of the two are treated as having been zero in
 /// the other, so a process that starts reporting momentum halfway through gets
 /// caught rather than excused.
+/// What each conserved quantity is allowed to drift by, relatively, across a step.
+///
+/// # Why this is not one number
+///
+/// It was, and the reason it stopped being is worth stating: **the loosest quantity in a
+/// simulation was setting what every other one was checked against.** A Barnes-Hut N-body gives
+/// up exact momentum by construction — each body sees its own approximation of the rest, so their
+/// mutual forces no longer cancel — and the drift is a knob set by the opening angle, worth
+/// perhaps `1e-6`. Energy in a rigid room is exact to `1e-15`. Run both in one simulation under a
+/// single number and either the momentum check refuses a correct run or the energy check stops
+/// being able to see anything.
+///
+/// A quantity's achievable accuracy is a property of the *scheme* that carries it, and different
+/// quantities in one simulation are carried by different schemes. So it is a number per quantity,
+/// with a default for the ones nobody has thought about.
+///
+/// # What this does not fix
+///
+/// Two domains holding the **same** quantity to different accuracies. A molecular fluid under a
+/// thermostat and an acoustic room both hold `energy`, and the audit sums their ledgers before
+/// comparing — so a small domain's leak is invisible against a large domain's total, whatever
+/// tolerance is set. That needs per-domain attribution rather than a per-quantity number, and it
+/// is a different and harder change: it requires knowing which domain took what from the bus.
+/// Recorded in `ARCHITECTURE.md` rather than half-done here.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tolerances {
+    default: f64,
+    /// Sorted, so iteration order is fixed and a violation's message does not depend on
+    /// insertion order. A `HashMap` here would be a determinism bug.
+    per_quantity: BTreeMap<&'static str, f64>,
+}
+
+impl Tolerances {
+    /// The same number for every quantity — what a simulation has until it says otherwise.
+    pub fn uniform(tol: f64) -> Tolerances {
+        Tolerances {
+            default: tol,
+            per_quantity: BTreeMap::new(),
+        }
+    }
+
+    /// Override one quantity.
+    ///
+    /// Takes `&'static str` because a quantity name is a compile-time fact — `quantity::ENERGY`
+    /// — and not something read from a file. Two spellings of the same channel are two channels,
+    /// which is a mistake worth making impossible rather than catching.
+    pub fn with(mut self, quantity: &'static str, tol: f64) -> Tolerances {
+        self.per_quantity.insert(quantity, tol);
+        self
+    }
+
+    /// What applies to this quantity.
+    pub fn for_quantity(&self, quantity: &str) -> f64 {
+        self.per_quantity
+            .get(quantity)
+            .copied()
+            .unwrap_or(self.default)
+    }
+
+    /// What applies to a quantity nobody has named.
+    pub fn default_tolerance(&self) -> f64 {
+        self.default
+    }
+
+    /// Every override, in name order.
+    ///
+    /// Public so a report can say what a run was actually checked against. A tolerance nobody can
+    /// read is a tolerance nobody can question.
+    pub fn overrides(&self) -> impl Iterator<Item = (&'static str, f64)> + '_ {
+        self.per_quantity.iter().map(|(k, v)| (*k, *v))
+    }
+}
+
+impl Default for Tolerances {
+    /// `1e-9` everywhere, which is what a single-number simulation used to default to.
+    fn default() -> Tolerances {
+        Tolerances::uniform(1e-9)
+    }
+}
+
+/// Audit with one tolerance for every quantity.
+///
+/// The uniform case, kept because most simulations are one and because changing this signature
+/// would break every caller for the sake of an argument they would pass a constant to.
 pub fn audit(site: &str, before: &Ledger, after: &Ledger, rel_tol: f64) -> Result<(), Violation> {
+    audit_with(site, before, after, &Tolerances::uniform(rel_tol))
+}
+
+/// Audit with a tolerance per quantity.
+///
+/// Identical to [`audit`] except for where the tolerance comes from — and the [`Violation`] it
+/// produces carries the tolerance that actually applied, so a reader is never left working out
+/// which number a failure was measured against.
+pub fn audit_with(
+    site: &str,
+    before: &Ledger,
+    after: &Ledger,
+    tolerances: &Tolerances,
+) -> Result<(), Violation> {
     let mut names: Vec<&'static str> = before.0.keys().copied().collect();
     for name in after.0.keys() {
         if !before.0.contains_key(name) {
@@ -249,6 +347,7 @@ pub fn audit(site: &str, before: &Ledger, after: &Ledger, rel_tol: f64) -> Resul
         if scale < 1e-300 {
             continue;
         }
+        let rel_tol = tolerances.for_quantity(name);
         if (a - b).abs() / scale > rel_tol {
             return Err(Violation {
                 quantity: name.to_string(),

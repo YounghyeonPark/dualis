@@ -28,6 +28,24 @@ messages carry the full account.
   continuum: that discrete rate approaches `α·π²/L²` at second order, checked as a *rate*, since
   a first-order scheme also converges.
 
+- **`Tolerances`** in `dualis-core`, and `Simulation::conservation_tolerance_for`: a relative
+  tolerance **per conserved quantity** rather than one for the whole simulation.
+
+  The failure it closes, demonstrated in `per_quantity_tolerances.rs` in both directions: a
+  Barnes-Hut tree gives up exact momentum by construction, so at `1e-9` a correct run is refused;
+  loosen to `1e-6` and a real energy leak passes. A quantity's achievable accuracy is a property
+  of the scheme carrying it, and different quantities in one simulation are carried by different
+  schemes.
+
+  `audit_with` is the per-quantity form; `audit` keeps its signature and delegates, so no existing
+  caller changes. `Violation` now carries the tolerance that *actually applied* rather than the
+  default. A `BTreeMap` inside, because a violation's message must not depend on the order a
+  builder was called in.
+
+  A scene can set them too, as `tolerance_for`, and a channel name the kernel does not have is
+  **refused** rather than ignored — the same failure `aluminum` for `aluminium` produced in this
+  format once already, where one character turned off the check the library exists for.
+
 - **`Conductor`** in `dualis-electrical`: current as a field. `∇·(σ∇φ) = 0` solved by conjugate
   gradients on a block with two electrodes, `J = −σ∇φ` read off it, and the dissipation as
   `∫σ|∇φ|²dV`. **Nobody states a resistance** — it comes out of the shape.

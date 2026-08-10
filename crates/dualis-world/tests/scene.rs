@@ -1094,3 +1094,62 @@ fn a_hotter_lamp_leaves_more_heat_on_a_mirror_that_is_worse_in_the_blue() {
          {cool:.4} against {warm:.4}"
     );
 }
+
+/// **A scene can set a tolerance per quantity, and a typo in one is refused.**
+///
+/// The kernel gained `conservation_tolerance_for` because one number meant the loosest quantity in
+/// a simulation set what every other one was checked against. Reaching it from data is this
+/// crate's job, and the interesting half is the refusal: a channel name is matched against the
+/// kernel's constants rather than passed through, so a misspelling cannot quietly leave a quantity
+/// at the default.
+///
+/// That is the same failure `aluminum` for `aluminium` produced once already in this format — a
+/// one-character difference that turned off the check the library exists for.
+#[test]
+fn a_scene_can_set_a_tolerance_per_quantity() {
+    let text = r#"{
+      "title": "per quantity", "duration_s": 0.01, "frames": 2,
+      "conservation_tolerance": 1e-9,
+      "tolerance_for": { "momentum": 1e-6, "photons": 0.5 },
+      "domains": [
+        { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1,
+          "cells_across": 21 }
+      ]
+    }"#;
+    let scene: Scene = serde_json::from_str(text).expect("it parses");
+    let world = World::build(scene).expect("it builds");
+    let tol = world.simulation().tolerances();
+
+    assert_eq!(tol.default_tolerance(), 1e-9);
+    assert_eq!(
+        tol.for_quantity("energy"),
+        1e-9,
+        "unnamed keeps the default"
+    );
+    assert_eq!(tol.for_quantity("momentum"), 1e-6);
+    assert_eq!(tol.for_quantity("photons"), 0.5);
+
+    // A name the kernel does not have is refused, and the message says what is known.
+    let typo = text.replace("\"momentum\"", "\"momentom\"");
+    let scene: Scene = serde_json::from_str(&typo).expect("the JSON is still valid JSON");
+    let Err(err) = World::build(scene) else {
+        panic!("a misspelt channel must not be ignored");
+    };
+    assert!(
+        err.contains("momentom") && err.contains("momentum"),
+        "the refusal should name both what was written and what is known: {err}"
+    );
+
+    // And a scene that says nothing is unchanged — the feature costs nothing to ignore.
+    let plain = text.replace(
+        "\"tolerance_for\": { \"momentum\": 1e-6, \"photons\": 0.5 },",
+        "",
+    );
+    let scene: Scene = serde_json::from_str(&plain).expect("it parses");
+    let world = World::build(scene).expect("it builds");
+    assert_eq!(world.simulation().tolerances().overrides().count(), 0);
+    assert_eq!(
+        world.simulation().tolerances().for_quantity("momentum"),
+        1e-9
+    );
+}

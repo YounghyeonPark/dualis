@@ -140,7 +140,7 @@ pub mod transform;
 pub mod vector;
 
 pub use bodies::Bodies;
-pub use conserved::{audit, Conserves, Ledger, Violation};
+pub use conserved::{audit, audit_with, Conserves, Ledger, Tolerances, Violation};
 pub use ensemble::{Ensemble, Estimate};
 pub use field::{ScalarField, VectorField};
 pub use integrator::{velocity_verlet, Dynamics, Integrator, Newtonian, State};
