@@ -232,8 +232,12 @@ pub struct Camera {
     pub azimuth: f64,
     /// Elevation, radians, clamped to just under a right angle so the up vector never degenerates.
     pub elevation: f64,
-    /// Distance, in units of the framed box's longest side.
+    /// Distance, in units of the framed box's longest side. This is how strong the perspective
+    /// is; it is **not** the knob for how big the subject looks — see [`Camera::fit`].
     pub distance: f64,
+    /// Focal length, as a multiple of the default. One is the field of view the HTML report uses,
+    /// so the two open on the same picture; [`Camera::fit`] moves it to frame the subject.
+    pub scale: f64,
 }
 
 impl Default for Camera {
@@ -244,6 +248,7 @@ impl Default for Camera {
             azimuth: 0.7,
             elevation: 0.4,
             distance: 2.5,
+            scale: 1.0,
         }
     }
 }
@@ -259,6 +264,46 @@ impl Camera {
     /// the next county and left with a blank window and no way back.
     pub fn zoom(&mut self, factor: f64) {
         self.distance = (self.distance * factor).clamp(1.2, 9.0);
+    }
+
+    /// Project a world point into normalised device coordinates, with its depth.
+    ///
+    /// `x` and `y` run `-1..1` across the shorter side; `depth` grows away from the eye and is
+    /// what a renderer sorts or tests by. `aspect` is width over height.
+    /// Choose the focal length that makes the run's bounding box fill the frame.
+    ///
+    /// # Why this is the focal length and not the distance
+    ///
+    /// [`Framing`] normalises by the box's **longest** side, so a run that is tall and thin fills
+    /// the unit along one axis and a fraction of it along the other two. A fixed camera is
+    /// therefore a camera set up for a cube: a portafilter, 67 mm across and 118 mm tall, came out
+    /// at 15% of the frame height and 0.29% of its pixels.
+    ///
+    /// Backing *in* to fix that does not work. At this field of view a subject one unit across
+    /// fills the frame at a distance of about 0.35, which is inside its own bounding box — the
+    /// eye ends up between the near and far faces, [`Camera::project`]'s depth clamp starts firing
+    /// and the near geometry stretches across the window. Distance is the wrong knob; it sets how
+    /// strong the perspective is, and here that was never the problem.
+    ///
+    /// So this sets the focal length, and the projection is **linear** in it. One pass gives the
+    /// exact answer, with no iteration and no convergence test to get wrong.
+    ///
+    /// `fill` is where the furthest corner should land, with 1.0 the edge of the shorter side.
+    pub fn fit(&mut self, bounds: [f64; 6], frame: &Framing, aspect: f64, fill: f64) {
+        self.scale = 1.0;
+        let mut worst: f64 = 0.0;
+        for i in 0..8 {
+            let corner = [
+                if i & 1 == 0 { bounds[0] } else { bounds[3] },
+                if i & 2 == 0 { bounds[1] } else { bounds[4] },
+                if i & 4 == 0 { bounds[2] } else { bounds[5] },
+            ];
+            let q = self.project(corner, frame, aspect);
+            worst = worst.max(q.x.abs()).max(q.y.abs());
+        }
+        if worst > 0.0 {
+            self.scale = fill.clamp(0.05, 0.98) / worst;
+        }
     }
 
     /// Project a world point into normalised device coordinates, with its depth.
@@ -281,7 +326,7 @@ impl Camera {
         // returning a huge coordinate instead of clamping is how a renderer draws a streak across
         // the window and calls it geometry.
         let d = (z2 + self.distance).max(0.05);
-        let f = 0.6 / d;
+        let f = 0.6 * self.scale / d;
         Projected {
             x: x1 * f / aspect.max(1e-6),
             y: y1 * f,
@@ -342,14 +387,32 @@ pub struct Segment {
     pub shade: f64,
 }
 
-/// Build the segments for one panel at one frame.
+/// Build the segments for one panel at one frame, shaded against `span`.
 ///
 /// Sorted **back to front**, so a renderer without a depth buffer still draws them in an order
 /// that reads. A renderer with one can ignore the order and lose nothing.
 ///
 /// Returns an empty list for a field, which is not a set of lines — a field view is a different
 /// pipeline and pretending otherwise here would produce a plausible picture of nothing.
-pub fn segments(panel: &Panel, camera: &Camera, framing: &Framing, aspect: f64) -> Vec<Segment> {
+///
+/// # `span` is the run's, not the frame's
+///
+/// It was the frame's, computed here from the values in hand, and that is the mistake
+/// [`Run::scale_of`] exists to prevent — a method this crate had, tested, and never called from
+/// the renderer. A scale that re-fits every frame makes a quantity look **constant while it
+/// changes by orders of magnitude**: water that leaves a shower screen clean and arrives at the
+/// spout at 83 kg/m³ renders mid-ramp the whole way down, because at every instant it is halfway
+/// between that instant's lightest and darkest.
+///
+/// Pass `run.scale_of(name)`. Passing a degenerate span is allowed and shades everything at the
+/// bottom of the ramp, which is the honest picture of a quantity that does not vary.
+pub fn segments(
+    panel: &Panel,
+    camera: &Camera,
+    framing: &Framing,
+    aspect: f64,
+    span: (f64, f64),
+) -> Vec<Segment> {
     let mut out = Vec::new();
     if let Panel::Paths {
         starts,
@@ -358,14 +421,15 @@ pub fn segments(panel: &Panel, camera: &Camera, framing: &Framing, aspect: f64) 
         ..
     } = panel
     {
-        let (lo, hi) = span_of(values);
+        let (lo, hi) = span;
+        let width = if hi > lo { hi - lo } else { 1.0 };
         for (k, start) in starts.iter().enumerate() {
             let from = *start as usize;
             let to = starts
                 .get(k + 1)
                 .map(|s| *s as usize)
                 .unwrap_or(vertices.len() / 3);
-            let shade = ((values.get(k).copied().unwrap_or(0.0) - lo) / (hi - lo)).clamp(0.0, 1.0);
+            let shade = ((values.get(k).copied().unwrap_or(0.0) - lo) / width).clamp(0.0, 1.0);
             for i in from..to.saturating_sub(1) {
                 let a = camera.project(vertex(vertices, i), framing, aspect);
                 let b = camera.project(vertex(vertices, i + 1), framing, aspect);
@@ -386,14 +450,4 @@ pub fn segments(panel: &Panel, camera: &Camera, framing: &Framing, aspect: f64) 
 
 fn vertex(flat: &[f64], i: usize) -> [f64; 3] {
     [flat[3 * i], flat[3 * i + 1], flat[3 * i + 2]]
-}
-
-fn span_of(values: &[f64]) -> (f64, f64) {
-    let lo = values.iter().copied().fold(f64::MAX, f64::min);
-    let hi = values.iter().copied().fold(f64::MIN, f64::max);
-    if hi > lo {
-        (lo, hi)
-    } else {
-        (lo, lo + 1.0)
-    }
 }

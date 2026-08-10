@@ -161,6 +161,7 @@ fn the_projection_behaves_like_one() {
         span: 1.0,
     };
     let camera = Camera {
+        scale: 1.0,
         azimuth: 0.0,
         elevation: 0.0,
         distance: 2.5,
@@ -208,7 +209,8 @@ fn a_traced_bench_becomes_line_segments() {
         .expect("paths");
     let framing = Framing::of(run.framing_of(panel.name()).unwrap());
     let camera = Camera::default();
-    let lines = segments(panel, &camera, &framing, 1.5);
+    let span = run.scale_of(panel.name()).expect("the bench is in the run");
+    let lines = segments(panel, &camera, &framing, 1.5, span);
 
     let Panel::Paths {
         starts, vertices, ..
@@ -243,7 +245,7 @@ fn a_traced_bench_becomes_line_segments() {
         .iter()
         .find(|p| matches!(p, Panel::Field { .. }))
         .unwrap();
-    assert!(segments(field, &camera, &framing, 1.5).is_empty());
+    assert!(segments(field, &camera, &framing, 1.5, (0.0, 1.0)).is_empty());
 }
 
 /// **A kind the reader does not know is refused, not skipped.**
@@ -298,4 +300,109 @@ fn the_camera_cannot_be_driven_off_the_end() {
     };
     let p: Projected = c.project([0.5, 0.5, 0.5], &framing, 1.6);
     assert!(p.x.is_finite() && p.y.is_finite() && p.depth > 0.0);
+}
+
+/// **The shading is measured against the run, not against the frame in hand.**
+///
+/// The failure this prevents is the one `report.rs` documents from the other side: a scale that
+/// re-fits every frame makes a quantity look constant while it changes by orders of magnitude.
+/// A parcel of water that leaves a shower screen clean and reaches the spout loaded would render
+/// mid-ramp the whole way, because at every instant it sits halfway between that instant's
+/// lightest and darkest.
+///
+/// `Run::scale_of` existed for this and was tested, and the renderer did not call it. So this
+/// checks the consumption rather than the accessor: **the same value in two frames whose local
+/// ranges differ must come out the same shade.**
+#[test]
+fn the_shading_uses_the_runs_scale_and_not_the_frames() {
+    let run = load("bench.json");
+    let name = run.frames[0]
+        .panels
+        .iter()
+        .find(|p| matches!(p, Panel::Paths { .. }))
+        .expect("paths")
+        .name()
+        .to_string();
+    let span = run.scale_of(&name).expect("the panel is in the run");
+    let camera = Camera::default();
+    let framing = Framing::of(run.framing_of(&name).expect("bounds"));
+
+    // A value at the bottom of the run's range shades to 0 wherever it appears.
+    let panel = &run.frames[0]
+        .panels
+        .iter()
+        .find(|p| p.name() == name)
+        .expect("panel");
+    let wide = segments(panel, &camera, &framing, 1.5, span);
+    assert!(!wide.is_empty(), "the bench traces to line segments");
+
+    // The same panel against a span ten times wider must shade everything *lower*, which is only
+    // true if the span is doing the work rather than the panel's own values.
+    let stretched = (span.0, span.0 + (span.1 - span.0) * 10.0);
+    let narrow = segments(panel, &camera, &framing, 1.5, stretched);
+    let (a, b) = (
+        wide.iter().map(|s| s.shade).fold(0.0f64, f64::max),
+        narrow.iter().map(|s| s.shade).fold(0.0f64, f64::max),
+    );
+    println!("  brightest against the run {a:.4}, against a 10x span {b:.4}");
+    assert!(
+        b < a * 0.2 + 1e-9,
+        "a ten-times-wider span must darken everything: {b:.4} against {a:.4}"
+    );
+
+    // A degenerate span is allowed and puts everything at the bottom rather than dividing by zero.
+    let flat = segments(panel, &camera, &framing, 1.5, (1.0, 1.0));
+    assert!(
+        flat.iter().all(|s| s.shade.is_finite()),
+        "a run with one value must not produce NaN shades"
+    );
+}
+
+/// **A tall thin run and a cubic one both fill the frame.**
+///
+/// `Framing` normalises by the longest side, so a fixed camera distance is a distance chosen for
+/// a cube: a portafilter at 67 mm across and 118 mm tall rendered at 15% of the frame height. In
+/// a window that is a scroll away from fixed. In `--snapshot` it is not, and a snapshot of a
+/// subject at a tenth of the frame is a weak check as much as a poor picture.
+///
+/// So the check is on the *fit*, at three quite different shapes, and it is two-sided: too small
+/// wastes the frame and too large runs off it.
+#[test]
+fn the_camera_frames_whatever_shape_the_run_is() {
+    for (label, bounds) in [
+        ("a cube", [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0]),
+        (
+            "a portafilter",
+            [-0.0335, -0.115, -0.0335, 0.0335, 0.003, 0.0335],
+        ),
+        ("a plate", [-1.0, -0.02, -1.0, 1.0, 0.02, 1.0]),
+    ] {
+        let framing = Framing::of(bounds);
+        let mut camera = Camera::default();
+        camera.fit(bounds, &framing, 16.0 / 9.0, 0.85);
+
+        let mut worst: f64 = 0.0;
+        for i in 0..8 {
+            let c = [
+                if i & 1 == 0 { bounds[0] } else { bounds[3] },
+                if i & 2 == 0 { bounds[1] } else { bounds[4] },
+                if i & 4 == 0 { bounds[2] } else { bounds[5] },
+            ];
+            let q = camera.project(c, &framing, 16.0 / 9.0);
+            worst = worst.max(q.x.abs()).max(q.y.abs());
+            assert!(
+                q.depth > 0.05,
+                "{label}: the camera must stay outside the subject, depth {:.4}",
+                q.depth
+            );
+        }
+        println!(
+            "  {label:<14} focal {:.3}, furthest corner at {worst:.3}",
+            camera.scale
+        );
+        assert!(
+            (0.75..0.95).contains(&worst),
+            "{label}: the box should nearly fill the frame, furthest corner at {worst:.3}"
+        );
+    }
 }

@@ -14,6 +14,40 @@ messages carry the full account.
 
 ### Added
 
+- **The native viewer opens the espresso run, and two things `runtime/viewer`'s README already
+  claimed turned out not to be true of its renderer.**
+
+  `portafilter_flow flow.json` writes the wire format, and `runtime/viewer` reads it — that viewer
+  does not link `dualis` at all, so a run that opens there is the format demonstrating it carries
+  enough to draw a run. It did, unchanged.
+
+  What it drew was wrong in two ways, both found by pointing it at a run shaped unlike the
+  fixtures: tall, thin, and spanning two orders of magnitude in value.
+
+  **The colour scale was per frame.** `Run::scale_of` computes the range over the whole run, is
+  documented as the thing that stops a decay looking like a steady state, is tested — and
+  **nothing called it**. `segments` measured the values it had in hand. Water leaving a screen
+  clean and arriving at a spout at 83 kg/m³ therefore rendered mid-ramp the whole way down. The
+  new test checks the *consumption* rather than the accessor, which is the difference that let
+  this survive.
+
+  **The camera was set up for a cube.** `Framing` normalises by the longest side, so a tall thin
+  run fills one axis and a fraction of the others: the portafilter came out at 15% of the frame
+  height and 0.29% of its pixels. Backing in does not fix it — at this field of view a unit
+  subject fills the frame at a distance of 0.35, inside its own bounding box. Distance sets how
+  strong the perspective is and that was never the problem. `Camera::fit` sets the **focal
+  length**, the projection is linear in it, and one pass is exact. 0.29% to 2.52%, with a cube, a
+  plate and a portafilter all landing their furthest corner at 0.850 of the half-frame.
+
+  `--snapshot` takes `--frame N` now, because a run that fills up over its length has nothing in
+  it at `t = 0` and a snapshot of that still counts as "the renderer works".
+
+- **The stream out of the spout is drawn as a stream.** A parcel falls the 75 mm from basket to cup
+  in 0.12 s against a 0.7 s frame, so sampling parcels there caught roughly none: the first version
+  drew the basket beautifully and had nothing between the spout and the cup. What is there is a
+  continuous jet, coloured by the concentration leaving the basket — the domain's number, not the
+  parcels'.
+
 - **`portafilter_flow`**, which is the picture the domain was built to be able to draw: a shower
   screen, a basket, a body and a spout, with parcels of water leaving the screen, working down
   through the grounds and coming out the bottom darker than they went in.

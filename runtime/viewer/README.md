@@ -3,7 +3,8 @@
 ```sh
 cd runtime/viewer
 cargo run --release -- ../../out.json                       # a window
-cargo run --release -- ../../out.json --snapshot out.ppm    # one frame, no window
+cargo run --release -- ../../out.json --snapshot out.ppm             # one frame, no window
+cargo run --release -- ../../out.json --snapshot out.ppm --frame 30  # a frame worth looking at
 ```
 
 Drag to rotate, scroll to zoom, space to play, left and right to scrub.
@@ -47,7 +48,31 @@ twice:
   a steady state;
 - **one framing across the whole run** — otherwise a moving body looks still and the camera moves;
 - **the projection**, including the clamp that stops a point behind the eye becoming a streak
-  across the window.
+  across the window;
+- **the fit** — the focal length that puts the run's bounding box in the frame.
+
+## Two things this file already claimed and the renderer did not do
+
+Both found by pointing it at a run shaped unlike the fixtures — `portafilter_flow`, which is tall,
+thin, and spans two orders of magnitude in value from the shower screen to the spout.
+
+**The colour scale was per frame.** `Run::scale_of` computes the range over the whole run, was
+tested, and **nothing called it**: `segments` measured the values it had in hand. So water leaving
+a screen clean and arriving at a spout at 83 kg/m³ rendered mid-ramp the whole way down, because
+at every instant it sat halfway between that instant's lightest and darkest — the exact failure
+the bullet above says this crate exists to prevent. `segments` takes the span now, and
+`the_shading_uses_the_runs_scale_and_not_the_frames` checks the *consumption* rather than the
+accessor.
+
+**The camera was set up for a cube.** `Framing` normalises by the longest side, so a tall thin run
+fills one axis and a fraction of the others; at a fixed distance the portafilter came out at 15% of
+the frame height and **0.29% of its pixels**. Backing in does not fix it — at this field of view a
+unit subject fills the frame at a distance of 0.35, which is inside its own bounding box. Distance
+is the wrong knob; it sets how strong the perspective is, and that was never the problem.
+
+`Camera::fit` sets the **focal length**, and the projection is linear in it, so one pass is exact
+and there is no convergence test to get wrong. The same portafilter now covers 2.5%, and a cube, a
+plate and a portafilter all land their furthest corner at 0.850 of the half-frame.
 
 Seven tests, against the real fixtures. `viewer` is then a surface, a line pipeline and an event
 loop, and draws only what it is handed.

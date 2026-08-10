@@ -4,6 +4,8 @@
 //! cargo run --release --example portafilter_flow                # the numbers
 //! cargo run --release --example portafilter_flow flow.html      # and the machine, turning
 //! cargo run --release --example portafilter_flow flow.gltf      # or into Blender
+//! cargo run --release --example portafilter_flow flow.json      # or the native window:
+//! #   cd runtime/viewer && cargo run --release -- ../../flow.json
 //! ```
 //!
 //! `espresso_shot` cuts the puck open and colours the inside. This one does the other thing: it
@@ -31,11 +33,22 @@
 //! | --- | --- |
 //! | inside the basket | **solved.** Darcy, advection, dissolution |
 //! | the headspace above the puck | drawn. A full plenum, so the mean speed is the superficial velocity — right, and not interesting |
-//! | below the basket floor | drawn. A free jet under gravity converging on the spout |
+//! | below the basket floor | drawn. A continuous jet — see below |
 //! | the hardware | drawn. Geometry, no physics |
 //!
 //! The two baskets differ only in the ring against the wall — 0.60 against 0.45 — and everything
 //! you can see between them follows from that one number.
+//!
+//! # The stream out of the spout is a stream, not parcels
+//!
+//! A parcel falls the 75 mm from the basket to the cup in about 0.12 s, and a frame is 0.7 s
+//! apart, so sampling parcels there catches roughly none of them: the first version drew the
+//! basket beautifully and had nothing at all between the spout and the cup.
+//!
+//! What is physically there is a **continuous jet**, so that is what is drawn — strands from the
+//! spout to the cup, coloured by the concentration leaving the basket at that instant. It carries
+//! the outlet's real number and none of its own; a parcel is a sample of something discrete, and
+//! a stream is not discrete.
 //!
 //! # Read the two side by side as *equal time*, not equal weight
 //!
@@ -64,9 +77,12 @@ const GAP_POROSITY: f64 = 0.60;
 /// Headspace between the screen and the bed.
 const HEADSPACE: f64 = 3e-3;
 /// How many parcels are in flight at once.
-const PARCELS: usize = 200;
+const PARCELS: usize = 160;
 /// How many positions of its own history a parcel draws behind it.
-const TRAIL: usize = 5;
+///
+/// Eight frames at the pore velocity is about 7 mm, which reads as a streak on a 20 mm bed. Five
+/// was 4 mm and read as a tick.
+const TRAIL: usize = 8;
 /// Frames in the animation, and how far apart.
 const FRAMES: usize = 36;
 const FRAME_S: f64 = 0.7;
@@ -336,20 +352,51 @@ fn main() {
                         .collect(),
                 });
             }
-            println!(
-                "\n  {FRAMES} frames of two baskets, {:.1} s apart. Drag to rotate, scroll to zoom.",
-                FRAME_S
-            );
-            common::write(
-                &path,
-                &report::html("A portafilter, and the water through it", &frames),
-            );
+            let title = "A portafilter, and the water through it";
+            if path.ends_with(".json") {
+                // The wire format, and `runtime/viewer` reads it. That viewer does not link this
+                // library at all — it takes the file and nothing else — so a run that opens in
+                // the native window is the format demonstrating it carries enough to draw a run.
+                println!("\n  {FRAMES} frames. Open it in the native window:");
+                println!("    cd runtime/viewer && cargo run --release -- ../../{path}");
+                common::write(&path, &dualis_view::to_json(title, &frames));
+            } else {
+                println!(
+                    "\n  {FRAMES} frames of two baskets, {:.1} s apart. Drag to rotate, scroll \
+                     to zoom.",
+                    FRAME_S
+                );
+                common::write(&path, &report::html(title, &frames));
+            }
         }
         None => println!(
             "\n  Pass a filename for the machine:\n    cargo run --release --example \
              portafilter_flow flow.html\n    cargo run --release --example portafilter_flow \
-             flow.gltf"
+             flow.gltf\n    cargo run --release --example portafilter_flow flow.json"
         ),
+    }
+}
+
+/// The concentration of what is leaving the basket, weighted by where it leaves.
+///
+/// The domain's own outlet, not an average over the parcels near it: the parcels are a sample and
+/// this is the quantity the yield is computed from.
+fn outlet_concentration(puck: &Puck) -> f64 {
+    let (mut num, mut den) = (0.0, 0.0);
+    for k in 0..NZ {
+        for i in 0..NX {
+            if !puck.is_packed(i, NY - 1, k) {
+                continue;
+            }
+            let q = puck.pore_velocity_at(i, NY - 1, k).y.max(0.0);
+            num += q * puck.concentration_at(i, NY - 1, k).to_si();
+            den += q;
+        }
+    }
+    if den > 0.0 {
+        num / den
+    } else {
+        0.0
     }
 }
 
@@ -500,11 +547,32 @@ fn trace(puck: &mut Puck, seed: u64) -> Traced {
         let mut runs: Vec<Vec<[f64; 3]>> = hardware.0.clone();
         let mut values: Vec<f64> = hardware.1.clone();
         for p in parcels.iter() {
-            if p.trail.len() < 2 {
+            if p.trail.len() < 2 || p.phase == Phase::Jet {
                 continue;
             }
             runs.push(p.trail.iter().map(|q| draw(*q)).collect());
             values.push(p.load);
+        }
+        // The jet, once anything has come through. Drawn as a stream because it is one — see the
+        // module docs. Its colour is the flow-weighted concentration leaving the basket, which is
+        // the domain's number and not the parcels'.
+        if done.len() + parcels.iter().filter(|q| q.phase == Phase::Jet).count() > 0 {
+            let out = outlet_concentration(puck);
+            for strand in 0..3 {
+                let a = std::f64::consts::TAU * strand as f64 / 3.0;
+                let (wx, wz) = (1.1e-3 * a.cos(), 1.1e-3 * a.sin());
+                runs.push(
+                    (0..=10)
+                        .map(|n| {
+                            // Narrowing as it falls, the way a jet does once gravity has it.
+                            let u = n as f64 / 10.0;
+                            let taper = 1.0 - 0.55 * u;
+                            [wx * taper, -(depth + 0.044 + u * 0.051), wz * taper]
+                        })
+                        .collect(),
+                );
+                values.push(out);
+            }
         }
         frames.push(Frame {
             time_s: t,

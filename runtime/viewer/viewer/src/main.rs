@@ -125,7 +125,20 @@ fn main() {
     let mut args = std::env::args().skip(2);
     if args.next().as_deref() == Some("--snapshot") {
         let out = args.next().unwrap_or_else(|| "snapshot.ppm".into());
-        let app = App::new(run, panel);
+        // Which frame, because the first one is often the least interesting: a run that fills up
+        // over its length — a shot, a spreading spot — has nothing in it at `t = 0`, and a
+        // snapshot of that is a picture of an empty box that still counts as "the renderer works".
+        let at: usize = match args.next().as_deref() {
+            Some("--frame") => args
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0)
+                .min(run.frames.len().saturating_sub(1)),
+            _ => 0,
+        };
+        let mut app = App::new(run, panel);
+        app.frame = at;
+        println!("  snapshot of frame {at} of {}", app.run.frames.len());
         match app.snapshot(1100, 720) {
             Ok(pixels) => {
                 write_ppm(&out, 1100, 720, &pixels);
@@ -177,6 +190,8 @@ struct App {
     panel: String,
     framing: Framing,
     camera: Camera,
+    /// The run-wide range the shading is measured against.
+    span: (f64, f64),
     frame: usize,
     playing: bool,
     dragging: Option<(f64, f64)>,
@@ -198,11 +213,25 @@ impl App {
             run.framing_of(&panel)
                 .unwrap_or([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0]),
         );
+        // Once, from the whole run. Re-fitting it per frame is what `Run::scale_of` exists to
+        // stop, and for a while nothing called it.
+        let span = run.scale_of(&panel).unwrap_or((0.0, 1.0));
+        // Framed to what is actually there. The window can still be zoomed; `--snapshot` cannot,
+        // and a fixed distance is a distance chosen for a cube.
+        let mut camera = Camera::default();
+        camera.fit(
+            run.framing_of(&panel)
+                .unwrap_or([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0]),
+            &framing,
+            16.0 / 9.0,
+            0.85,
+        );
         App {
             run,
             panel,
             framing,
-            camera: Camera::default(),
+            span,
+            camera,
             frame: 0,
             playing: true,
             dragging: None,
@@ -221,7 +250,7 @@ impl App {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for s in segments(panel, &self.camera, &self.framing, aspect) {
+        for s in segments(panel, &self.camera, &self.framing, aspect, self.span) {
             let colour = ramp(s.shade);
             out.push(Vertex {
                 position: [s.from.x as f32, s.from.y as f32],
