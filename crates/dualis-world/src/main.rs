@@ -179,6 +179,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         page.len()
                     );
                 }
+                "gltf" => {
+                    // The last frame, because glTF is geometry and not an animation: it moves
+                    // node transforms and morph targets, and a field whose values change is
+                    // neither. The frames themselves are what `.json` is for.
+                    let Some(last) = frames.last() else {
+                        eprintln!(
+                            "
+nothing to export: the run produced no frames"
+                        );
+                        std::process::exit(1);
+                    };
+                    let out = dualis::view::gltf(world.scene().title.as_str(), last);
+                    for note in &out.skipped {
+                        println!("  not exported: {note}");
+                    }
+                    if out.document.contains("\"nodes\":[]") {
+                        eprintln!(
+                            "\nnothing in this scene is geometry, so the file would open \
+                             empty. Try .html or .csv."
+                        );
+                        std::process::exit(1);
+                    }
+                    std::fs::write(path, &out.document)?;
+                    println!(
+                        "  wrote {path} ({} bytes, geometry for Blender, three.js or a USD tool)",
+                        out.document.len()
+                    );
+                }
                 "json" => {
                     let json = to_json(world.scene().title.as_str(), &frames);
                     std::fs::write(path, &json)?;
@@ -191,13 +219,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 other => {
                     eprintln!(
                         "\ndon't know how to write {other:?}. Known: .svg a filmstrip, \
-                         .csv every domain's scalars over time, .json the frames themselves."
+                         .csv every domain's scalars over time, .json the frames themselves,                          .gltf the geometry."
                     );
                     std::process::exit(1);
                 }
             }
         }
-        None => println!("  name an output file: .svg, .csv or .json"),
+        None => println!("  name an output file: .html, .svg, .csv, .json or .gltf"),
     }
     Ok(())
 }

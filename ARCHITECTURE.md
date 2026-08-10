@@ -289,6 +289,31 @@ Each is a crate on the kernel. None is a change to the layers.
 
 ---
 
+## Rendering, and the decision not to compete on it
+
+RTX rendering, GPU physics, USD and an interactive editor were asked about directly. Three of the
+four are additive and only heavy; the fourth is not.
+
+**GPU physics conflicts with rule 5.** Atomics and warp scheduling reorder floating-point
+reductions, and addition is not associative — so bit-for-bit across platforms, which
+`rng::tests::the_stream_is_pinned` holds to a digest, would be given up. There is a way through
+and this workspace has already used it once: `Ensemble` folds in fixed-size blocks so the answer
+does not depend on the thread count, and the same discipline works on a GPU. The rule it would
+need is that **the CPU domain is the reference and the GPU is an accelerator**, with a test that
+the two agree to a stated tolerance and the CPU as arbiter.
+
+The other three belong **above the layers**, in workspaces of their own, for the reason
+`bindings/python` already established. Measured: the library resolves 12 external crates, the
+python bindings 15, and a wgpu stack **86**. `runtime/viewer` is the first of those.
+
+And on the rest, the recommendation is not to build them. Omniverse and Isaac Sim exist and are
+enormous; what this workspace has that they do not is physics that is audited, deterministic and
+checked against closed forms. So the move is to be *reachable from* them — `dualis_view::gltf`
+does that in a few hundred lines and no dependency, and reaches Blender, three.js and every USD
+pipeline. A USD writer is the next rung, and only worth it if the readers really are Omniverse.
+
+---
+
 ## How to judge a proposed change
 
 Against the property at the top. A change is good if a new physics still costs one crate and

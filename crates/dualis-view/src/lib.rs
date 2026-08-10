@@ -45,8 +45,10 @@
 
 pub mod data;
 pub mod filmstrip;
+pub mod gltf;
 pub mod report;
 
 pub use data::{readings_csv, to_json};
 pub use filmstrip::svg;
+pub use gltf::{gltf, Exported};
 pub use report::html;

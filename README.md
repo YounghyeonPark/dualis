@@ -24,7 +24,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 473 tests, all against closed forms
+cargo test --workspace                       # 480 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are ten of those; three more
@@ -84,7 +84,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature, and a **field** formulation where `I²R` is solved out of a shape rather than stated |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
-| `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV and JSON. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
+| `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV, JSON, and **glTF** so Blender, three.js and USD tools can open a result. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
 | `dualis` | A facade over the other ten, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `dualis`, so the wire format being sufficient is demonstrated rather than claimed |

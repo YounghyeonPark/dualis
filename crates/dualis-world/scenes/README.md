@@ -19,6 +19,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.svg` | A filmstrip: every frame on one page, one colour scale throughout so frames compare |
 | `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
+| `out.gltf` | The geometry of the last frame, for Blender, three.js, Omniverse or any USD tool |
 
 `.csv` is the one that reaches the domains a picture cannot. Eight of these seventeen scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
@@ -41,6 +42,15 @@ picture of a simulation must never do.
 simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` takes the frames
 `dualis_scene::capture` produces, and everything the table above describes is available to any
 program without going near a scene file.
+
+`.gltf` is the one that leaves this workspace. Eight of the seventeen scenes have geometry to
+export — bodies, ray paths, a 3D field as its cell centres — and the other nine are **refused with
+a reason** rather than written as an empty scene: a 1D or 2D field is a graph, not something to put
+in a 3D viewer, and the message says which panel and why.
+
+The recommendation on record is to export into the rendering tools rather than rebuild them. This
+is that, and it cost no dependency: glTF is JSON with the binary base64'd inside it, which is the
+same reason SVG was chosen over a raster format.
 
 Nothing generated is committed.
 

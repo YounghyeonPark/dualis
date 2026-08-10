@@ -315,6 +315,15 @@ fn main() {
         let frames = std::slice::from_ref(&frame);
         let asset = if path.ends_with(".json") {
             dualis::view::to_json("optical bench", frames)
+        } else if path.ends_with(".gltf") {
+            // Into somebody else's renderer: Blender, three.js, Omniverse, a USD pipeline. The
+            // geometry is one frame, because glTF animates node transforms and morph targets and
+            // a retraced ray bundle is neither.
+            let out = dualis::view::gltf("optical bench", &frame);
+            for note in &out.skipped {
+                println!("  not exported: {note}");
+            }
+            out.document
         } else {
             dualis::view::html("optical bench", frames)
         };

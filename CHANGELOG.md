@@ -14,6 +14,38 @@ messages carry the full account.
 
 ### Added
 
+- **`dualis_view::gltf`**: a frame as glTF 2.0, so Blender, three.js, Omniverse, a USD pipeline
+  or macOS Quick Look can open a result. **No new dependency** — glTF is JSON with the binary
+  base64'd into a `data:` URI, and this crate already writes JSON by hand, so `dualis-view` still
+  depends on exactly one thing and it is `dualis-scene`.
+
+  Paths become `LINES`, points and 3D fields become `POINTS`, and a 1D or 2D field becomes
+  **nothing, reported**: a line of samples is a graph, not something to put in a 3D viewer, and
+  `Exported::skipped` says which panel and why. Eight of the seventeen shipped scenes export
+  geometry; the other nine are refused with a reason rather than written as an empty file.
+
+  One frame, not the run. glTF animates node transforms and morph targets — a thing moving or a
+  mesh deforming between fixed vertex counts — and a field whose values change is neither.
+  Encoding a run as an animation would mean choosing a lie about what is moving.
+
+  Checked against what a loader enforces rather than against whether it looks plausible: buffer
+  length against the decoded blob, accessor counts against the geometry, indices read back out of
+  the bytes and range-checked, four-byte alignment on every view, `min`/`max` on every `POSITION`,
+  and the hand-written base64 against the RFC 4648 vectors.
+
+- **`runtime/viewer`**: a native wgpu window for a run — rotate, zoom, scrub — in **its own cargo
+  workspace**, excluded from the library's. Measured: the library resolves 12 external crates, the
+  python bindings 15, and this 86.
+
+  It does **not depend on `dualis`**. It reads the JSON a run wrote and nothing else, so "the wire
+  format carries enough to draw a run" is demonstrated rather than claimed.
+
+  `viewer-core` holds everything a renderer gets wrong the same way twice — one colour scale
+  across the run, one framing across the run, and a projection that clamps a point behind the eye
+  instead of turning it into a streak — with seven tests against real run files.
+  `--snapshot out.ppm` renders one frame headlessly, because a window nobody can photograph only
+  proves the program did not panic.
+
 - **`PanelData::Paths`** in `dualis-scene`, and a **`layout`** view in `dualis-view`: runs of
   connected points in space — a ray through a lens train, a trajectory, a field line — drawn
   rotatably and depth-sorted beside the field and body views.
