@@ -1,6 +1,8 @@
 # Working on dualis
 
-For *using* the library, read [AGENTS.md](AGENTS.md) — this file is about changing it.
+For *using* the library, read [AGENTS.md](AGENTS.md) — this file is about changing it. For where
+it is all going, read [ARCHITECTURE.md](ARCHITECTURE.md): three layers, the state of each, and the
+rules that make "add a physics" cost one crate.
 
 ## The gate, before any commit
 

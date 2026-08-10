@@ -29,6 +29,11 @@ cargo test --workspace                       # 395 tests, all against closed for
 Add `out.svg` to either example and it draws the result. There are six of them; the table
 is [further down](#examples).
 
+**The goal is to reproduce physical law in three dimensions**, in a structure that can accept
+physics nobody has written yet without the parts already written having to change.
+[ARCHITECTURE.md](ARCHITECTURE.md) is the map: the three layers, what is built, what is missing,
+and which rules cannot be broken without losing that property.
+
 > **Reading this as an AI agent, or in a hurry?** [AGENTS.md](AGENTS.md) is the whole API on
 > one page, and `cargo run --example agents_quickstart` is a runnable version of it —
 > including a deliberate 10% energy leak, so you can see what the audit says when a model is
