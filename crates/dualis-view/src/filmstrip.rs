@@ -61,15 +61,28 @@ pub fn svg(title: &str, frames: &[Frame], columns: usize) -> String {
             s.push_str(&draw(panel, x0, y0, cell, extent));
             s.push_str(&format!(
                 "<text x='{x0:.1}' y='{:.1}' font-family='sans-serif' font-size='9' \
-                 fill='#555'>{} t={:.4}s</text>\n",
+                 fill='#555'>{}{} t={:.4}s</text>\n",
                 y0 + cell + 11.0,
                 escape(&panel.name),
+                slice_note(panel),
                 frame.time_s
             ));
         }
     }
     s.push_str("</svg>\n");
     s
+}
+
+/// What to add to a panel's label when the picture is not the whole panel.
+///
+/// Empty for everything a flat canvas can show honestly. For a volume it names the slice and the
+/// count, so a reader is told they are looking at one plane of many rather than left to assume
+/// the block is flat — which a picture of a slice of a solid looks exactly like.
+fn slice_note(p: &Panel) -> String {
+    match p.data {
+        PanelData::Field { nz, .. } if nz > 1 => format!(" z-slice {}/{nz}", nz / 2 + 1),
+        _ => String::new(),
+    }
 }
 
 /// The most cells to draw along either axis of a thumbnail.
@@ -91,7 +104,14 @@ const LEVELS: i32 = 48;
 /// One panel, in whichever shape it came in.
 fn draw(p: &Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String {
     let body = match &p.data {
-        PanelData::Field { nx, ny, values } => raster(*nx, *ny, values, x0, y0, size, extent),
+        PanelData::Field { nx, ny, nz, values } => {
+            // A flat canvas cannot show a volume, so it shows the middle slice — and `svg` labels
+            // it, because a slice presented as the whole is the failure worth preventing rather
+            // than the compromise worth making. `to_json` carries every sample.
+            let k = nz / 2;
+            let plane = &values[k * nx * ny..(k + 1) * nx * ny];
+            raster(*nx, *ny, plane, x0, y0, size, extent)
+        }
         PanelData::Points {
             positions,
             values,

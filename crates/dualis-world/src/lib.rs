@@ -258,6 +258,33 @@ pub enum DomainSpec {
         #[serde(default)]
         exposes: Option<Boundary>,
     },
+    /// A three-dimensional conducting block.
+    ///
+    /// `dualis-thermal`'s `Solid3D`. The first domain in this format with a field that is
+    /// genuinely a volume, and the reason the capture layer grew a third axis: everything before
+    /// it was a line or a plane, so nothing had ever noticed that `Extent` could not describe a
+    /// solid.
+    ///
+    /// Cells are cubes of one spacing, so the block's *shape* is the three counts and its size
+    /// is `counts × cell_mm`. That is the domain's own restriction and the format does not
+    /// paper over it: an anisotropic cell would make the stability limit anisotropic.
+    Block {
+        /// Domain name.
+        name: String,
+        /// Cells along x, y and z.
+        cells: [usize; 3],
+        /// The side of one cubic cell.
+        cell_mm: f64,
+        /// Starting temperature, uniform, in celsius.
+        initial_c: f64,
+        /// A cell to warm at the start, and by how much, so there is a hot spot to watch spread.
+        ///
+        /// **A statement about the initial state, not a delivery of heat.** It moves what the
+        /// block holds and not what it has absorbed, so the audit's opening balance includes it
+        /// — which is the honest bookkeeping and is why it is separate from any source.
+        #[serde(default)]
+        hot_spot: Option<HotSpot>,
+    },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
     /// `dualis-electrical`. Every other source in this format states its watts; this one
@@ -422,6 +449,7 @@ impl DomainSpec {
         match self {
             DomainSpec::Room { name, .. }
             | DomainSpec::Bar { name, .. }
+            | DomainSpec::Block { name, .. }
             | DomainSpec::Heater { name, .. }
             | DomainSpec::Beam { name, .. }
             | DomainSpec::Orbit { name, .. }
@@ -740,9 +768,44 @@ impl DomainSpec {
                     None => bar,
                 })
             }
+            DomainSpec::Block {
+                name,
+                cells,
+                cell_mm,
+                initial_c,
+                hot_spot,
+            } => {
+                let mut block = dualis::thermal::Solid3D::new(
+                    name.clone(),
+                    Substance::aluminium_6061(),
+                    (cells[0], cells[1], cells[2]),
+                    Length::mm(*cell_mm),
+                    Temperature::celsius(*initial_c),
+                );
+                if let Some(spot) = hot_spot {
+                    block.set_temperature(
+                        spot.at[0],
+                        spot.at[1],
+                        spot.at[2],
+                        Temperature::celsius(initial_c + spot.above_k),
+                    );
+                }
+                Box::new(block)
+            }
         };
         Ok(domain)
     }
+}
+
+/// One cell of a [`DomainSpec::Block`], warmed at the start.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotSpot {
+    /// Which cell, as `[i, j, k]`. Out of range is ignored by the domain, which is what a caller
+    /// writing a spot near a face means.
+    pub at: [usize; 3],
+    /// How much hotter than the block started, in kelvin.
+    pub above_k: f64,
 }
 
 /// A scene that has been checked and turned into a runnable simulation.
@@ -984,6 +1047,19 @@ impl DomainSpec {
             DomainSpec::Bar {
                 cells, length_mm, ..
             } => Placement::field(Extent::line(Length::mm(*length_mm), (*cells).max(2))),
+            // A block is a volume, and the extent says so. Sampled at the block's own cell
+            // count, which is what `Extent::volume` is for — and which nothing in this format
+            // could express until a domain with a 3D field arrived to need it.
+            DomainSpec::Block { cells, cell_mm, .. } => Placement::field(Extent::volume(
+                LengthVec::from_si(
+                    glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
+                        * cell_mm
+                        * 1e-3,
+                ),
+                cells[0],
+                cells[1],
+                cells[2],
+            )),
             // Bodies, which carry their own positions and need no extent.
             DomainSpec::Orbit { .. } | DomainSpec::Bounce { .. } | DomainSpec::Atoms { .. } => {
                 Placement::default()

@@ -1,0 +1,12 @@
+{
+  "title": "a hot spot in a block of aluminium, spreading in three dimensions",
+  "schedule": "multirate",
+  "duration_s": 0.006,
+  "frames": 11,
+  "conservation_tolerance": 1e-9,
+  "domains": [
+    { "kind": "block", "name": "block", "cells": [9, 9, 9], "cell_mm": 1.0,
+      "initial_c": 20.0,
+      "hot_spot": { "at": [4, 4, 4], "above_k": 60.0 } }
+  ]
+}

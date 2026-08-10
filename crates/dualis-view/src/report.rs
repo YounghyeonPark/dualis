@@ -21,7 +21,13 @@
 //! | scalars over time | a line chart, one series per reading |
 //! | a 1D field | a profile that animates, over a faint ghost of the whole run |
 //! | a 2D field | a heatmap that animates, on one colour scale throughout |
+//! | a 3D field | every z-slice as a montage, on one colour scale, animating together |
 //! | points in space | a rotatable 3D scene, depth-sorted, that animates |
+//!
+//! The montage is the honest answer to a volume on a flat canvas. The alternative — one slice
+//! with a slider — hides the rest behind an interaction, and a viewer who never touches the
+//! slider sees a picture of a solid that is really a picture of one plane through it. Every
+//! sample is on screen here, and the caption says how many slices there are.
 //!
 //! The scale is fixed across the run in every case. A frame that rescales makes a quantity
 //! *look* constant while it changes by orders of magnitude, which is the one thing a picture of
@@ -65,6 +71,7 @@ pub fn html(title: &str, frames: &[Frame]) -> String {
     if let Some(first) = frames.first() {
         for panel in &first.panels {
             let kind = match &panel.data {
+                PanelData::Field { nz, .. } if *nz > 1 => "slices",
                 PanelData::Field { ny, .. } if *ny <= 1 => "profile",
                 PanelData::Field { .. } => "heatmap",
                 PanelData::Points { .. } => "scene",
@@ -79,6 +86,7 @@ pub fn html(title: &str, frames: &[Frame]) -> String {
                 match kind {
                     "profile" => "1D field &middot; profile",
                     "heatmap" => "2D field &middot; heatmap",
+                    "slices" => "3D field &middot; every z-slice",
                     _ => "bodies &middot; 3D, drag to rotate",
                 },
                 escape(&panel.name),
@@ -122,8 +130,8 @@ fn json(frames: &[Frame]) -> String {
                 quote(p.unit)
             ));
             match &p.data {
-                PanelData::Field { nx, ny, values } => out.push_str(&format!(
-                    "\"kind\":\"field\",\"nx\":{nx},\"ny\":{ny},\"v\":{}",
+                PanelData::Field { nx, ny, nz, values } => out.push_str(&format!(
+                    "\"kind\":\"field\",\"nx\":{nx},\"ny\":{ny},\"nz\":{nz},\"v\":{}",
                     nums(values)
                 )),
                 PanelData::Points {
@@ -322,6 +330,41 @@ function drawHeat(v, f){
   cap(v, p.nx+" x "+p.ny+" · one colour scale across every frame");
 }
 
+/* ---- 3D field: every slice, laid out as a montage ------------------------------------------ */
+function drawSlices(v, f){
+  var x = v.ctx, w = v.c.width, h = v.c.height, p = panelOf(f, v.panel), R = range[v.panel];
+  x.fillStyle="#0a0e13"; x.fillRect(0,0,w,h);
+  var pad=14, gap=6, aw=w-pad*2, ah=h-pad*2-22;
+  /* Enough columns that the tiles are as large as possible while all of them fit. Searched
+     rather than derived: the tile size depends on the aspect of both the grid and the canvas,
+     and nz is small enough that trying every column count is free. */
+  var best={s:0,cols:1};
+  for(var c=1;c<=p.nz;c++){
+    var rows=Math.ceil(p.nz/c);
+    var s=Math.min((aw-(c-1)*gap)/(c*p.nx), (ah-(rows-1)*gap)/(rows*p.ny));
+    if(s>best.s) best={s:s,cols:c};
+  }
+  var s=best.s, cols=best.cols, rows=Math.ceil(p.nz/cols);
+  var tw=cols*p.nx*s+(cols-1)*gap, th=rows*p.ny*s+(rows-1)*gap;
+  var ox=(w-tw)/2, oy=pad+(ah-th)/2;
+  for(var k=0;k<p.nz;k++){
+    var cx=ox+(k%cols)*(p.nx*s+gap), cy=oy+Math.floor(k/cols)*(p.ny*s+gap);
+    for(var j=0;j<p.ny;j++) for(var i=0;i<p.nx;i++){
+      var val=p.v[k*p.nx*p.ny+j*p.nx+i];
+      x.fillStyle=ramp((val-R.lo)/((R.hi-R.lo)||1));
+      x.fillRect(Math.floor(cx+i*s), Math.floor(cy+(p.ny-1-j)*s), Math.ceil(s), Math.ceil(s));
+    }
+    x.fillStyle="#7f8b9a"; x.font="10px ui-monospace,Consolas,monospace"; x.textAlign="left";
+    x.fillText("z"+k, cx+1, cy-2);
+  }
+  var bw=210, bx=w-pad-bw, by=h-24;
+  for(var q=0;q<bw;q++){ x.fillStyle=ramp(q/bw); x.fillRect(bx+q,by,1,10); }
+  x.fillStyle="#7f8b9a"; x.font="12px ui-monospace,Consolas,monospace";
+  x.textAlign="right"; x.fillText(nice(R.lo), bx-8, by+9);
+  x.textAlign="left"; x.fillText(nice(R.hi)+" "+p.unit, bx+bw+8, by+9);
+  cap(v, p.nx+" x "+p.ny+" x "+p.nz+" · all "+p.nz+" slices, z increasing · one colour scale across every frame");
+}
+
 /* ---- 3D: bodies, depth sorted -------------------------------------------------------------- */
 function project(pt, s, w, h){
   var X=(pt[0]-s.c[0])/s.span, Y=(pt[1]-s.c[1])/s.span, Z=(pt[2]-s.c[2])/s.span;
@@ -403,6 +446,7 @@ function drawAll(){
   views.forEach(function(v){
     if(v.kind==="profile") drawProfile(v,f);
     else if(v.kind==="heatmap") drawHeat(v,f);
+    else if(v.kind==="slices") drawSlices(v,f);
     else if(v.kind==="scene") drawScene(v,f);
     else drawSeries(v);
   });

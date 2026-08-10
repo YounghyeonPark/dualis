@@ -42,15 +42,16 @@ and every test passed while the file said something the code no longer read.
 `consumer-advocate` asks the question none of the others can, because it requires not knowing
 how the library came to be: *what is this like to use*. It is not a review — it builds something
 against the public API and reports what building was like. It is also the method with the best
-record here by a distance: twenty-two findings, sixteen fixed, including the only real physics
+record here by a distance: twenty-three findings, seventeen fixed, including the only real physics
 defect found in the period. `Room` and `Tube` were starting a staggered leapfrog with the
 velocity at the wrong time level, `O(h)` and permanent, and it survived 345 passing tests — two
 of which had turned the bug into the specification.
 
-Five of the twenty-two came from a source the agent's own instructions did not anticipate:
-**splitting the application into layers**. Building against an API finds what is awkward; pulling
-a layer out of one finds what was never stated, because a boundary turns an assumption into
-something somebody has to write down.
+Six came from sources the agent's own instructions did not anticipate. Five from **splitting the
+application into layers**: building against an API finds what is awkward, and pulling a layer out
+of one finds what was never stated. The sixth from **building the next domain**, which is the
+cheapest of the four to run — a layer that names no domain still carries assumptions about every
+domain it has met, and `dualis-scene` assumed fields were flat until one with a volume arrived.
 
 Run the first three together on anything substantial; they fan out well in parallel. Run
 `consumer-advocate` on its own, because it needs to write code and the others do not.

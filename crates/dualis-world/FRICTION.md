@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Sixteen of the twenty-two are fixed**, and six are recorded rather than actioned. The reasons
+**Seventeen of the twenty-three are fixed**, and six are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -492,6 +492,33 @@ celsius from a pressure field fails rather than subtracting 273.15 from a pascal
 that machinery — `Temperature` is a dimensioned type — and what it does not have is a way for a
 `&dyn ScalarField` to say which dimension it returns. Recorded rather than guessed at.
 
+## 23. The capture layer described a plane and called it a field
+
+`Extent::samples` was `(usize, usize)` and `dualis-scene`'s sampler built its position as
+`(u, v, 0)`. Every field the workspace had was a line or a plane, so for six domains that was
+exactly right and nobody looked at it twice.
+
+Then `Solid3D` arrived with a field that is genuinely a volume. Nothing failed. The block was
+captured as its `z = 0` face, and a 9x9 plane of a 9x9x9 aluminium block **is a perfectly
+plausible picture of a block** — a hot spot in the middle, cooling at the edges, no artefact
+anywhere. The report would have drawn it, the filmstrip would have drawn it, the JSON would have
+carried it, and the only thing wrong was that two thirds of the samples never existed.
+
+**Fixed.** `samples` is a triple, `PanelData::Field` carries `nz`, `Extent::volume` constructs a
+box, and `Panel::slice` hands out one plane at a time so a two-dimensional view has to *ask* for
+slice zero rather than get it by taking the first `nx*ny` entries.
+
+The type system did the rest. Adding a field to a struct variant broke all three view sites --
+`filmstrip`, `report` and `to_json` -- and each had to decide rather than default. The filmstrip
+draws the middle slice and labels it `z-slice 5/9` in the caption; the report draws every slice
+as a montage; the JSON carries all of it. A slice presented as the whole is the failure worth
+preventing, and the compiler is what made three separate places confront it.
+
+What this says about the layer split is not that `Extent` was badly designed. It is that **a
+layer's assumptions are only visible from below**. `dualis-scene` was written to name no domain
+and it succeeded at that; it could not have discovered that it assumed flatness, because
+everything it had ever been handed was flat. The seventh domain found it in an afternoon.
+
 ## What this says about the exercise
 
 Twenty-one findings, and the source has shifted four times. The first twelve came from writing the
@@ -500,7 +527,7 @@ taught** — one hunting outcomes that come out empty, one building against the 
 rather than the working tree. The seventeenth came from a third source again: adding a domain the
 library did not have, and finding that the *new* API had the old shape.
 
-Sixteen are fixed. That line said "ten" until a test counted them, which is the failure
+Seventeen are fixed. That line said "ten" until a test counted them, which is the failure
 `prose-auditor` exists for and the second time this file has been the one carrying it — and the
 count is now checked by `friction_counts.rs` against the headings, because the author evidently
 cannot do it reliably and a reader cannot do it at a glance.
@@ -510,6 +537,11 @@ Findings 11 and 22 are the same event seen twice. Pulling the scene layer into i
 that was invisible while one crate did everything became a thing somebody has to declare. That is
 what a layer boundary does — it turns assumptions into statements, and some of the statements
 turn out to be missing.
+
+Finding 23 is the third source again, and the cheapest of the four to run: **build the next
+domain**. A layer that names no domain still carries assumptions about every domain it has met,
+and it cannot audit those from where it stands. `dualis-scene` assumed fields were flat, honestly
+and invisibly, until a domain with a volume was written. Nothing found that by reading.
 
 Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was
 ergonomic or a defect in a domain; that one is a first-order accuracy defect in the *kernel's*

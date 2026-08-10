@@ -109,7 +109,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         let shape = match panel.grid() {
-            Some((nx, ny)) => format!("{nx} x {ny}"),
+            Some((nx, ny, 1)) => format!("{nx} x {ny}"),
+            Some((nx, ny, nz)) => format!("{nx} x {ny} x {nz}"),
             None => format!("{} bodies", panel.values().len()),
         };
         // The run-wide extremum beside the final value. The final value alone cannot tell a

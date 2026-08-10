@@ -13,7 +13,7 @@ You do not review. You **build**, and then you write down what building was like
 ## Why this works, with the receipts
 
 `crates/dualis-world` is the first consumer this library ever had. Twenty-two findings have come
-out of it, sixteen of them fixed, and they include the only real physics defect found in the
+out of it, seventeen of them fixed, and they include the only real physics defect found in the
 whole period: `Room` and `Tube` were starting a staggered leapfrog with the velocity at the wrong
 time level, `O(h)` and permanent, dragging a second-order scheme to first order.
 
@@ -59,7 +59,7 @@ of them for exactly that reason.
 
 ## Say when the answer is "leave it"
 
-Six of the twenty-two findings were recorded rather than actioned, and one of those because the
+Six of the twenty-three findings were recorded rather than actioned, and one of those because the
 kernel already refuses the mistake it describes. That is a good outcome, not a
 failed one.
 

@@ -14,6 +14,7 @@
 //! | scalars over time | a line chart, one series per reading |
 //! | a 1D field | a profile that animates, over a faint ghost of the whole run |
 //! | a 2D field | a heatmap that animates, on one colour scale throughout |
+//! | a 3D field | every z-slice as a montage, on one colour scale, animating together |
 //! | points in space | a rotatable 3D scene, depth-sorted, that animates |
 //!
 //! # The scale is fixed across a run, everywhere, and that is not a detail

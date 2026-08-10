@@ -892,6 +892,70 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     "{name}: {paid:.4} J is {want:.4} K, got {mean:.4}"
                 );
             }
+            // **The claim only a three-dimensional model can make.** One cell of a 9x9x9
+            // aluminium block starts 60 K hot; six milliseconds later the spot has spread.
+            //
+            // Three things are checked and each rules out a different wrong model.
+            //
+            // The mean is exactly `20 + 60/729`, because the faces are insulated and nothing is
+            // on the bus — so the block holds every joule it started with and the audit at 1e-9
+            // is not the only thing saying so.
+            //
+            // The spread is **isotropic**: the neighbour one cell away along z is exactly as
+            // warm as the one along x. A model that resolved a plane and stacked it, or one that
+            // used the wrong spacing on one axis, fails here and passes everything else.
+            //
+            // And the spot is still a spot. A block that had levelled completely would satisfy
+            // both of the above trivially, which is the vacuous version of this scene.
+            "15-a-hot-spot-in-a-block.json" => {
+                let block = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("block")
+                    .expect("the block is still there");
+
+                let ambient = Temperature::celsius(20.0).to_si();
+                let levelled = ambient + 60.0 / 729.0;
+                let mean = block.mean_temperature().to_si();
+                assert!(
+                    (mean - levelled).abs() < 1e-9,
+                    "{name}: insulated, so the mean is fixed at {levelled:.9} K, got {mean:.9}"
+                );
+
+                let hot = block.temperature_at(4, 4, 4).to_si();
+                let along = |d: (usize, usize, usize)| block.temperature_at(d.0, d.1, d.2).to_si();
+                let (x_arm, y_arm, z_arm) = (along((5, 4, 4)), along((4, 5, 4)), along((4, 4, 5)));
+                assert!(
+                    (x_arm - z_arm).abs() < 1e-9 && (x_arm - y_arm).abs() < 1e-9,
+                    "{name}: the spread must be isotropic: x {x_arm:.9}, y {y_arm:.9}, \
+                     z {z_arm:.9}"
+                );
+                assert!(
+                    z_arm - ambient > 1.0,
+                    "{name}: the third axis should have carried real heat, only {:.4} K",
+                    z_arm - ambient
+                );
+
+                assert!(
+                    hot > z_arm && z_arm > along((4, 4, 6)),
+                    "{name}: it should still fall away from the spot: {hot:.4} > {z_arm:.4} > {:.4}",
+                    along((4, 4, 6))
+                );
+                assert!(
+                    hot - ambient > 2.0 && hot - ambient < 30.0,
+                    "{name}: the spot should be well spread and still visible, {:.3} K above",
+                    hot - ambient
+                );
+
+                // And the panel is a volume rather than a plane, which is what the capture layer
+                // could not express before this domain existed.
+                let panel = &last.panels[0];
+                assert_eq!(panel.grid(), Some((9, 9, 9)));
+                assert_eq!(panel.values().len(), 729, "{name}: a slice is not a solid");
+                assert!(
+                    panel.slice(0) != panel.slice(4),
+                    "{name}: every slice is identical, so z was never sampled"
+                );
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

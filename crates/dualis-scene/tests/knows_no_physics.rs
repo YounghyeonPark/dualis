@@ -90,7 +90,7 @@ fn a_physics_invented_in_a_test_file_is_captured_whole() {
         .iter()
         .find(|p| matches!(p.data, PanelData::Field { .. }))
         .expect("a field panel");
-    assert_eq!(field.grid(), Some((9, 1)));
+    assert_eq!(field.grid(), Some((9, 1, 1)));
     assert_eq!(field.unit, "widgets", "the field named its own unit");
     // Sampled at x = 0 and x = 2, so the first value is e^0 and the last e^-2, times (1 + t).
     let v = field.values();
@@ -153,4 +153,114 @@ fn a_field_nobody_sized_is_left_out() {
     );
     // The readings are still there: not drawing is not the same as not reporting.
     assert_eq!(frame.readings.len(), 1);
+}
+
+/// A field that genuinely varies in all three directions, and knows what it should sample to.
+struct Volume;
+
+impl Domain for Volume {
+    fn name(&self) -> &str {
+        "volume"
+    }
+    fn step(
+        &mut self,
+        _t: Time,
+        _dt: Time,
+        _bus: &mut Exchange,
+    ) -> Result<(), dualis_core::Violation> {
+        Ok(())
+    }
+    fn as_field(&self) -> Option<&dyn ScalarField> {
+        Some(self)
+    }
+}
+
+impl ScalarField for Volume {
+    /// `100x + 10y + z`, in metres. Every sample is a different number, and the number *says*
+    /// where it came from — so a capture that muddled two axes or collapsed one is legible in the
+    /// values rather than only in a count.
+    fn at(&self, p: LengthVec, _t: Time) -> f64 {
+        let v = p.to_si();
+        100.0 * v.x + 10.0 * v.y + v.z
+    }
+    fn unit(&self) -> &'static str {
+        "u"
+    }
+}
+
+/// **A three-dimensional field is captured whole, not as a slice through it.**
+///
+/// This is the test that would have failed before `Extent` had a third axis, and it would have
+/// failed *silently*: `samples` was a pair, the sampler built its position as `(u, v, 0)`, and a
+/// solid came back as its `z = 0` face. A perfectly plausible picture of a block, one third of a
+/// dimension short, with nothing anywhere to say so.
+///
+/// It took a domain with a real 3D field — `dualis-thermal`'s `Solid3D` — to make the gap
+/// visible. Nothing in this crate could have noticed on its own, because every field it had ever
+/// been handed was flat.
+#[test]
+fn a_volume_is_captured_in_three_dimensions() {
+    let sim = Simulation::new(Schedule::OneWay).with(Volume);
+    let placed = BTreeMap::from([(
+        "volume".to_string(),
+        Placement::field(Extent::volume(LengthVec::m(1.0, 1.0, 1.0), 2, 3, 4)),
+    )]);
+
+    let frame = capture(&sim, &placed);
+    let panel = &frame.panels[0];
+    assert_eq!(panel.grid(), Some((2, 3, 4)));
+    assert_eq!(panel.values().len(), 24, "every sample, not one face");
+
+    // Each value names its own position, so the ordering is checkable rather than assumed:
+    // x fastest, then y, then z.
+    for k in 0..4 {
+        for j in 0..3 {
+            for i in 0..2 {
+                let want = 100.0 * (i as f64 / 1.0) + 10.0 * (j as f64 / 2.0) + k as f64 / 3.0;
+                let got = panel.values()[i + 2 * (j + 3 * k)];
+                assert!(
+                    (got - want).abs() < 1e-12,
+                    "({i},{j},{k}): got {got}, expected {want} — the axes are muddled"
+                );
+            }
+        }
+    }
+
+    // The z axis really varied, which is the whole point: before the fix every slice was slice 0.
+    let first = panel.slice(0).expect("slice 0");
+    let last = panel.slice(3).expect("slice 3");
+    assert!(
+        first != last,
+        "every slice is identical, so z was never sampled"
+    );
+    assert!(panel.slice(4).is_none(), "there is no fifth slice");
+
+    // And the shape is reported as three-dimensional rather than as a tall plane.
+    let extent = placed["volume"].extent.unwrap();
+    assert_eq!(extent.dimensions(), 3);
+    assert_eq!(extent.count(), 24);
+}
+
+/// **An axis asked for at one sample is read in the middle of it, not at its corner.**
+///
+/// A flat extent samples the same point either way, so this only bites for an extent with real
+/// thickness that a caller chose to summarise with one plane — asking for the low face there
+/// would report a boundary as if it were the body.
+#[test]
+fn a_single_sample_across_a_thick_axis_is_taken_in_the_middle() {
+    let sim = Simulation::new(Schedule::OneWay).with(Volume);
+    let placed = BTreeMap::from([(
+        "volume".to_string(),
+        Placement::field(Extent::volume(LengthVec::m(1.0, 1.0, 1.0), 2, 1, 1)),
+    )]);
+    let frame = capture(&sim, &placed);
+    let v = frame.panels[0].values();
+
+    // y and z are one sample across a 1 m span, so both are read at 0.5 m: 10*0.5 + 1*0.5 = 5.5.
+    assert!((v[0] - 5.5).abs() < 1e-12, "x=0 gave {}, wanted 5.5", v[0]);
+    assert!(
+        (v[1] - 105.5).abs() < 1e-12,
+        "x=1 gave {}, wanted 105.5",
+        v[1]
+    );
 }

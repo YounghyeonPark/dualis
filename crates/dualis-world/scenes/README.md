@@ -1,6 +1,6 @@
 # Scenes
 
-Fourteen worlds described as data, covering all six of the library's domains — thirteen of them
+Fifteen worlds described as data, covering all six of the library's domains — fourteen of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -20,7 +20,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 
-`.csv` is the one that reaches the domains a picture cannot. Eight of these fourteen scenes have
+`.csv` is the one that reaches the domains a picture cannot. Eight of these fifteen scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -64,6 +64,20 @@ Nothing generated is committed.
 Those two are the same physics told twice, and the difference between them is the whole
 argument for `Interface` and `Flux`. A conservation audit passes either way; only the picture
 tells them apart.
+
+| Scene | What it shows |
+| --- | --- |
+| `15-a-hot-spot-in-a-block` | One cell of a 9×9×9 aluminium block starting 60 K hot, and the spot spreading in **three** dimensions. The scene that a one-dimensional bar cannot express: heat going sideways is the whole job of a spreader plate |
+
+`15` is the first scene whose field is a volume, and the report draws it as **every z-slice at
+once** rather than as one plane with the rest behind a slider — because a viewer who never
+touches a slider would see a picture of a solid that was really a picture of one plane through
+it. The filmstrip has no room for that, so it draws the middle slice and *says* `z-slice 5/9` in
+the label.
+
+Its claim in `tests/scene.rs` is the one only three dimensions can make: the neighbour one cell
+away along **z** is exactly as warm as the one along x. A model that resolved a plane and stacked
+it, or that used the wrong spacing on one axis, fails there and passes everything else.
 
 | Scene | What it shows |
 | --- | --- |
@@ -173,7 +187,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all fourteen on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all fifteen on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

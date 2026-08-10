@@ -251,6 +251,6 @@ fn every_domain_with_a_field_was_given_an_extent() {
     // Both counters, because the assertion above is an equality and passes perfectly on a run
     // where nothing has a field at all. That is the vacuous version of this test, and it is the
     // one a rewire that broke `as_field` everywhere would leave behind.
-    assert!(checked >= 14, "only {checked} domains were checked");
-    assert!(fields >= 8, "only {fields} of them had a field to size");
+    assert!(checked >= 15, "only {checked} domains were checked");
+    assert!(fields >= 9, "only {fields} of them had a field to size");
 }

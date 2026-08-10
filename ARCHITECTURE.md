@@ -100,7 +100,7 @@ The physics layer is six crates deep and dimensionally uneven. This is the hones
 | `dualis-molecular` | **3D** — atoms in a periodic box | done |
 | `dualis-optics` | **3D rays**; no volumetric field | rays done, fields missing |
 | `dualis-acoustic` | **2D** — `Room` says so in four places | needs a 3D wave |
-| `dualis-thermal` | **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | needs 3D conduction |
+| `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
 | `dualis-electrical` | **none** — scalars only | needs a field formulation |
 
 Two observations follow, and they point in opposite directions.
@@ -222,8 +222,18 @@ tolerances, and that is a kernel change nobody has needed yet.
 
    What is left in `dualis-world` is what an application actually is: a file format, the domain
    types that format names, and one place saying how far each field extends.
-3. **3D field domains.** Conduction through a solid, and the wave equation with a ceiling. Both
-   are the existing 1D and 2D schemes with one more index, and both have strong closed forms.
+3. **3D field domains.** Half done. `Solid3D` is conduction through a block: a seven-point
+   stencil, insulated faces, `dx²/6α`, checked against the exact eigenvalue of its own discrete
+   operator. The wave equation with a ceiling is still missing, and it is the same 2D scheme with
+   one more index.
+
+   Building the first one **found a gap in the layer above it**, which is what a first
+   three-dimensional anything is for. `Extent::samples` was a pair and the sampler built its
+   position as `(u, v, 0)`, so a solid would have been captured as its `z = 0` face — silently,
+   because a slice of a block is a perfectly plausible picture of a block. Nothing in
+   `dualis-scene` could have noticed on its own; every field it had ever been handed was flat.
+   `samples` is a triple now, `PanelData::Field` carries `nz`, and the type system made all three
+   view sites decide what to do about it.
 4. **A field formulation of electricity.** Current density and potential on a grid, so `I²R`
    becomes a consequence rather than a parameter.
 5. **Per-quantity tolerances**, when a scene mixes domains whose achievable accuracies differ by

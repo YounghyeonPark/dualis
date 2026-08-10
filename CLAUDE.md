@@ -81,7 +81,7 @@ through the real binary — and `deny`.
 
 Its purpose is to use the SDK the way a stranger would and report back. Read
 `crates/dualis-world/FRICTION.md` before changing the public API — it is the only record of
-what the library feels like from outside, and five of its twenty-two findings are the same
+what the library feels like from outside, and five of its twenty-three findings are the same
 underlying decision: **the API is comfortable when the set of parts is known at compile time
 and awkward the moment it is not.**
 

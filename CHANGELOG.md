@@ -3,12 +3,60 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found twenty-two places it is awkward, sixteen of which have been changed — see
+has already found twenty-three places it is awkward, seventeen of which have been changed — see
 `crates/dualis-world/FRICTION.md`.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
+
+## [Unreleased]
+
+### Added
+
+- **`Solid3D`** in `dualis-thermal`: conduction through a block in three dimensions. A seven-point
+  stencil on cubic cells, insulated faces by mirroring, and the explicit limit `dx²/6α` — a third
+  of `Bar1D`'s, because the limit tightens with every axis.
+
+  The first 3D field domain, and the thing a bar cannot do: heat spreading *sideways* out of a
+  hot spot is the whole job of a spreader plate, and a one-dimensional model has nowhere for it
+  to go but along.
+
+  Checked against the **exact eigenvalue of its own discrete operator**, not against a second
+  implementation. A separable cosine mode on a cell-centred grid with mirrored faces decays by
+  precisely the same factor every step, so the test is an equality at machine precision. Then the
+  continuum: that discrete rate approaches `α·π²/L²` at second order, checked as a *rate*, since
+  a first-order scheme also converges.
+
+- **`Extent` and `PanelData::Field` gained a third axis** in `dualis-scene`. Breaking:
+  `Extent::new` takes `nz`, `Panel::grid` returns a triple, `PanelData::Field` carries `nz`.
+  `Extent::volume`, `Extent::count`, `Extent::dimensions` and `Panel::slice` are new.
+
+- **`DomainSpec::Block`** in `dualis-world`, and scene 15 — a hot spot in a 9×9×9 aluminium block.
+  Fifteen scenes now, all run by CI through the real binary.
+
+- **A `slices` view** in `dualis-view`: a 3D field is drawn as every z-slice at once rather than
+  one plane behind a slider, because a viewer who never touches the slider would see a picture of
+  a solid that was really a picture of one plane. The filmstrip has no room for a montage, so it
+  draws the middle slice and labels it `z-slice 5/9`.
+
+### Fixed
+
+- **A three-dimensional field was captured as its `z = 0` face**, silently. `Extent::samples` was
+  a pair and the sampler built its position as `(u, v, 0)`. For six domains that was exactly
+  right; for the seventh it produced a 9×9 plane of a 9×9×9 block — a perfectly plausible picture
+  of a block, two thirds of the samples missing, nothing anywhere to say so.
+
+  `FRICTION.md` 23, and the lesson is not about `Extent`. A layer's assumptions are only visible
+  from below: `dualis-scene` names no domain and succeeded at that, and could not have discovered
+  that it assumed flatness, because everything it had ever been handed was flat.
+
+- **A test that was green and measured nothing.** Replacing `Solid3D`'s stability constant `1/6`
+  with the one-dimensional `1/2` left nine of ten closed-form tests passing — none of them ever
+  excited a mode sharp enough to care. `the_limit_is_where_the_sharpest_mode_stops_growing`
+  releases the fastest-alternating mode the grid can hold, steps it sixty times at exactly the
+  reported limit, and measures. It also asserts the limit is *marginal*, since a scheme that
+  damped that mode comfortably at its own limit would be leaving stability unused.
 
 ## [0.9.0] — 2026-08-10
 

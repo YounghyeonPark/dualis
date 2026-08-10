@@ -24,7 +24,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 434 tests, all against closed forms
+cargo test --workspace                       # 447 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are six of those; three more
@@ -47,7 +47,7 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good application
 but to use the SDK the way a stranger would.
 [`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
-**twenty-two findings, sixteen fixed and six argued down in writing.** The first twelve came from
+**twenty-three findings, seventeen fixed and six argued down in writing.** The first twelve came from
 writing the application. The next four came from running the subagents that were built out of
 what the first twelve taught — and one of those is a first-order accuracy defect in the
 kernel's own scheduler, in the schedule chosen *for* accuracy, which the conservation audit
@@ -78,7 +78,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-units` | Dimensional analysis. SI quantities and vectors whose dimension lives in the type, so `Length + Time` does not compile |
 | `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, parallel ensembles for Monte Carlo, closed-form rigid motion |
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
-| `dualis-thermal` | Heat: lumped masses, explicit conduction, networks of bodies joined by conductances, radiative and convective loss |
+| `dualis-thermal` | Heat: lumped masses, conduction in one dimension and in three, networks of bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
@@ -87,7 +87,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV and JSON. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
 | `dualis` | A facade over the other ten, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with fourteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with fifteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a
 simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels

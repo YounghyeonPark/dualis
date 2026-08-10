@@ -7,6 +7,10 @@
 //! Written by hand rather than derived from `serde`, and that is deliberate for the JSON: the
 //! moment anything reads it, it is a wire format, and a wire format should look like a decision
 //! somebody made rather than like whatever the field names happened to be.
+//!
+//! It is also the **only** asset here that carries a three-dimensional field whole. The two
+//! pictures show one slice of one, because a flat canvas cannot do otherwise; this carries every
+//! sample, and is what a caller with a volume renderer should take.
 
 use dualis_scene::{Frame, PanelData};
 
@@ -53,8 +57,9 @@ pub fn to_json(title: &str, frames: &[Frame]) -> String {
                 quote(panel.unit)
             ));
             match &panel.data {
-                PanelData::Field { nx, ny, values } => out.push_str(&format!(
-                    "\"kind\": \"field\", \"nx\": {nx}, \"ny\": {ny}, \"values\": {}",
+                PanelData::Field { nx, ny, nz, values } => out.push_str(&format!(
+                    "\"kind\": \"field\", \"nx\": {nx}, \"ny\": {ny}, \"nz\": {nz}, \
+                     \"values\": {}",
                     numbers(values)
                 )),
                 PanelData::Points {

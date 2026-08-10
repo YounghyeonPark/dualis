@@ -13,7 +13,7 @@
 use dualis_scene::{Frame, Panel, PanelData};
 use dualis_view::{html, readings_csv, svg, to_json};
 
-/// A 2D field, a 1D field, some bodies, and two readings — one frame of each of the four shapes.
+/// A 3D field, a 2D field, a 1D field, some bodies, and two readings — one of each shape.
 fn frames() -> Vec<Frame> {
     (0..4)
         .map(|k| {
@@ -29,7 +29,34 @@ fn frames() -> Vec<Frame> {
                             ny: 2,
                             // Row-major, and deliberately not symmetric: a renderer that
                             // transposed nx and ny would still produce six cells.
+                            nz: 1,
                             values: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0 + t],
+                        },
+                    },
+                    Panel {
+                        name: "lump".into(),
+                        unit: "K",
+                        data: PanelData::Field {
+                            nx: 2,
+                            ny: 2,
+                            nz: 3,
+                            // Twelve values, x fastest then y then z, and every slice different
+                            // — so a view that drew slice 0 three times, or that read the array
+                            // as one 2×6 plane, produces something this test can tell apart.
+                            values: vec![
+                                300.0,
+                                301.0,
+                                302.0,
+                                303.0,
+                                310.0,
+                                311.0,
+                                312.0,
+                                313.0,
+                                320.0,
+                                321.0,
+                                322.0,
+                                323.0 + t,
+                            ],
                         },
                     },
                     Panel {
@@ -38,6 +65,7 @@ fn frames() -> Vec<Frame> {
                         data: PanelData::Field {
                             nx: 4,
                             ny: 1,
+                            nz: 1,
                             values: vec![300.0, 310.0, 305.0 + t, 300.0],
                         },
                     },
@@ -74,14 +102,27 @@ fn frames() -> Vec<Frame> {
 fn the_report_picks_a_view_per_shape() {
     let page = html("hand-built", &frames());
 
-    for kind in ["profile", "heatmap", "scene", "series"] {
+    for kind in ["profile", "heatmap", "slices", "scene", "series"] {
         assert!(
             page.contains(&format!("data-kind=\"{kind}\"")),
             "no {kind} view"
         );
     }
-    // Three panels plus one card for the readings.
-    assert_eq!(page.matches("class=\"card\"").count(), 4);
+    // Four panels plus one card for the readings.
+    assert_eq!(page.matches("class=\"card\"").count(), 5);
+
+    // **The volume is not drawn as a plane.** `lump` is 2×2×3, and a view that ignored `nz`
+    // would render its first four values and call it done — a perfectly plausible heatmap of a
+    // solid, which is why the shape has to be checked rather than the picture. The dispatch
+    // above puts it on `slices`, and the wire format carries the third count.
+    assert!(
+        page.contains("\"nz\":3"),
+        "the third axis did not reach the page"
+    );
+    assert!(
+        page.contains("3.230") || page.contains("3.23"),
+        "the last slice's values are missing from the page"
+    );
 
     // Self-contained, which is the promise that makes it useful to someone with no toolchain:
     // no network, no library, nothing to install. Checked because it is the kind of thing one
