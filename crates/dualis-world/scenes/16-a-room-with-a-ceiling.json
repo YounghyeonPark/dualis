@@ -1,0 +1,11 @@
+{
+  "title": "the oblique (1,1,1) mode of a room with a ceiling",
+  "schedule": "multirate",
+  "duration_s": 0.02,
+  "frames": 11,
+  "conservation_tolerance": 1e-6,
+  "domains": [
+    { "kind": "hall", "name": "hall", "width_m": 4.4, "height_m": 3.1, "depth_m": 2.4,
+      "nodes_across": 23, "mode": [1, 1, 1], "amplitude_pa": 1.0 }
+  ]
+}

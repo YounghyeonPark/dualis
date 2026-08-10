@@ -1,6 +1,6 @@
 # Scenes
 
-Fifteen worlds described as data, covering all six of the library's domains — fourteen of them
+Sixteen worlds described as data, covering all six of the library's domains — fifteen of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -20,7 +20,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 
-`.csv` is the one that reaches the domains a picture cannot. Eight of these fifteen scenes have
+`.csv` is the one that reaches the domains a picture cannot. Eight of these sixteen scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -53,6 +53,16 @@ Nothing generated is committed.
 | `01-room-mode` | The (1,1) mode of a 4.4 × 3.1 m room: the whole field breathing in and out together, one nodal line each way |
 | `02-room-higher-mode` | The (3,2) mode of the same room — more nodal lines, a higher note, and a shorter run to catch it |
 | `03-room-pulse` | A clap near a corner. No standing shape, so it travels, reflects off all four walls and interferes with itself |
+| `16-a-room-with-a-ceiling` | The same room with a **ceiling**, released in its oblique (1,1,1) mode. 97.46 Hz, and the peak rides `\|cos(2πft)\|` to within 0.3% at 23 nodes across |
+
+`16` is the scene `01`–`03` cannot be. A floor plan does not have the floor-to-ceiling mode
+inaccurately; it does not have it. At 2.4 m that mode is 71 Hz, and the number of modes below a
+given frequency grows as `f³` rather than `f²` — which is why a real room's resonances merge into
+a hiss where a two-dimensional model keeps them separable much further up.
+
+It costs what the third dimension costs: 23 × 17 × 13 nodes rather than 23 × 17, and `√3` in the
+Courant limit rather than `√2`. That is the trade, stated rather than hidden, and `Room` remains
+the right model for a floor plan.
 
 ## Heat — `dualis-thermal`, and the two ways domains meet
 
@@ -187,7 +197,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all fifteen on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all sixteen on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

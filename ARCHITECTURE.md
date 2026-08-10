@@ -99,7 +99,7 @@ The physics layer is six crates deep and dimensionally uneven. This is the hones
 | `dualis-mechanics` | **3D** — bodies, contacts, rigid rotation | done |
 | `dualis-molecular` | **3D** — atoms in a periodic box | done |
 | `dualis-optics` | **3D rays**; no volumetric field | rays done, fields missing |
-| `dualis-acoustic` | **2D** — `Room` says so in four places | needs a 3D wave |
+| `dualis-acoustic` | **3D** `Hall`; **2D** `Room`; **1D** `Tube` | done |
 | `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
 | `dualis-electrical` | **none** — scalars only | needs a field formulation |
 
@@ -222,13 +222,19 @@ tolerances, and that is a kernel change nobody has needed yet.
 
    What is left in `dualis-world` is what an application actually is: a file format, the domain
    types that format names, and one place saying how far each field extends.
-3. **3D field domains.** Half done. `Solid3D` is conduction through a block: a seven-point
+3. ~~**3D field domains.**~~ Done. `Solid3D` is conduction through a block — a seven-point
    stencil, insulated faces, `dx²/6α`, checked against the exact eigenvalue of its own discrete
-   operator. The wave equation with a ceiling is still missing, and it is the same 2D scheme with
-   one more index.
+   operator. `Hall` is the wave equation with a ceiling — a staggered grid, rigid surfaces,
+   `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
+   rate measured across three doublings.
+
+   Four of the six domains are three-dimensional now. What is left is `dualis-electrical`, which
+   is gap 4 below, and `dualis-optics`, whose rays are already 3D and whose *fields* are not.
 
    Building the first one **found a gap in the layer above it**, which is what a first
-   three-dimensional anything is for. `Extent::samples` was a pair and the sampler built its
+   three-dimensional anything is for. The second one found nothing, which is the evidence that
+   the first fix was the right shape: `Hall` needed no change anywhere outside its own crate and
+   the scene format. `Extent::samples` was a pair and the sampler built its
    position as `(u, v, 0)`, so a solid would have been captured as its `z = 0` face — silently,
    because a slice of a block is a perfectly plausible picture of a block. Nothing in
    `dualis-scene` could have noticed on its own; every field it had ever been handed was flat.

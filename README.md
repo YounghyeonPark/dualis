@@ -24,7 +24,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 447 tests, all against closed forms
+cargo test --workspace                       # 453 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are six of those; three more
@@ -80,14 +80,14 @@ its own scheme. There are tests for those rates now.
 | `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
 | `dualis-thermal` | Heat: lumped masses, conduction in one dimension and in three, networks of bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
-| `dualis-acoustic` | Sound: the wave equation on a staggered grid, impedance boundaries |
+| `dualis-acoustic` | Sound: the wave equation on a staggered grid in one, two and three dimensions, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV and JSON. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
 | `dualis` | A facade over the other ten, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with fifteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with sixteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a
 simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels
@@ -614,8 +614,11 @@ touch anything, and a sphere is chosen because its inertia is the same about eve
 — so a contact does not have to carry the orientation through. Boxes hitting boxes is a
 different module.
 
-Acoustics is linear and up to two dimensions: a tube or a room, not a hall. No 3D grid,
-no scattering geometry, and no nonlinearity, so nothing here shocks up or distorts.
+Acoustics is linear. A tube, a room and now a hall — `Hall` is the wave equation in three
+dimensions, which is what the vertical and oblique modes need, and a floor plan does not have
+them at all rather than having them inaccurately. Still no scattering geometry and no
+nonlinearity, so nothing here shocks up or distorts, and no absorbing wall model beyond an
+impedance boundary.
 
 Molecular dynamics is monatomic, so the crate's name is aspirational by one step: no bonds,
 angles or torsions, and therefore no molecules. And no electrostatics, which for a charged

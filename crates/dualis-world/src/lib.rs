@@ -258,6 +258,30 @@ pub enum DomainSpec {
         #[serde(default)]
         exposes: Option<Boundary>,
     },
+    /// A room with a **ceiling**: the wave equation in three dimensions.
+    ///
+    /// `dualis-acoustic`'s `Hall`. `DomainSpec::Room` is a floor plan and does not have the
+    /// vertical modes at all — not less accurately, at all — and a 2.4 m ceiling puts the first
+    /// one at 71 Hz, well inside the range a room is judged on.
+    ///
+    /// Cells are cubes of the spacing the width sets, so height and depth are quantised. A zero
+    /// depth is one node and reduces exactly to a `Room`.
+    Hall {
+        /// Domain name.
+        name: String,
+        /// Across.
+        width_m: f64,
+        /// Up.
+        height_m: f64,
+        /// And back. Quantised to whole cells like the height.
+        depth_m: f64,
+        /// Node count along the width, which sets the spacing for all three axes.
+        nodes_across: usize,
+        /// Which rigid-wall mode to release, as `[a, b, c]`.
+        mode: [u32; 3],
+        /// The amplitude to release it at.
+        amplitude_pa: f64,
+    },
     /// A three-dimensional conducting block.
     ///
     /// `dualis-thermal`'s `Solid3D`. The first domain in this format with a field that is
@@ -450,6 +474,7 @@ impl DomainSpec {
             DomainSpec::Room { name, .. }
             | DomainSpec::Bar { name, .. }
             | DomainSpec::Block { name, .. }
+            | DomainSpec::Hall { name, .. }
             | DomainSpec::Heater { name, .. }
             | DomainSpec::Beam { name, .. }
             | DomainSpec::Orbit { name, .. }
@@ -768,6 +793,27 @@ impl DomainSpec {
                     None => bar,
                 })
             }
+            DomainSpec::Hall {
+                name,
+                width_m,
+                height_m,
+                depth_m,
+                nodes_across,
+                mode,
+                amplitude_pa,
+            } => Box::new(
+                dualis::acoustic::Hall::of_air(
+                    name.clone(),
+                    Length::m(*width_m),
+                    Length::m(*height_m),
+                    Length::m(*depth_m),
+                    *nodes_across,
+                )
+                .released_in_mode(
+                    (mode[0], mode[1], mode[2]),
+                    dualis::units::Pressure::from_si(*amplitude_pa),
+                ),
+            ),
             DomainSpec::Block {
                 name,
                 cells,
@@ -1047,6 +1093,31 @@ impl DomainSpec {
             DomainSpec::Bar {
                 cells, length_mm, ..
             } => Placement::field(Extent::line(Length::mm(*length_mm), (*cells).max(2))),
+            // A hall is a volume too, sampled at its own node count — which is the spacing the
+            // width sets, applied to all three axes, so the picture has the resolution the
+            // simulation does and no more.
+            DomainSpec::Hall {
+                width_m,
+                height_m,
+                depth_m,
+                nodes_across,
+                ..
+            } => {
+                let nx = (*nodes_across).max(2);
+                let dx = width_m / (nx - 1) as f64;
+                let nodes = |l: f64| ((l / dx).round().max(0.0) as usize) + 1;
+                let (ny, nz) = (nodes(*height_m), nodes(*depth_m));
+                Placement::field(Extent::volume(
+                    LengthVec::m(
+                        (nx - 1) as f64 * dx,
+                        (ny - 1) as f64 * dx,
+                        (nz - 1) as f64 * dx,
+                    ),
+                    nx,
+                    ny,
+                    nz,
+                ))
+            }
             // A block is a volume, and the extent says so. Sampled at the block's own cell
             // count, which is what `Extent::volume` is for — and which nothing in this format
             // could express until a domain with a 3D field arrived to need it.

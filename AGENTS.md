@@ -137,7 +137,7 @@ of them commentary.
 | `dualis-optics` | Radiometry, Fresnel and coatings, dispersion, rays, Airy diffraction, MTF, Zernike, PSFs, detector noise |
 | `dualis-thermal` | `LumpedMass`, `Bar1D` conduction, `Solid3D` conduction in three dimensions on a cubic grid, `ThermalNetwork` of n bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
-| `dualis-acoustic` | The wave equation on a staggered grid: `Tube`, `Room`, impedance boundaries |
+| `dualis-acoustic` | The wave equation on a staggered grid: `Tube` (1D), `Room` (2D), `Hall` (3D, with the vertical and oblique modes a floor plan cannot have), impedance boundaries |
 | `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
 | `dualis-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path |
 | `dualis-scene` | One layer up. `Placement`, `Extent`, `capture` — where a domain sits and what one instant of a run looks like, as `Frame`, `Panel`, `PanelData`. Names no domain |

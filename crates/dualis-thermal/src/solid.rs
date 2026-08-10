@@ -50,13 +50,23 @@
 //! `−α·π²·(1/Lx² + 1/Ly² + 1/Lz²)` at second order, and refining the grid quarters the error.
 //! Rate rather than value, because a scheme that is first order where it claims to be second is
 //! the defect this workspace has already shipped once.
+//!
+//! # A workaround that is gone
+//!
+//! This domain briefly offered `Domain::as_bodies` alongside `as_field`, so a viewer could get
+//! its cells as a point cloud. That was not a design choice; it was cover for `dualis-scene`'s
+//! `Extent` being two-dimensional, which would have captured a block as its `z = 0` face.
+//!
+//! `Extent` is three-dimensional now, so the cover is unnecessary — and it was never free. A
+//! domain that is two shapes at once makes the picture depend on whether somebody remembered to
+//! set an extent, which is a mode nothing announces. It is a field, and only a field.
 
 use dualis_core::conserved::quantity;
+use dualis_core::Reading;
 use dualis_core::{
     units::{Energy, Length, LengthVec, Temperature, Time, Volume},
     Domain, Exchange, Ledger, ScalarField, Substance, Violation,
 };
-use dualis_core::{Bodies, Reading};
 use glam::DVec3;
 
 use crate::HEAT;
@@ -486,21 +496,6 @@ impl Domain for Solid3D {
     fn as_field(&self) -> Option<&dyn ScalarField> {
         Some(self)
     }
-
-    /// Also a set of bodies, one per cell.
-    ///
-    /// **Both**, which no other domain here does, and it is not a hedge. A field is the truthful
-    /// description and the one a section or an isosurface wants. But every view in this
-    /// workspace samples a field onto a *plane*, so a field-only 3D block would be captured as
-    /// one slice through `z = 0` — silently, since a slice of a solid is a perfectly plausible
-    /// picture. Offering the cells as bodies as well means a viewer that understands three
-    /// dimensions gets all of them.
-    ///
-    /// That is a workaround for a real gap and it is recorded as one: `Extent` is two-dimensional
-    /// and the capture layer hard-zeroes the third axis. See the crate docs.
-    fn as_bodies(&self) -> Option<&dyn Bodies> {
-        Some(self)
-    }
 }
 
 impl ScalarField for Solid3D {
@@ -602,38 +597,5 @@ impl Solid3D {
             }
         };
         (one(q.x), one(q.y), one(q.z))
-    }
-}
-
-impl Bodies for Solid3D {
-    fn count(&self) -> usize {
-        self.cells.len()
-    }
-
-    fn position(&self, i: usize) -> LengthVec {
-        let (nx, ny, _) = self.counts;
-        let z = i / (nx * ny);
-        let rem = i % (nx * ny);
-        self.centre_of(rem % nx, rem / nx, z)
-    }
-
-    fn value(&self, i: usize) -> f64 {
-        self.cells[i] - 273.15
-    }
-
-    /// Celsius here, unlike the field.
-    ///
-    /// A body's value is a number to colour by and carries its own unit, so there is no header
-    /// to mislead — where a field's unit labels a legend shared with an axis. The two disagreeing
-    /// is the honest state of `FRICTION.md` 22 and not an oversight: a domain cannot yet say
-    /// *which dimension* it returns, so a view cannot convert and each producer picks.
-    fn value_unit(&self) -> &'static str {
-        "C"
-    }
-
-    /// The block's own outline, which **is** a real wall: an insulated face is a boundary
-    /// condition, and a cell outside it does not exist.
-    fn cell(&self) -> Option<(LengthVec, LengthVec)> {
-        Some((LengthVec::ZERO, self.size()))
     }
 }

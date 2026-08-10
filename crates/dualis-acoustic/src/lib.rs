@@ -1,8 +1,18 @@
 //! dualis-acoustic: sound, as a domain on the `dualis-core` kernel.
 //!
-//! The linear wave equation on a grid: one-dimensional in a [`Tube`] — a duct, a rod, an
-//! organ pipe — with ends that can be open, closed, or matched to a different medium; and
-//! two-dimensional in a [`Room`], where the modes stop being a harmonic series.
+//! The linear wave equation on a grid, in one dimension, two or three:
+//!
+//! - [`Tube`] — a duct, a rod, an organ pipe — with ends that can be open, closed, or matched to
+//!   a different medium. Modes are a harmonic series, `n·c/2L`.
+//! - [`Room`] — a floor plan, where the modes stop being a series and start being a lattice.
+//! - [`Hall`] — with a ceiling. The vertical and oblique modes exist here and **do not exist at
+//!   all** in a `Room`; a 2.4 m ceiling puts the first one at 71 Hz, well inside the range a
+//!   room is judged on.
+//!
+//! The three are not a progression to be climbed. Each dimension costs the cells and `√d` in the
+//! Courant limit on top, so a `Room` is the right model for a floor plan and a `Tube` for a duct.
+//! `Hall` is for the question the other two cannot answer rather than the one they answer more
+//! cheaply.
 //!
 //! ```text
 //! ∂²p/∂t² = c² ∂²p/∂x²
@@ -38,8 +48,10 @@
 // whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
 // paragraph exists somewhere, and not in the sense a reader needs.
 #![deny(missing_docs)]
+pub mod hall;
 pub mod room;
 
+pub use hall::Hall;
 pub use room::Room;
 
 use dualis_core::conserved::quantity;

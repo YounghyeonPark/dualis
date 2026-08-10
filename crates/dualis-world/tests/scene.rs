@@ -956,6 +956,49 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     "{name}: every slice is identical, so z was never sampled"
                 );
             }
+            // **The mode a floor plan does not have.** A 4.4 x 3.1 x 2.4 m room released in its
+            // oblique (1,1,1) mode, which needs all three axes at once.
+            //
+            // The peak of a standing mode rides `|cos(2 pi f t)|` exactly, and `f` is the
+            // rigid-wall closed form — computed here from the **quantised** dimensions, because
+            // the grid makes the ceiling 3.2 m rather than the 3.1 m the file asks for and a
+            // closed form about the wrong room is not a check.
+            //
+            // 97.46 Hz, so 0.02 s is 1.949 periods and the peak should be back near 0.949.
+            "16-a-room-with-a-ceiling.json" => {
+                let hall = world
+                    .simulation()
+                    .domain_as::<dualis::acoustic::Hall>("hall")
+                    .expect("the hall is still there");
+                let (lx, ly, lz) = (
+                    hall.width().to_si(),
+                    hall.height().to_si(),
+                    hall.depth().to_si(),
+                );
+                let f = 343.0 / 2.0
+                    * ((1.0f64 / lx).powi(2) + (1.0 / ly).powi(2) + (1.0 / lz).powi(2)).sqrt();
+                let want = (2.0 * std::f64::consts::PI * f * last.time_s).cos().abs();
+                assert!(
+                    (peak - want).abs() < 0.02,
+                    "{name}: a standing mode rides |cos(2 pi f t)|: {peak:.4} against                      {want:.4} at {f:.2} Hz"
+                );
+                assert!(
+                    peak <= 1.0 + 1e-9,
+                    "{name}: and can never exceed its release amplitude, got {peak}"
+                );
+
+                // The vertical mode is the thing `DomainSpec::Room` cannot express at all. It is
+                // not a smaller number there; it is absent.
+                let vertical = hall.mode_frequency((0, 0, 1)).to_si();
+                assert!(
+                    (vertical - 343.0 / (2.0 * lz)).abs() < 1e-9
+                        && (60.0..85.0).contains(&vertical),
+                    "{name}: the floor-to-ceiling mode is c/2Lz, got {vertical:.2} Hz"
+                );
+
+                // And the panel is a volume, sampled at the grid's own node count.
+                assert_eq!(last.panels[0].grid(), Some(hall.nodes()));
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

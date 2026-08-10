@@ -28,6 +28,27 @@ messages carry the full account.
   continuum: that discrete rate approaches `α·π²/L²` at second order, checked as a *rate*, since
   a first-order scheme also converges.
 
+- **`Hall`** in `dualis-acoustic`: the wave equation in three dimensions. A staggered grid with
+  pressure on nodes and velocity on the faces between them, rigid surfaces, and `dx/(c√3)`.
+
+  It is not a more accurate `Room`. A floor plan **does not have** the vertical and oblique modes
+  — not less accurately, at all — and a 2.4 m ceiling puts the first one at 71 Hz. The mode count
+  also grows as `f³` rather than `f²`, which is why a real room's resonances merge into a hiss
+  where a two-dimensional model keeps them separable much further up.
+
+  Checked against the rigid-wall mode frequencies, which are exact, and against a second-order
+  convergence rate measured **across three doublings** — 13 to 97 nodes falls 54.6×, against 64×
+  for second order and 8× for first. One doubling was tried first and proved nothing: the
+  per-doubling ratios bounce between 2.9 and 5.6, because "worst departure over a run" is a
+  maximum and therefore noisy. `Room`'s own convergence test reaches the same conclusion by the
+  same route.
+
+  It carries the leapfrog startup fix from its first line rather than inheriting the `O(h)` defect
+  `Room` and `Tube` shipped with, and a mutation confirms three separate tests would catch it.
+
+- **`DomainSpec::Hall`** and scene 16 — the same 4.4 × 3.1 m room with a 2.4 m ceiling, released
+  in its oblique (1,1,1) mode. Sixteen scenes.
+
 - **`Extent` and `PanelData::Field` gained a third axis** in `dualis-scene`. Breaking:
   `Extent::new` takes `nz`, `Panel::grid` returns a triple, `PanelData::Field` carries `nz`.
   `Extent::volume`, `Extent::count`, `Extent::dimensions` and `Panel::slice` are new.
@@ -39,6 +60,14 @@ messages carry the full account.
   one plane behind a slider, because a viewer who never touches the slider would see a picture of
   a solid that was really a picture of one plane. The filmstrip has no room for a montage, so it
   draws the middle slice and labels it `z-slice 5/9`.
+
+### Removed
+
+- **`Solid3D::as_bodies`.** It existed as cover for the capture gap below — a way to get a block's
+  cells out as a point cloud when a field would have come back as one slice. With `Extent` now
+  three-dimensional the cover is unnecessary, and it was never free: a domain that is two shapes
+  at once makes the picture depend on whether somebody remembered to set an extent, which is a
+  mode nothing announces. It is a field, and only a field.
 
 ### Fixed
 
