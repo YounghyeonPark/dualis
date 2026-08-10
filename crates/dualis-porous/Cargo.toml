@@ -1,0 +1,16 @@
+[package]
+name = "dualis-porous"
+description = "Flow, heat and dissolution through a packed bed: Darcy's law solved as a field, with the extraction that rides on it"
+keywords = ["porous", "darcy", "extraction", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+dualis-core = { workspace = true }
+dualis-units = { workspace = true }

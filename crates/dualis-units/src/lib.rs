@@ -356,6 +356,20 @@ pub type Power = Qty<2, 1, -3, 0, 0, 0, 0>;
 /// kg·m⁻³. Note that a glass catalogue quotes g/cm³, a factor of a thousand away —
 /// see [`Density::g_per_cm3`].
 pub type Density = Qty<-3, 1, 0, 0, 0, 0, 0>;
+/// Pa·s — dynamic viscosity, the `μ` of Darcy's law and of Stokes drag.
+///
+/// Kinematic viscosity is this over a [`Density`] and is a [`Diffusivity`]; the two are
+/// routinely confused in tables and differ by three orders of magnitude for water, which is
+/// exactly the sort of error a dimension check cannot catch and a name can.
+pub type DynamicViscosity = Qty<-1, 1, -1, 0, 0, 0, 0>;
+/// kg·s⁻¹ — a mass flow rate. What a brew scale reads the derivative of.
+pub type MassFlow = Qty<0, 1, -1, 0, 0, 0, 0>;
+/// kg·m⁻³ as a *concentration* of one species dissolved in another.
+///
+/// The same dimension as [`Density`] and deliberately a distinct name: a coffee's TDS and the
+/// density of the water carrying it are both kg/m³ and confusing them is a factor of a hundred.
+pub type Concentration = Qty<-3, 1, 0, 0, 0, 0, 0>;
+
 /// Cycles per second. Dimensionally identical to an angular velocity, since a
 /// radian is m/m — the type system cannot and should not pretend otherwise.
 pub type Frequency = Qty<0, 0, -1, 0, 0, 0, 0>;

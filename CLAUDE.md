@@ -12,7 +12,7 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo deny check
-for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench agents_quickstart readme_check; do
+for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench espresso_shot agents_quickstart readme_check; do
   cargo run --locked --release --example "$e" || break
 done
 # MSRV, library only: `--exclude` needs `--workspace` beside it, and the app is not
@@ -37,8 +37,8 @@ Stated in full in CONTRIBUTING.md. The compressed version:
    are bit-for-bit identical across platforms, optimisation levels, WebAssembly and thread
    counts, and there is a pinned digest that says so.
 4. **The kernel must never depend on a domain**, and no domain may depend on another. That
-   claim is the reason for the crate split and has now been held through six domains.
-5. **Every public item is documented.** `#![deny(missing_docs)]` in all twelve crates.
+   claim is the reason for the crate split and has now been held through seven domains.
+5. **Every public item is documented.** `#![deny(missing_docs)]` in all thirteen crates.
 
 ## The subagent team
 
@@ -147,8 +147,8 @@ simulation.
 
 ### How often to release, and the order
 
-Eleven crates are published together and share one version. A published version is permanent —
-it can be yanked, never replaced — so the cost of a release is eleven permanent version numbers
+Twelve crates are published together and share one version. A published version is permanent —
+it can be yanked, never replaced — so the cost of a release is twelve permanent version numbers
 on crates.io, one on PyPI, and a prose sweep.
 
 The prose sweep is not optional and is the part that gets skipped. A release moves the test
@@ -165,7 +165,7 @@ accumulates.
 The order matters: each crate must be live on the index before the next one resolves it.
 
 ```sh
-for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-scene dualis-view dualis; do
+for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-porous dualis-scene dualis-view dualis; do
   cargo publish -p "$c" --locked || break
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel

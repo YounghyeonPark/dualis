@@ -1,7 +1,7 @@
 //! dualis: physics for simulated worlds, in one dependency.
 //!
 //! A facade over the workspace. Nothing is implemented here — the point is that a
-//! consumer writes `dualis = "0.10"` rather than naming ten crates, and that the
+//! consumer writes `dualis = "0.10"` rather than naming eleven crates, and that the
 //! integration tests which need two domains at once have somewhere to live.
 //!
 //! ```
@@ -69,7 +69,7 @@
 //! dualis             depends on all of them
 //! ```
 //!
-//! None of the six domains knows about any of the others. They meet on the kernel's
+//! None of the seven domains knows about any of the others. They meet on the kernel's
 //! [`Exchange`](dualis_core::Exchange), and each one that arrived left the others
 //! untouched — which is the claim the split was made to test, now held six times.
 //!
@@ -89,6 +89,7 @@ pub use dualis_electrical as electrical;
 pub use dualis_mechanics as mechanics;
 pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
+pub use dualis_porous as porous;
 pub use dualis_scene as scene;
 pub use dualis_thermal as thermal;
 pub use dualis_units as units;
@@ -128,7 +129,10 @@ pub mod prelude {
         fresnel_reflectance, fresnel_split, Hit, Material, Mtf, Psf, Pupil, Ray, Scatter,
         SpectralPower, Spectrum, SurfaceFinish, SurfaceOptics, Zernike, VISIBLE_RANGE,
     };
-    pub use dualis_scene::{capture, settle_framing, Extent, Frame, Panel, PanelData, Placement};
+    pub use dualis_porous::{Basket, Bed, Grind, Liquid, Observable, Puck, Shot};
+    pub use dualis_scene::{
+        capture, sample_field, settle_framing, Extent, Frame, Panel, PanelData, Placement,
+    };
     pub use dualis_thermal::{
         Bar1D, Environment, LumpedMass, Node, Solid3D, SteadyState, ThermalNetwork, HEAT,
     };

@@ -5,9 +5,9 @@
 [![docs.rs](https://docs.rs/dualis/badge.svg)](https://docs.rs/dualis)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
-physics, and six domains built on it that do: **light, heat, motion, sound, electricity,
-and matter one atom at a time.** Two layers above them place a simulation in the world and
-draw it, and neither knows a domain either.
+physics, and seven domains built on it that do: **light, heat, motion, sound, electricity,
+flow through a packed bed, and matter one atom at a time.** Two layers above them place a
+simulation in the world and draw it, and neither knows a domain either.
 
 Dimensions live in the type system, so `Length + Time` does not compile. Conservation is
 audited rather than assumed, and a `Violation` names what went missing and where. Every
@@ -15,7 +15,7 @@ result is reproducible bit for bit — across platforms, across optimisation lev
 WebAssembly, and under sixteen threads as readily as one.
 
 ```sh
-cargo add dualis                             # one dependency, all eleven published crates
+cargo add dualis                             # one dependency, all twelve published crates
 pip install dualis                           # or from Python, see bindings/python
 ```
 
@@ -24,10 +24,10 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 483 tests, all against closed forms
+cargo test --workspace                       # 500 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are ten of those; three more
+Add `out.svg` to either example and it draws the result. There are eleven of those; three more
 are checks rather than showcases, and the table is [further down](#examples).
 
 **The goal is to reproduce physical law in three dimensions**, in a structure that can accept
@@ -83,13 +83,14 @@ its own scheme. There are tests for those rates now.
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid in one, two and three dimensions, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature, and a **field** formulation where `I²R` is solved out of a shape rather than stated |
+| `dualis-porous` | Flow through a packed bed: Darcy's law solved as a field, the heat the liquid carries, and the dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed and an aquifer |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV, JSON, and **glTF** so Blender, three.js and USD tools can open a result. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
-| `dualis` | A facade over the other ten, and where the cross-domain integration tests live |
+| `dualis` | A facade over the other eleven, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `runtime/gpu` | `Solid3D`'s stencil as a compute shader — 191× on a 64³ grid, and single precision against the domain's double, so the CPU is the reference and the difference is measured. Its own workspace |
 | `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `dualis`, so the wire format being sufficient is demonstrated rather than claimed |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with seventeen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with eighteen scenes across all seven domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a
 simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels
@@ -104,7 +105,8 @@ dualis-thermal     depends on core      │
 dualis-mechanics   depends on core      ├─  one crate per physics, and
 dualis-acoustic    depends on core      │   none of them knows another
 dualis-molecular   depends on core      │
-dualis-electrical  depends on core     ─┘
+dualis-electrical  depends on core      │
+dualis-porous      depends on core     ─┘
 dualis-scene       depends on core                      ── where things are
 dualis-view        depends on scene                     ── how to draw that
 dualis             depends on all of them
@@ -321,13 +323,14 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `heat_in_three_dimensions` | A point of heat in a block of aluminium. The peak falls as `t^(-3/2)`, and **that exponent is the dimensionality** — a bar gives `-1/2`, a plate `-1`. Nothing 1D can produce it |
 | `room_in_three_dimensions` | The same room as `room_modes`, with a ceiling. The floor-to-ceiling mode at 71 Hz that a floor plan does not have *at all*, and a mode count growing as `f³` rather than `f²` |
 | `optical_bench` | **A 3D instrument, not a graph.** A doublet, a fold mirror turning the axis through 90°, three field angles — prescribed, traced, refocused, then *bent* until the spot falls inside the Airy disc. `optical_bench bench.html` gives a layout you rotate in a browser |
+| `espresso_shot` | **A machine, and the inside of what it is doing.** An espresso basket from the pump to the cup: Darcy's law solved on the permeability the grind gives, the dissolution that rides on the flow, and a vertical cut through three baskets — even, channelled, and pulled into a cold portafilter — as the shot runs. Grind, temperature and pressure each swept on their own, against the exponent each is supposed to carry |
 | `busbar_rating` | **A design study rather than a demonstration.** A bolted busbar joint, from geometry to a production yield: the contact resistance solved as a field, the thermal path from a network, the electro-thermal fixed point, a rating by bisection, the margin to runaway, and 20 000 units against manufacturing tolerance. Every step against a closed form |
 
 Two more are run by CI without being in the table, because they are checks rather than
 showcases: `agents_quickstart`, the runnable form of [AGENTS.md](AGENTS.md), and
 `readme_check`, which re-runs this file's own code so the snippets above cannot rot.
 
-A ninth, `where_the_time_goes`, is a benchmark and is **not** run by CI. It measures rather than
+A fourteenth, `where_the_time_goes`, is a benchmark and is **not** run by CI. It measures rather than
 asserts, and a timing threshold on a shared runner fails for reasons that have nothing to do with
 the code. Run it by hand when a change should have made something faster: it is dependency-free,
 takes best-of-five, and prints where a step actually spends itself.

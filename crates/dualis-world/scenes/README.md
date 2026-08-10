@@ -1,6 +1,6 @@
 # Scenes
 
-Seventeen worlds described as data, covering all six of the library's domains — sixteen of them
+Eighteen worlds described as data, covering all seven of the library's domains — seventeen of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -32,7 +32,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 | `out.gltf` | The geometry of the last frame, for Blender, three.js, Omniverse or any USD tool |
 
-`.csv` is the one that reaches the domains a picture cannot. Eight of these seventeen scenes have
+`.csv` is the one that reaches the domains a picture cannot. Eight of these eighteen scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -54,7 +54,7 @@ simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` 
 `dualis_scene::capture` produces, and everything the table above describes is available to any
 program without going near a scene file.
 
-`.gltf` is the one that leaves this workspace. Eight of the seventeen scenes have geometry to
+`.gltf` is the one that leaves this workspace. Eight of the eighteen scenes have geometry to
 export — bodies, ray paths, a 3D field as its cell centres — and the other nine are **refused with
 a reason** rather than written as an empty scene: a 1D or 2D field is a graph, not something to put
 in a 3D viewer, and the message says which panel and why.
@@ -128,6 +128,7 @@ explicit check rather than passing by having nothing to check.
 | Scene | What it shows |
 | --- | --- |
 | `17-a-busbar-with-a-notch` | A 12 × 5 × 5 mm copper busbar with a notch three cells deep, driven at 1 mV. The resistance is **solved** rather than stated: 12.39 µΩ, against 8.28 µΩ for the full section |
+| `18-an-espresso-shot` | Two 30 mm baskets, identical but for the ring against the wall. Nothing states a flow rate — Darcy's law is solved on the permeability that 250 µm at `ε = 0.45` gives. The gap makes that ring 2.9× more permeable, so it runs **79% faster** and delivers **4.54% TDS against 6.48%**: more liquid, less coffee in it |
 
 The scene that shows why a field formulation is worth the solve. `ρL/A` is a statement about a
 uniform bar, and a bar with a notch is not one — so the file states a *shape* and a material, and

@@ -368,6 +368,27 @@ pub fn capture(sim: &Simulation, placed: &BTreeMap<String, Placement>) -> Frame 
 }
 
 /// Sample a field over the extent it was placed with.
+/// Sample any field over an extent, as a [`Panel`] a [`Frame`] can carry.
+///
+/// [`capture`] uses this for the one field a domain nominates through
+/// [`as_field`](dualis_core::Domain::as_field). It is public because **one field per domain is
+/// not enough**, and the limit is the trait's rather than the physics'. A domain can hold several
+/// fields that are all true at once — a porous bed has a temperature, a pressure, a flow speed and
+/// an extraction state on the same grid — and `as_field` can nominate exactly one of them.
+///
+/// So a caller that wants the other three builds them here and pushes them onto the frame. The
+/// alternative was a trait method returning a list, which would make every domain in the workspace
+/// answer a question five of them have one answer to.
+pub fn sample_field(
+    name: impl Into<String>,
+    field: &dyn ScalarField,
+    extent: Extent,
+    pose: Pose,
+    t: Time,
+) -> Panel {
+    sample(&name.into(), field, extent, pose, t)
+}
+
 fn sample(name: &str, field: &dyn ScalarField, extent: Extent, pose: Pose, t: Time) -> Panel {
     let (nx, ny, nz) = extent.samples;
     let (lo, hi) = (extent.min.to_si(), extent.max.to_si());

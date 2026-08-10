@@ -1,0 +1,40 @@
+{
+  "title": "an espresso shot, and the same basket with a gap at its wall",
+  "schedule": "multirate",
+  "duration_s": 8.0,
+  "frames": 9,
+  "conservation_tolerance": 1e-09,
+  "domains": [
+    {
+      "kind": "puck",
+      "name": "even",
+      "cells": [
+        19,
+        10,
+        19
+      ],
+      "cell_mm": 2.0,
+      "radius_mm": 15.0,
+      "grind_um": 250.0,
+      "porosity": 0.45,
+      "bar": 9.0,
+      "brew_c": 93.0
+    },
+    {
+      "kind": "puck",
+      "name": "wall gap",
+      "cells": [
+        19,
+        10,
+        19
+      ],
+      "cell_mm": 2.0,
+      "radius_mm": 15.0,
+      "grind_um": 250.0,
+      "porosity": 0.45,
+      "bar": 9.0,
+      "brew_c": 93.0,
+      "channel_porosity": 0.6
+    }
+  ]
+}

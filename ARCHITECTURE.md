@@ -31,7 +31,7 @@ promise dates.
     ┌───────────────────────────┴─────────────────────────────────┐
     │  PHYSICS       what evolves, and what it conserves           │
     │                the kernel, and one crate per physics         │
-    │                            `dualis-core` + six domain crates │
+    │                          `dualis-core` + seven domain crates │
     └─────────────────────────────────────────────────────────────┘
 
 As of 0.9.0 all three are crates on crates.io. Before that the upper two lived inside an
@@ -92,7 +92,7 @@ per-frame normalisation is what you get if you do not think about it.
 
 ## Where the work is: 3D is not the default yet
 
-The physics layer is six crates deep and dimensionally uneven. This is the honest state.
+The physics layer is seven crates deep and dimensionally uneven. This is the honest state.
 
 | crate | space it lives in | for the goal |
 | --- | --- | --- |
@@ -102,6 +102,7 @@ The physics layer is six crates deep and dimensionally uneven. This is the hones
 | `dualis-acoustic` | **3D** `Hall`; **2D** `Room`; **1D** `Tube` | done |
 | `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
 | `dualis-electrical` | **3D** `Conductor`; `Winding` is a lumped `I²R` | done |
+| `dualis-porous` | **3D** — Darcy flow, advected heat and dissolution in a packed bed | done |
 
 Two observations follow, and they point in opposite directions.
 
@@ -229,7 +230,7 @@ different quantities, the second separates domains carrying the same one.
    `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
    rate measured across three doublings.
 
-   Four of the six domains are three-dimensional now. What is left is `dualis-electrical`, which
+   Five of the seven domains are three-dimensional now. What is left is `dualis-electrical`, which
    is gap 4 below, and `dualis-optics`, whose rays are already 3D and whose *fields* are not.
 
    Building the first one **found a gap in the layer above it**, which is what a first

@@ -52,7 +52,7 @@ pub struct Ledger(BTreeMap<&'static str, Entry>);
 /// can add its own without editing the kernel — but these spellings are the ones
 /// [`audit`] will match across domains, so use them.
 pub mod quantity {
-    /// Joules. The channel four of the six domains publish and consume on.
+    /// Joules. The channel four of the seven domains publish and consume on.
     pub const ENERGY: &str = "energy";
     /// kg·m·s⁻¹. Audited component by component, which makes the smallest component the
     /// binding one — see [`audit`](super::audit).

@@ -350,6 +350,42 @@ pub enum DomainSpec {
         #[serde(default)]
         blocked: Vec<[usize; 3]>,
     },
+    /// A basket of packed grounds with liquid driven through it.
+    ///
+    /// `dualis-porous`'s `Puck`. The flow is not stated anywhere: Darcy's law is solved on the
+    /// permeability the grind and the packing give, and everything else — how long the shot takes,
+    /// where the liquid goes, what comes out — follows from it.
+    ///
+    /// `channel_porosity` is how a fault is put into a scene. A basket is otherwise uniform,
+    /// because an even tamp gives an even bed and channelling is a *defect* rather than something
+    /// the physics produces on its own.
+    Puck {
+        /// Domain name.
+        name: String,
+        /// Cells along x, y and z. **`y` is the flow axis**, so the middle one is the bed's depth.
+        cells: [usize; 3],
+        /// The side of one cubic cell.
+        cell_mm: f64,
+        /// The basket's inside radius. Leave a few cells of box outside it for the metal.
+        radius_mm: f64,
+        /// Sieve diameter of the grind. 250 µm is a conventional espresso setting.
+        grind_um: f64,
+        /// Inter-particle void fraction after tamping. About 0.45.
+        porosity: f64,
+        /// The pressure held across the bed.
+        bar: f64,
+        /// Brew temperature, and the basket's own starting temperature unless `wall_c` says
+        /// otherwise.
+        brew_c: f64,
+        /// The basket's starting temperature, for the cold-portafilter case.
+        #[serde(default)]
+        wall_c: Option<f64>,
+        /// Porosity of the ring against the basket wall — a puck that shrank away from it.
+        ///
+        /// `None` is an even bed. Give a number above `porosity` and the flow takes the ring.
+        #[serde(default)]
+        channel_porosity: Option<f64>,
+    },
     /// A room with a **ceiling**: the wave equation in three dimensions.
     ///
     /// `dualis-acoustic`'s `Hall`. `DomainSpec::Room` is a floor plan and does not have the
@@ -568,6 +604,7 @@ impl DomainSpec {
             | DomainSpec::Block { name, .. }
             | DomainSpec::Hall { name, .. }
             | DomainSpec::Conductor { name, .. }
+            | DomainSpec::Puck { name, .. }
             | DomainSpec::Heater { name, .. }
             | DomainSpec::Beam { name, .. }
             | DomainSpec::Orbit { name, .. }
@@ -914,6 +951,61 @@ impl DomainSpec {
                 c.solve(1e-12);
                 Box::new(c)
             }
+            DomainSpec::Puck {
+                name,
+                cells,
+                cell_mm,
+                radius_mm,
+                grind_um,
+                porosity,
+                bar,
+                brew_c,
+                wall_c,
+                channel_porosity,
+            } => {
+                let mut p = dualis::porous::Puck::new(
+                    name.clone(),
+                    dualis::porous::Basket {
+                        counts: (cells[0], cells[1], cells[2]),
+                        cell: Length::mm(*cell_mm),
+                        radius: Length::mm(*radius_mm),
+                        grind: dualis::porous::Grind::sieved(Length::from_si(grind_um * 1e-6)),
+                        porosity: *porosity,
+                        pressure: dualis::units::Pressure::from_si(bar * 1e5),
+                        temperature: dualis::units::Temperature::celsius(*brew_c),
+                        ..dualis::porous::Basket::espresso()
+                    },
+                );
+                if let Some(loose) = channel_porosity {
+                    // The ring of packed cells against the wall, computed before the repack so
+                    // that widening one cell does not change what counts as the ring.
+                    let (nx, ny, nz) = (cells[0], cells[1], cells[2]);
+                    let mut ring = vec![false; nx * ny * nz];
+                    for k in 0..nz {
+                        for j in 0..ny {
+                            for i in 0..nx {
+                                if !p.is_packed(i, j, k) {
+                                    continue;
+                                }
+                                ring[i + nx * (j + ny * k)] = i == 0
+                                    || k == 0
+                                    || i + 1 == nx
+                                    || k + 1 == nz
+                                    || !p.is_packed(i - 1, j, k)
+                                    || !p.is_packed(i + 1, j, k)
+                                    || !p.is_packed(i, j, k - 1)
+                                    || !p.is_packed(i, j, k + 1);
+                            }
+                        }
+                    }
+                    p.repack(*loose, |i, j, k| ring[i + nx * (j + ny * k)]);
+                }
+                if let Some(c) = wall_c {
+                    p.set_wall_temperature(dualis::units::Temperature::celsius(*c));
+                    p.set_inlet_temperature(dualis::units::Temperature::celsius(*brew_c));
+                }
+                Box::new(p)
+            }
             DomainSpec::Hall {
                 name,
                 width_m,
@@ -1238,6 +1330,18 @@ impl DomainSpec {
             // A conductor is a volume, sampled at its own cells: the potential is what the
             // solve produces, and a picture of it is where the current is going.
             DomainSpec::Conductor { cells, cell_mm, .. } => Placement::field(Extent::volume(
+                LengthVec::from_si(
+                    glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
+                        * cell_mm
+                        * 1e-3,
+                ),
+                cells[0],
+                cells[1],
+                cells[2],
+            )),
+            // A basket is a volume, sampled at its own cells. `y` is the flow axis, so a slice
+            // at fixed `k` is a vertical cut through the bed — which is the picture.
+            DomainSpec::Puck { cells, cell_mm, .. } => Placement::field(Extent::volume(
                 LengthVec::from_si(
                     glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
                         * cell_mm

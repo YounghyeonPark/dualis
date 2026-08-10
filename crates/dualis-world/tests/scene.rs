@@ -1058,6 +1058,114 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 assert_eq!(last.panels[0].grid(), Some(bar.counts()));
                 assert_eq!(last.panels[0].unit, "V");
             }
+            // **Two baskets, identical but for the ring against the wall**, and the whole
+            // difference between them is a permeability that nobody stated.
+            //
+            // The flow ratio is exact rather than approximate, and the reason is worth stating:
+            // every column of cells from inlet to outlet is an independent series chain, so the
+            // basket is columns in **parallel** and its conductance is their sum. Widening a
+            // column changes only its own term. So
+            //
+            //     Q_gap / Q_even  =  (1 - f) + f * m(0.60)/m(0.45),    m(e) = e^3/(1-e)^2
+            //
+            // with `f` the fraction of the cross-section the ring covers. Kozeny-Carman gives
+            // the mobility ratio as 4.482; `f` is **counted** rather than estimated, because
+            // estimating it from `2 pi r / pi r^2` was wrong by a third -- a staircase ring on
+            // a 15-cell radius is not a circle -- and the test was asserting a bound that the
+            // right answer failed.
+            //
+            // The pair is what makes it a channel rather than merely a faster bed: more liquid,
+            // and *less* coffee in it. Both directions are asserted, because either alone is
+            // ambiguous -- a bed that is simply coarser all through would give the first and not
+            // the second.
+            "18-an-espresso-shot.json" => {
+                let read = |domain: &str, label: &str| {
+                    last.readings
+                        .iter()
+                        .find(|r| r.domain == domain && r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: {domain} reports {label}"))
+                        .value
+                };
+                let (even_g, bad_g) = (read("even", "delivered"), read("wall gap", "delivered"));
+                let (even_tds, bad_tds) = (read("even", "TDS"), read("wall gap", "TDS"));
+                let (even_ring, bad_ring) =
+                    (read("even", "ring over core"), read("wall gap", "ring over core"));
+
+                let puck = world
+                    .simulation()
+                    .domain_as::<dualis::porous::Puck>("even")
+                    .expect("the basket is still there");
+                let (nx, _, nz) = puck.counts();
+                let (mut packed, mut ring) = (0usize, 0usize);
+                for kk in 0..nz {
+                    for i in 0..nx {
+                        if !puck.is_packed(i, 0, kk) {
+                            continue;
+                        }
+                        packed += 1;
+                        if i == 0
+                            || kk == 0
+                            || i + 1 == nx
+                            || kk + 1 == nz
+                            || !puck.is_packed(i - 1, 0, kk)
+                            || !puck.is_packed(i + 1, 0, kk)
+                            || !puck.is_packed(i, 0, kk - 1)
+                            || !puck.is_packed(i, 0, kk + 1)
+                        {
+                            ring += 1;
+                        }
+                    }
+                }
+                let f = ring as f64 / packed as f64;
+                let mobility = |e: f64| e.powi(3) / (1.0 - e).powi(2);
+                let predicted = (1.0 - f) + f * mobility(0.60) / mobility(0.45);
+                let measured = bad_g / even_g;
+                assert!(
+                    (measured / predicted - 1.0).abs() < 1e-6,
+                    "{name}: columns in parallel give the flow ratio exactly: {measured:.6}x \
+                     against {predicted:.6}x, with the ring {:.1}% of the section",
+                    f * 100.0
+                );
+                assert!(
+                    bad_tds < even_tds,
+                    "{name}: and carry less coffee in it: {bad_tds:.3}% against {even_tds:.3}%"
+                );
+
+                // The diagnosis, which is the reading that separates the two hypotheses.
+                assert!(
+                    (even_ring - 1.0).abs() < 0.02,
+                    "{name}: an evenly packed basket extracts its ring and its core alike: \
+                     {even_ring:.4}"
+                );
+                assert!(
+                    bad_ring > 1.05,
+                    "{name}: and the gap's ring must outrun the core it starved: {bad_ring:.4} \
+                     against {even_ring:.4}"
+                );
+
+                // Darcy in closed form, through the scene format. Nothing in the file is a flow
+                // rate; this is what the permeability the grind gives actually produces.
+                let mu = dualis::porous::Liquid::water()
+                    .viscosity(dualis::units::Temperature::celsius(93.0))
+                    .to_si();
+                let k = dualis::porous::Grind::sieved(dualis::units::Length::from_si(250e-6))
+                    .permeability(0.45)
+                    .to_si();
+                let ny = puck.counts().1;
+                let dx = puck.spacing().to_si();
+                let closed = k * (packed as f64 * dx * dx) * 9.0e5 / (mu * ny as f64 * dx);
+                let measured = puck.flow_rate().to_si() / dualis::porous::Liquid::water().density.to_si();
+                assert!(
+                    (measured / closed - 1.0).abs() < 1e-9,
+                    "{name}: Q = kA dp / (mu L): {measured:.6e} against {closed:.6e}"
+                );
+
+                // The panel is a volume at the basket's own cells, and it is the extraction
+                // rather than the temperature -- a bed under flow is isothermal, so a
+                // temperature panel would be a flat rectangle that renders and says nothing.
+                assert_eq!(last.panels[0].grid(), Some(puck.counts()));
+                assert_eq!(last.panels[0].unit, "");
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

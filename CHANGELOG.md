@@ -14,6 +14,95 @@ messages carry the full account.
 
 ### Added
 
+- **A seventh domain: `dualis-porous`.** Flow through a packed bed, the heat it carries, and the
+  dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed, a leaching
+  heap and an aquifer.
+
+  Darcy's law is elliptic — `∇·((k/μ)∇p) = 0` — which is the same operator `Conductor` solves for
+  electric potential with mobility in place of conductivity. Reproduced exactly: a uniform bed
+  gives `Q = kAΔp/(μL)` to 3×10⁻¹⁵, the way a uniform block gives `ρL/A`.
+
+  On top of it, two things that are marched rather than solved: heat advected by the liquid and
+  conducted through the bed, and solute dissolving out of the particles and carried away.
+
+  **Grind is two lengths, not one.** Extraction is diffusion out of a particle, so it uses the
+  sieve diameter: `K = 4π²D/d²`. Flow is not — a real grind is a coarse mode plus a tail of fines
+  that lodge in the gaps and carry the pressure drop, and Kozeny–Carman from the sieve diameter
+  says an espresso puck passes twenty litres a second. So the permeability uses a *hydraulic*
+  diameter, 1/160 of the sieve one, and that ratio is one of exactly two fitted numbers.
+
+  Those two `d²` point opposite ways, which is why espresso is hard: finer is less permeable
+  *and* extracts faster. Neither is coded — they fall out of the two being derived separately.
+
+  Seventeen tests, every one against a closed form, an exact limit or a conservation law.
+
+- **The two things the first version of that crate got wrong**, because each was invisible until
+  something was drawn or weighed.
+
+  **Extraction had no equilibrium term**, so `dm/dt = −K·m` depended on nothing outside the
+  particle: every cell at the same temperature extracted at the same rate however much liquid
+  passed it. A bed with a channel through it then extracted *perfectly evenly*, which is the
+  opposite of what a channel does. The driving force is a difference now — `dm/dt = −K(m −
+  m₀C/C_sat)` — and a cell the flow rushes past is kept dilute and keeps going while a cell the
+  flow avoids fills up its own pore liquid and stalls at `1/(1+β) = 0.577`. That ceiling is the
+  entire reason a channelled shot under-extracts.
+
+  **The dose was 52 g in an 18 g basket**, because `solid_density` was coffee's *skeletal* density
+  of 1400 kg/m³. A ground particle is itself porous; its apparent density is 600, and with an
+  inter-particle porosity of 0.45 that is a 330 kg/m³ puck, which is what 17.6 g in 20 mm of a
+  58 mm basket weighs. Three densities, and the middle one is the one this model wants.
+
+- **The statistic that looked like a channel detector and was not.** The obvious measure is the
+  spread of the per-cell extraction. An evenly packed bed already sits at 0.105 — water that
+  entered clean is loaded by the time it leaves — and a wall gap that halves the yield takes it
+  only to 0.128. The signal is a fifth of the noise it rides on.
+
+  `Puck::radial_contrast` divides the axial gradient out: the ring and the core span the same
+  depths. It is 1.0000 on an even puck and 1.20 with the gap.
+
+  Nor does the peak extraction rise, which is the story everybody tells. It **falls**, 0.936 to
+  0.836, because the channelled basket reached the same weight in 15 s instead of 25. "The channel
+  over-extracts" is about the ring relative to the core, and at equal weight the absolute numbers
+  go the other way. Reported rather than asserted, so the test does not encode a plausible story.
+
+- **"Finer grind, higher yield" is false at equal time.** Measured: at 25 s a 175 µm bed reaches
+  12.9% against a 350 µm bed's 20.2%, its liquid sitting at 10.7% TDS and going nowhere, because
+  four times less water crossed it. Pulled to the same *weight* the statement holds and both
+  mechanisms show at once — 4.000× the time, exactly the permeability ratio, and 24.1% against
+  11.0%.
+
+- **`espresso_shot`**, which is what all of that is for. A basket from the pump to the cup:
+  17.6 g in, 38.0 g out, 24.6 s, 19.6% yield, 8.3% TDS. Grind, temperature and pressure each swept
+  on their own against the exponent each carries — time to a fixed weight goes as `1/d²` to 3×10⁻⁴
+  and as `1/Δp` to 10⁻¹³. Then a gap at the wall, and a portafilter left on the counter.
+
+  `espresso_shot shot.html` draws a vertical cut through three baskets in nine fields as the shot
+  runs. A cut and not a volume: nine volumes on fifty frames is 45 MB to animate three baskets
+  that are not moving, and the question was about a cross-section.
+
+- **`dualis_scene::sample_field` is public.** One field per domain is not enough and the limit is
+  the trait's rather than the physics'. A bed under flow has a temperature, a pressure, a speed,
+  an extraction state and a concentration on the same grid, all true at once, and `as_field` can
+  nominate one. A caller that wants the other four builds them here.
+
+  Which one `Puck` nominates is a decision with the same shape. It is **extraction**, not
+  temperature: a bed is isothermal unless somebody deliberately cooled the basket, so a
+  temperature panel is a flat rectangle on every ordinary run — a picture that renders, looks
+  fine, and carries nothing.
+
+- **`Basket` replaces ten positional arguments.** Two of them were `Length` and two were
+  temperatures, so transposing a pair compiled and ran; `clippy::too_many_arguments` had been
+  silenced to allow it. `Basket::espresso()` is a conventional double basket and `..` covers the
+  nine things you are not asking about.
+
+  It also made the geometry statable. The basket radius was "the largest circle that fits", which
+  puts the metal in the *corners* of the grid — the right heat capacity in the wrong shape, and a
+  cut through the axis crosses none of it. That was invisible until the first cross-section came
+  out flat.
+
+- **`scenes/18-an-espresso-shot`**, so all seven domains have scenes, and `DynamicViscosity`,
+  `MassFlow` and `Concentration` in `dualis-units`.
+
 - **The scene format carries a version**, and `--check` validates a file without running it.
 
   `Scene::format`, where **absence means 1** — what every scene written before the field existed
