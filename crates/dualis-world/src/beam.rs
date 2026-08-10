@@ -17,6 +17,7 @@
 //! padding or truncating would put energy on the wrong part of the boundary, which is worse
 //! than losing it — losing it the audit would catch on its own.
 
+use dualis::core::Reading;
 use dualis::prelude::*;
 
 /// A beam that pays joules onto a boundary with a Gaussian profile across it.
@@ -101,6 +102,16 @@ impl Domain for Beam {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    /// What is left to spend.
+    fn readings(&self) -> Vec<Reading> {
+        vec![Reading::new(
+            &self.name,
+            "reserve",
+            self.reserve().to_si(),
+            "J",
+        )]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

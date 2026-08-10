@@ -31,7 +31,7 @@
 //! three-dimensional acoustics is expensive rather than merely large.
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, ScalarField, Violation};
+use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, ScalarField, Violation};
 use dualis_units::{Area, Density, Energy, Frequency, Length, LengthVec, Pressure, Time, Velocity};
 use glam::DVec3;
 
@@ -496,6 +496,15 @@ impl Domain for Room {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    /// The peak pressure, which is what a mode's decay shows.
+    ///
+    /// Not the mean: a pressure field's mean is zero by symmetry, and a column of it would be a
+    /// column of rounding.
+    fn readings(&self) -> Vec<Reading> {
+        let peak = self.pressure.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        vec![Reading::new(&self.name, "peak", peak, "Pa")]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

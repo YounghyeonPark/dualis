@@ -12,6 +12,9 @@
 #![deny(missing_docs)]
 
 use dualis::prelude::*;
+// `Reading` belongs below the layers, because it crosses one: a domain produces it and a view
+// consumes it, and neither should have to depend on this application to name the type.
+pub use dualis::core::Reading;
 use serde::{Deserialize, Serialize};
 
 // `Room` is in the prelude now (it was not, though `Tube` was — FRICTION 5). Still aliased,
@@ -948,107 +951,19 @@ impl World {
 
     /// The scalars one domain reports, whether or not it has a picture.
     ///
-    /// One arm per domain, and each returns what that domain is *for* rather than a uniform
-    /// summary: a bar's mean temperature, a room's peak pressure, a heater's remaining tank,
-    /// every node of a thermal network by name. A mean over a room's pressure field is zero by
-    /// symmetry and would be a column of noise.
+    /// **This was a `match` over every domain type**, downcasting to each in turn to pull out its
+    /// numbers — a layer knowing every physics by name, needing an edit each time one was added.
+    /// That is the single thing this workspace's structure exists to avoid, and splitting the
+    /// layers apart is what made it visible.
     ///
-    /// Empty for a domain this crate cannot read back, which is not a silent failure here —
-    /// `Simulation::domain_as` returns `None` for a domain that declines `as_any`, and a
-    /// missing column in a table is visible in a way a missing panel was not.
+    /// `Domain::readings` moved the knowledge to where it belongs. A bar knows both ends of its
+    /// profile matter; a room knows its mean is zero by symmetry; a winding knows its resistance
+    /// is *why* its dissipation moves. None of that was ever this crate's to know.
     fn readings_of(&self, spec: &DomainSpec) -> Vec<Reading> {
-        let sim = &self.sim;
-        let name = spec.name().to_string();
-        let one = |label: &str, value: f64, unit: &'static str| Reading {
-            domain: name.clone(),
-            label: label.to_string(),
-            value,
-            unit,
-        };
-        match spec {
-            DomainSpec::Bar { .. } => sim
-                .domain_as::<Bar1D>(spec.name())
-                .map(|b| {
-                    let cells: Vec<f64> = (0..b.cell_count())
-                        .map(|i| b.temperature_at(i).to_si() - 273.15)
-                        .collect();
-                    vec![
-                        one("mean", b.mean_temperature().to_si() - 273.15, "C"),
-                        one("peak", cells.iter().cloned().fold(f64::MIN, f64::max), "C"),
-                        one("absorbed", b.absorbed_energy().to_si(), "J"),
-                    ]
-                })
-                .unwrap_or_default(),
-            DomainSpec::Lump { .. } => sim
-                .domain_as::<LumpedMass>(spec.name())
-                .map(|l| {
-                    vec![
-                        one("temperature", l.temperature().to_si() - 273.15, "C"),
-                        one("absorbed", l.absorbed_energy().to_si(), "J"),
-                    ]
-                })
-                .unwrap_or_default(),
-            DomainSpec::Network { .. } => sim
-                .domain_as::<ThermalNetwork>(spec.name())
-                .map(|net| {
-                    net.handles()
-                        .map(|(node, label)| {
-                            one(label, net.temperature(node).to_si() - 273.15, "C")
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            DomainSpec::Winding { .. } => sim
-                .domain_as::<Winding>(spec.name())
-                .map(|w| {
-                    vec![
-                        one("dissipating", w.dissipation().to_si(), "W"),
-                        one("resistance", w.resistance().to_si(), "ohm"),
-                        one("spent", w.dissipated_energy().to_si(), "J"),
-                    ]
-                })
-                .unwrap_or_default(),
-            DomainSpec::Room { .. } => sim
-                .field(spec.name())
-                .map(|field| {
-                    // A room's mean pressure is zero by symmetry, so the peak is the number a
-                    // reader wants — and it is what a mode's decay would show.
-                    let panel = sample(spec, field, sim.time());
-                    let peak = panel.values().iter().fold(0.0f64, |m, v| m.max(v.abs()));
-                    vec![one("peak", peak, "Pa")]
-                })
-                .unwrap_or_default(),
-            DomainSpec::Heater { .. } | DomainSpec::Beam { .. } | DomainSpec::Light { .. } => {
-                // Sources. What is left in the tank is the whole state, and it is the number
-                // that says whether the run outlasted its energy.
-                let left = sim
-                    .domain_as::<Heater>(spec.name())
-                    .map(|h| h.reserve().to_si())
-                    .or_else(|| {
-                        sim.domain_as::<Beam>(spec.name())
-                            .map(|b| b.reserve().to_si())
-                    })
-                    .or_else(|| {
-                        sim.domain_as::<Light>(spec.name())
-                            .map(|l| l.reserve().to_si())
-                    });
-                left.map(|j| vec![one("reserve", j, "J")])
-                    .unwrap_or_default()
-            }
-            DomainSpec::Orbit { .. } | DomainSpec::Bounce { .. } | DomainSpec::Atoms { .. } => {
-                // Bodies. A summary of many is a different thing from the bodies themselves,
-                // so this reports the extremes rather than pretending to a single value.
-                self.bodies(spec)
-                    .map(|panel| {
-                        let v = panel.values();
-                        vec![
-                            one("fastest", v.iter().cloned().fold(f64::MIN, f64::max), "m/s"),
-                            one("slowest", v.iter().cloned().fold(f64::MAX, f64::min), "m/s"),
-                        ]
-                    })
-                    .unwrap_or_default()
-            }
-        }
+        self.sim
+            .domain(spec.name())
+            .map(|d| d.readings())
+            .unwrap_or_default()
     }
 
     /// The domains that are bodies rather than fields, as dots.
@@ -1199,19 +1114,6 @@ pub struct Frame {
     /// run exportable as a table, which is the shape a plot wants and the shape a spreadsheet
     /// wants, and neither was available before.
     pub readings: Vec<Reading>,
-}
-
-/// One named scalar from one domain at one instant.
-#[derive(Clone, Debug)]
-pub struct Reading {
-    /// Which domain it came from.
-    pub domain: String,
-    /// What it is — `"mean"`, `"peak"`, `"reserve"`, a node's name.
-    pub label: String,
-    /// SI, except temperatures, which are celsius because that is what the column is read in.
-    pub value: f64,
-    /// The unit, for a header row or an axis.
-    pub unit: &'static str,
 }
 
 /// One domain, captured for drawing.

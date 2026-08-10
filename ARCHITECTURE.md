@@ -178,6 +178,11 @@ tolerances, and that is a kernel change nobody has needed yet.
 2. **Scene and analysis as libraries.** Both exist and both live inside `dualis-world`, which is
    `publish = false`. A consumer cannot reach `Scene`, `Frame` or the report generator at all.
    This is the largest gap between what is built and what is usable.
+
+   The first piece is done: `Domain::readings` and `Reading` are in the kernel, so collecting a
+   run's scalars no longer requires knowing every domain by name. Splitting the layers is what
+   made that requirement visible — the app had a hundred-line `match` over domain types, and a
+   layer cannot carry one.
 3. **3D field domains.** Conduction through a solid, and the wave equation with a ceiling. Both
    are the existing 1D and 2D schemes with one more index, and both have strong closed forms.
 4. **A field formulation of electricity.** Current density and potential on a grid, so `I²R`

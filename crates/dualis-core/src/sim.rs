@@ -184,6 +184,29 @@ pub trait Domain {
     fn as_field(&self) -> Option<&dyn ScalarField> {
         None
     }
+
+    /// The named scalars this domain reports, for a table, a chart or a caption.
+    ///
+    /// **The number a domain has when it has no picture.** A source has a remaining tank, a
+    /// winding has a dissipation, a thermal network has a temperature per node — and for several
+    /// of those the scalar *is* the result. `as_field` covers the domains that are continua and
+    /// there was no counterpart for the rest, so a caller wanting them had to know every domain
+    /// by name and downcast to each.
+    ///
+    /// That is what makes this a trait method rather than a function somewhere above: a layer
+    /// that collects readings by matching on domain types has to be edited every time a physics
+    /// is added, which is the one thing this workspace's structure exists to avoid.
+    ///
+    /// Return what the domain is *for* rather than a uniform summary. A mean over a pressure
+    /// field is zero by symmetry and would be a column of noise; the peak is the number a reader
+    /// wants. Nobody but the domain knows which.
+    ///
+    /// Empty by default, and opt-in like [`as_any`](Domain::as_any) and
+    /// [`as_field`](Domain::as_field) — with the same hazard those two have taught twice: a
+    /// domain that forgets it is silently absent from every table rather than broken.
+    fn readings(&self) -> Vec<Reading> {
+        Vec::new()
+    }
 }
 
 /// Delegation, so a domain chosen at run time can be added like any other.
@@ -222,6 +245,9 @@ impl Domain for Box<dyn Domain> {
     }
     fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
         (**self).as_any_mut()
+    }
+    fn readings(&self) -> Vec<Reading> {
+        (**self).readings()
     }
     fn as_any(&self) -> Option<&dyn Any> {
         (**self).as_any()
@@ -500,6 +526,41 @@ impl Exchange {
     /// `Simulation::sweep`, where the check that a channel had at most one *consumer* lives.
     pub fn takes_per_channel(&self) -> impl Iterator<Item = (&'static str, u32)> + '_ {
         self.takers.iter().map(|(c, n)| (*c, *n))
+    }
+}
+
+/// One named scalar from one domain at one instant.
+///
+/// Deliberately flat and owned: it crosses a layer boundary, gets written to a CSV column and a
+/// chart legend, and neither of those wants a borrow into a running simulation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Reading {
+    /// Which domain it came from. Filled in by the domain, because only it knows its own name.
+    pub domain: String,
+    /// What it is — `"mean"`, `"peak"`, `"reserve"`, a node's name.
+    pub label: String,
+    /// The value, in SI, with one exception this workspace has already made everywhere else:
+    /// temperatures are celsius, because that is the unit a column of them is read in.
+    pub value: f64,
+    /// The unit, for a header row or an axis. `&'static str` because a unit is a compile-time
+    /// fact about the quantity, not data — unlike a domain's name, which comes from a file.
+    pub unit: &'static str,
+}
+
+impl Reading {
+    /// A reading, named.
+    pub fn new(
+        domain: impl Into<String>,
+        label: impl Into<String>,
+        value: f64,
+        unit: &'static str,
+    ) -> Reading {
+        Reading {
+            domain: domain.into(),
+            label: label.into(),
+            value,
+            unit,
+        }
     }
 }
 

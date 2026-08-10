@@ -28,6 +28,7 @@
 //! mirror here is not flat and why `tests/scene.rs` checks the difference between 2800 K and
 //! 6500 K rather than checking a single number.
 
+use dualis::core::Reading;
 use dualis::optics::spectrum::Spectrum as Spec;
 use dualis::prelude::*;
 
@@ -162,6 +163,19 @@ impl Domain for Light {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    /// What is left to spend.
+    ///
+    /// Not what arrives: a lamp on a mirror spends far more than it delivers, and the coating
+    /// decides the difference. The consumer reports what it absorbed.
+    fn readings(&self) -> Vec<Reading> {
+        vec![Reading::new(
+            &self.name,
+            "reserve",
+            self.reserve().to_si(),
+            "J",
+        )]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

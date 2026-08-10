@@ -6,6 +6,7 @@
 //! library keeps to itself. Every other domain in a scene so far was one the library already
 //! provided, which tested the constructors and nothing else.
 
+use dualis::core::Reading;
 use dualis::prelude::*;
 
 /// An element that pays joules onto the bus out of a finite tank.
@@ -73,6 +74,20 @@ impl Domain for Heater {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    /// What is left in the tank.
+    ///
+    /// The whole state of a source, and the number that says whether a run outlasted its energy
+    /// — a scene that ends with a full tank never got going, and one that empties halfway has a
+    /// flat second half nobody asked for.
+    fn readings(&self) -> Vec<Reading> {
+        vec![Reading::new(
+            &self.name,
+            "reserve",
+            self.reserve().to_si(),
+            "J",
+        )]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

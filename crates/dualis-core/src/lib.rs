@@ -124,7 +124,7 @@ pub use motion::{Motion, Strobe};
 pub use pose::Pose;
 pub use rng::Rng;
 pub use scene::{Flux, Interface};
-pub use sim::{Domain, Exchange, Kind, Report, Schedule, Simulation};
+pub use sim::{Domain, Exchange, Kind, Reading, Report, Schedule, Simulation};
 pub use substance::Substance;
 pub use transform::{fft, fft2, fftshift, ifft, ifft2};
 pub use vector::{basis_for, oriented_against, reflect};

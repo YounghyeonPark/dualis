@@ -63,7 +63,7 @@
 #![forbid(unsafe_code)]
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, Violation};
+use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, Violation};
 use dualis_units::{Current, Length, Power, Resistance, Temperature, Time, Voltage};
 
 /// The channel resistive loss is published on.
@@ -369,6 +369,19 @@ impl Domain for Winding {
     /// green and is wrong.
     fn ledger(&self) -> Ledger {
         Ledger::new().with(quantity::ENERGY, self.reserve)
+    }
+
+    /// What it is dissipating, at what resistance, and what it has spent.
+    ///
+    /// The resistance is here because it is the *reason* the dissipation moves: at fixed current
+    /// the power ratio is the resistance ratio, and a table with both columns shows that in a way
+    /// a table with one cannot.
+    fn readings(&self) -> Vec<Reading> {
+        vec![
+            Reading::new(&self.name, "dissipating", self.dissipation().to_si(), "W"),
+            Reading::new(&self.name, "resistance", self.resistance().to_si(), "ohm"),
+            Reading::new(&self.name, "spent", self.dissipated.max(0.0), "J"),
+        ]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

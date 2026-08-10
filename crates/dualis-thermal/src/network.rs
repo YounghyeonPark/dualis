@@ -43,7 +43,7 @@
 //! name the file's own vocabulary in its error.
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, Substance, Violation};
+use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, Substance, Violation};
 use dualis_units::{Conductance, Energy, Length, Power, Temperature, Time, Volume};
 
 use crate::{Environment, HEAT};
@@ -921,6 +921,23 @@ impl Domain for ThermalNetwork {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    /// Every node, by the name it was given.
+    ///
+    /// Not a summary. The number a network exists to produce is the *drop across a joint*, and a
+    /// mean over the nodes reports neither end of it.
+    fn readings(&self) -> Vec<Reading> {
+        self.handles()
+            .map(|(node, label)| {
+                Reading::new(
+                    &self.name,
+                    label,
+                    self.temperature(node).to_si() - 273.15,
+                    "C",
+                )
+            })
+            .collect()
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

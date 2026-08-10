@@ -47,7 +47,9 @@
 pub mod network;
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Interface, Kind, Ledger, ScalarField, Substance, Violation};
+use dualis_core::{
+    Domain, Exchange, Interface, Kind, Ledger, Reading, ScalarField, Substance, Violation,
+};
 use dualis_units::{
     Area, Energy, HeatCapacity, Length, LengthVec, Power, Temperature, Time, Volume,
     STEFAN_BOLTZMANN,
@@ -379,6 +381,19 @@ impl Domain for LumpedMass {
         true
     }
 
+    /// One temperature, which is the whole of what a lumped model claims to know.
+    fn readings(&self) -> Vec<Reading> {
+        vec![
+            Reading::new(
+                &self.name,
+                "temperature",
+                self.temperature.to_si() - 273.15,
+                "C",
+            ),
+            Reading::new(&self.name, "absorbed", self.absorbed_energy().to_si(), "J"),
+        ]
+    }
+
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
@@ -612,6 +627,27 @@ impl Domain for Bar1D {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    /// Mean and peak in celsius, and what it has absorbed.
+    ///
+    /// Both ends of the profile, because a bar's whole reason to exist rather than a lumped mass
+    /// is that those two differ — reporting the mean alone would describe it as the thing it is
+    /// not.
+    fn readings(&self) -> Vec<Reading> {
+        let peak = (0..self.cells.len())
+            .map(|i| self.temperature_at(i).to_si())
+            .fold(f64::MIN, f64::max);
+        vec![
+            Reading::new(
+                &self.name,
+                "mean",
+                self.mean_temperature().to_si() - 273.15,
+                "C",
+            ),
+            Reading::new(&self.name, "peak", peak - 273.15, "C"),
+            Reading::new(&self.name, "absorbed", self.absorbed_energy().to_si(), "J"),
+        ]
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
