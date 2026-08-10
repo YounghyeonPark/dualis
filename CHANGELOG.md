@@ -10,6 +10,24 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [Unreleased]
+
+### Added
+
+- **A `volume` view** in `dualis-view`: a 3D field is raycast — trilinear sampling, front-to-back
+  compositing, rotatable with the same camera the bodies view uses — **beside** the slice montage
+  rather than instead of it. A render shows shape and a reader cannot get a number back out of it;
+  a montage is quantitative and unreadable as a shape. `ARCHITECTURE.md` gap 6, and the answer
+  turned out not to be a depth buffer.
+
+  The opacity transfer function is chosen from the run's own range: transparent in the middle for
+  a signed field, or a standing wave renders as a solid block; transparent at the low end for a
+  one-sided one, or a block at ambient does the same for the opposite reason.
+
+  When a feature occupies less than 3% of the frame the caption **says so**, with the figure. A
+  single hot cell in a block of 729 is a small bright dot and everything else is transparent,
+  which is correct and reads exactly like a broken renderer.
+
 ## [0.10.0] — 2026-08-10
 
 Three domains gained a third dimension and electricity gained a field, so

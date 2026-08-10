@@ -102,14 +102,15 @@ fn frames() -> Vec<Frame> {
 fn the_report_picks_a_view_per_shape() {
     let page = html("hand-built", &frames());
 
-    for kind in ["profile", "heatmap", "slices", "scene", "series"] {
+    for kind in ["profile", "heatmap", "volume", "slices", "scene", "series"] {
         assert!(
             page.contains(&format!("data-kind=\"{kind}\"")),
             "no {kind} view"
         );
     }
-    // Four panels plus one card for the readings.
-    assert_eq!(page.matches("class=\"card\"").count(), 5);
+    // Four panels plus one card for the readings — and the 3D one gets **two**, a render and a
+    // montage, because neither answers the other's question.
+    assert_eq!(page.matches("class=\"card\"").count(), 6);
 
     // **The volume is not drawn as a plane.** `lump` is 2×2×3, and a view that ignored `nz`
     // would render its first four values and call it done — a perfectly plausible heatmap of a
@@ -238,4 +239,81 @@ fn the_json_keeps_all_three_axes() {
     let list = &text[i..text[i..].find(']').unwrap() + i + 1];
     assert_eq!(list.matches(',').count(), 5, "six coordinates: {list}");
     assert!(list.contains("-1.000000e0"), "the z was lost: {list}");
+}
+
+/// **Every view kind a card declares is dispatched, and every card has somewhere to write.**
+///
+/// The failure this prevents is adding a view and wiring it half way. A canvas with a `data-kind`
+/// nothing draws is a blank rectangle; a card whose caption id nothing matches is a caption that
+/// silently goes nowhere. Both look like a rendering that has not finished loading.
+///
+/// Checked structurally rather than by running the page, and the limit is worth naming: **nothing
+/// in CI executes the viewer's JavaScript.** This catches a missing branch and a missing element,
+/// not a branch that draws nothing. The volume view was verified once by running the script under
+/// node against three real scenes and counting lit pixels — 4.8% for an acoustic mode, 2.3% for a
+/// busbar, 0.1% for a single hot cell, which is why that last one now says so in its caption.
+#[test]
+fn every_declared_view_is_wired_to_something_that_draws_it() {
+    let page = html("wiring", &frames());
+
+    // Each `data-kind` on a canvas must have a branch in `drawAll`.
+    let kinds: Vec<&str> = page
+        .match_indices("data-kind=\"")
+        .map(|(i, m)| {
+            let rest = &page[i + m.len()..];
+            &rest[..rest.find('"').expect("a closing quote")]
+        })
+        .collect();
+    assert!(kinds.len() >= 6, "only {} canvases: {kinds:?}", kinds.len());
+
+    // **Inside `drawAll`, not anywhere on the page.** The first version of this searched the whole
+    // document, and passed with the dispatch deliberately broken — because the *rotation* filter
+    // also names the kind, and `||v.kind==="volume"` matched there. A wiring check that any other
+    // mention satisfies is not a wiring check.
+    let body = {
+        let start = page.find("function drawAll(){").expect("drawAll exists");
+        let rest = &page[start..];
+        &rest[..rest
+            .find(
+                "
+}",
+            )
+            .expect("and it ends")]
+    };
+    for kind in &kinds {
+        // `series` is the fall-through arm and names no draw call of its own.
+        let dispatched = *kind == "series" || body.contains(&format!("v.kind===\"{kind}\") draw"));
+        assert!(
+            dispatched,
+            "{kind} is declared on a canvas and drawAll never draws it"
+        );
+    }
+
+    // Each canvas's slot must have a caption element, and the ids must be distinct — a volume has
+    // two views of one panel, and keying the caption by panel made the second overwrite the first.
+    let slots: Vec<&str> = page
+        .match_indices("data-slot=\"")
+        .map(|(i, m)| {
+            let rest = &page[i + m.len()..];
+            &rest[..rest.find('"').expect("a closing quote")]
+        })
+        .collect();
+    assert_eq!(slots.len(), kinds.len(), "every canvas needs a slot");
+    for slot in &slots {
+        assert!(
+            page.contains(&format!("id=\"cap-{slot}\"")),
+            "{slot} has no caption element to write to"
+        );
+    }
+    let mut unique = slots.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        slots.len(),
+        "two canvases share a slot: {slots:?}"
+    );
+
+    // And the volume and the montage really are the same panel seen twice.
+    assert!(slots.contains(&"lump-volume") && slots.contains(&"lump-slices"));
 }

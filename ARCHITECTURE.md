@@ -274,9 +274,15 @@ different quantities, the second separates domains carrying the same one.
    automatic: it loses heat to an environment that is not on the bus, so its ledger does not
    balance against bus traffic alone. That is a boundary being modelled, not a leak, and a check
    that accused it would be the wrong check.
-6. **A renderer with depth.** The analysis layer draws with painter's algorithm on a 2D canvas.
-   Real 3D content deserves real depth buffering — but content first: a better renderer of four
-   points is still four points.
+6. **A renderer with depth.** Partly answered, and the answer turned out not to be a depth
+   buffer. Content came first, as this list said it should: three domains produce volumes now, and
+   what a volume wants is not occlusion but **integration along a ray**. `dualis-view` raycasts a
+   3D field — trilinear sampling, front-to-back compositing, rotatable — beside the slice montage,
+   because a render shows shape and cannot be read for values while a montage is the reverse.
+
+   Depth buffering is still absent and still not obviously needed. Bodies are points, which
+   painter's algorithm sorts correctly, and a field is composited rather than occluded. It becomes
+   worth doing when something here has *surfaces* — a mesh, an isosurface — and nothing does.
 
 Beyond these, the physics itself is open-ended: electromagnetism, fluid dynamics, elasticity.
 Each is a crate on the kernel. None is a change to the layers.

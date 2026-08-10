@@ -21,13 +21,16 @@
 //! | scalars over time | a line chart, one series per reading |
 //! | a 1D field | a profile that animates, over a faint ghost of the whole run |
 //! | a 2D field | a heatmap that animates, on one colour scale throughout |
-//! | a 3D field | every z-slice as a montage, on one colour scale, animating together |
+//! | a 3D field | a rotatable render **and** every z-slice as a montage — see below |
 //! | points in space | a rotatable 3D scene, depth-sorted, that animates |
 //!
-//! The montage is the honest answer to a volume on a flat canvas. The alternative — one slice
-//! with a slider — hides the rest behind an interaction, and a viewer who never touches the
-//! slider sees a picture of a solid that is really a picture of one plane through it. Every
-//! sample is on screen here, and the caption says how many slices there are.
+//! A volume gets **both**, and that is not indecision. A raycast composites values along each
+//! ray, so it shows the shape of a field and a reader cannot get a number back out of it; the
+//! montage puts every sample on screen and is quantitative and unreadable as a shape. Offering
+//! one would be choosing which half of the question a researcher is allowed to ask.
+//!
+//! The montage is one slice per tile rather than one slice behind a slider, because a viewer who
+//! never touches a slider sees a picture of a solid that is really a picture of one plane.
 //!
 //! The scale is fixed across the run in every case. A frame that rescales makes a quantity
 //! *look* constant while it changes by orders of magnitude, which is the one thing a picture of
@@ -68,37 +71,48 @@ pub fn html(title: &str, frames: &[Frame]) -> String {
     );
 
     // One card per drawable domain, plus one for the readings, which every domain has.
+    //
+    // **A volume gets two.** A raycast is what a three-dimensional field looks like and a slice
+    // montage is what it *is*, and neither substitutes: the render composites values along a ray,
+    // so a reader cannot get a number back out of it, while the montage puts every sample on
+    // screen and is unreadable as a shape. Offering only one would be choosing which half of the
+    // question a researcher is allowed to ask.
     if let Some(first) = frames.first() {
         for panel in &first.panels {
-            let kind = match &panel.data {
-                PanelData::Field { nz, .. } if *nz > 1 => "slices",
-                PanelData::Field { ny, .. } if *ny <= 1 => "profile",
-                PanelData::Field { .. } => "heatmap",
-                PanelData::Points { .. } => "scene",
+            let kinds: &[&str] = match &panel.data {
+                PanelData::Field { nz, .. } if *nz > 1 => &["volume", "slices"],
+                PanelData::Field { ny, .. } if *ny <= 1 => &["profile"],
+                PanelData::Field { .. } => &["heatmap"],
+                PanelData::Points { .. } => &["scene"],
             };
-            out.push_str(&format!(
-                "<section class=\"card\"><div class=\"head\"><h2>{}</h2>\
-                 <span class=\"kind\">{}</span></div>\
-                 <canvas class=\"view\" data-panel=\"{}\" data-kind=\"{}\" \
-                 width=\"1400\" height=\"620\"></canvas>\
-                 <p class=\"cap\" id=\"cap-{}\"></p></section>\n",
-                escape(&panel.name),
-                match kind {
-                    "profile" => "1D field &middot; profile",
-                    "heatmap" => "2D field &middot; heatmap",
-                    "slices" => "3D field &middot; every z-slice",
-                    _ => "bodies &middot; 3D, drag to rotate",
-                },
-                escape(&panel.name),
-                kind,
-                escape(&panel.name),
-            ));
+            for kind in kinds {
+                out.push_str(&format!(
+                    "<section class=\"card\"><div class=\"head\"><h2>{}</h2>\
+                     <span class=\"kind\">{}</span></div>\
+                     <canvas class=\"view\" data-panel=\"{}\" data-kind=\"{}\" \
+                     data-slot=\"{}\" width=\"1400\" height=\"620\"></canvas>\
+                     <p class=\"cap\" id=\"cap-{}\"></p></section>\n",
+                    escape(&panel.name),
+                    match *kind {
+                        "profile" => "1D field &middot; profile",
+                        "heatmap" => "2D field &middot; heatmap",
+                        "volume" => "3D field &middot; rendered, drag to rotate",
+                        "slices" => "3D field &middot; every z-slice, and the numbers",
+                        _ => "bodies &middot; 3D, drag to rotate",
+                    },
+                    escape(&panel.name),
+                    kind,
+                    format_args!("{}-{}", escape(&panel.name), kind),
+                    format_args!("{}-{}", escape(&panel.name), kind),
+                ));
+            }
         }
         if !first.readings.is_empty() {
             out.push_str(
                 "<section class=\"card\"><div class=\"head\"><h2>Readings</h2>\
                  <span class=\"kind\">scalars &middot; over time</span></div>\
-                 <canvas class=\"view\" data-kind=\"series\" width=\"1400\" height=\"560\">\
+                 <canvas class=\"view\" data-kind=\"series\" data-slot=\"series\" \
+                 width=\"1400\" height=\"560\">\
                  </canvas><p class=\"cap\" id=\"cap-series\"></p></section>\n",
             );
         }
@@ -226,8 +240,8 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--hot)}
 h2{margin:0;font-size:15px;font-weight:620;letter-spacing:-.01em}
 .kind{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dim);letter-spacing:.04em}
 canvas.view{display:block;width:100%;height:auto;background:#0a0e13}
-canvas[data-kind=scene]{cursor:grab;touch-action:none}
-canvas[data-kind=scene]:active{cursor:grabbing}
+canvas[data-kind=scene],canvas[data-kind=volume]{cursor:grab;touch-action:none}
+canvas[data-kind=scene]:active,canvas[data-kind=volume]:active{cursor:grabbing}
 .cap{margin:0;padding:9px 14px 12px;font-family:ui-monospace,Consolas,monospace;
  font-size:11.5px;color:var(--dim)}
 @media (prefers-reduced-motion:reduce){.bar button{outline:1px dashed var(--dim)}}
@@ -274,7 +288,8 @@ function nice(x){
 }
 
 var views = [].slice.call(document.querySelectorAll("canvas.view")).map(function(c){
-  return {c:c, ctx:c.getContext("2d"), kind:c.dataset.kind, panel:c.dataset.panel};
+  return {c:c, ctx:c.getContext("2d"), kind:c.dataset.kind, panel:c.dataset.panel,
+          slot:c.dataset.slot || c.dataset.panel || "series"};
 });
 
 function panelOf(f, name){
@@ -365,6 +380,123 @@ function drawSlices(v, f){
   cap(v, p.nx+" x "+p.ny+" x "+p.nz+" · all "+p.nz+" slices, z increasing · one colour scale across every frame");
 }
 
+/* ---- 3D field: a raycast ------------------------------------------------------------------- */
+/* Rendered into a small buffer and scaled up. A 220x150 buffer at 48 samples a ray is about
+   1.6 million trilinear lookups a frame, which a browser does comfortably; the full canvas would
+   be forty times that and would drop frames on the animation. The softness that costs is honest —
+   this view is for shape, and the montage beside it carries the numbers. */
+var VOL_W = 220, VOL_H = 150, VOL_STEPS = 48;
+
+/* Opacity from value, and the choice is not cosmetic.
+
+   A signed field — pressure, zero mean — must be transparent in the middle and opaque at both
+   extremes, or a standing wave renders as a solid block. A one-sided field — kelvin, 293 upward —
+   must be transparent at the low end, or a block at ambient renders as a solid block for the
+   opposite reason. So the transfer function is chosen from the run's own range rather than fixed,
+   and `signed` is decided once from whether that range straddles zero. */
+function opacity(t, signed){
+  var a = signed ? Math.abs(2*t - 1) : t;
+  return a*a;                     /* squared, so the quiet bulk clears out of the way */
+}
+
+function drawVolume(v, f){
+  var x=v.ctx, w=v.c.width, h=v.c.height, p=panelOf(f,v.panel), R=range[v.panel];
+  x.fillStyle="#0a0e13"; x.fillRect(0,0,w,h);
+  var span=(R.hi-R.lo)||1, signed = R.lo < 0 && R.hi > 0;
+
+  /* The box in world units, longest axis normalised to 1 so a slab is drawn as a slab. */
+  var m=Math.max(p.nx,p.ny,p.nz), ex=[p.nx/m, p.ny/m, p.nz/m];
+  var ca=Math.cos(cam.az), sa=Math.sin(cam.az), ce=Math.cos(cam.el), se=Math.sin(cam.el);
+  /* Camera basis: right, up, forward. The same angles the bodies view uses, so dragging one
+     rotates the other and a reader is never looking at two different orientations. */
+  var fwd=[-sa*ce, -se, -ca*ce], right=[ca, 0, -sa], up=[-sa*se, ce, -ca*se];
+  var eye=[-fwd[0]*cam.dist, -fwd[1]*cam.dist, -fwd[2]*cam.dist];
+
+  var img=x.createImageData(VOL_W, VOL_H), d=img.data, aspect=VOL_W/VOL_H, k=0, lit=0;
+  for(var py=0; py<VOL_H; py++){
+    var sy=(1 - 2*(py+0.5)/VOL_H)*0.75;
+    for(var px=0; px<VOL_W; px++){
+      var sx=(2*(px+0.5)/VOL_W - 1)*0.75*aspect;
+      var dir=[fwd[0]+right[0]*sx+up[0]*sy, fwd[1]+right[1]*sx+up[1]*sy, fwd[2]+right[2]*sx+up[2]*sy];
+      var len=Math.hypot(dir[0],dir[1],dir[2]); dir=[dir[0]/len,dir[1]/len,dir[2]/len];
+
+      /* Slab test against the box centred on the origin. */
+      var t0=-1e9, t1=1e9, hit=true;
+      for(var ax=0; ax<3; ax++){
+        var half=ex[ax]/2, o=eye[ax], dd=dir[ax];
+        if(Math.abs(dd)<1e-9){ if(o<-half||o>half){hit=false;break;} continue; }
+        var a1=(-half-o)/dd, b1=(half-o)/dd, lo=Math.min(a1,b1), hi=Math.max(a1,b1);
+        if(lo>t0)t0=lo; if(hi<t1)t1=hi;
+      }
+      var r=13,g=18,b=25, alpha=0;
+      if(hit && t1>t0 && t1>0){
+        if(t0<0)t0=0;
+        var dt=(t1-t0)/VOL_STEPS;
+        for(var st=0; st<VOL_STEPS && alpha<0.985; st++){
+          var tt=t0+dt*(st+0.5);
+          /* World point -> grid index, with the box centred on the origin. */
+          var gx=((eye[0]+dir[0]*tt)/ex[0]+0.5)*(p.nx-1);
+          var gy=((eye[1]+dir[1]*tt)/ex[1]+0.5)*(p.ny-1);
+          var gz=((eye[2]+dir[2]*tt)/ex[2]+0.5)*(p.nz-1);
+          if(gx<0||gy<0||gz<0||gx>p.nx-1||gy>p.ny-1||gz>p.nz-1) continue;
+          var i0=Math.floor(gx), j0=Math.floor(gy), k0=Math.floor(gz);
+          var i1=Math.min(i0+1,p.nx-1), j1=Math.min(j0+1,p.ny-1), k1=Math.min(k0+1,p.nz-1);
+          var fx=gx-i0, fy=gy-j0, fz=gz-k0, nxy=p.nx*p.ny;
+          var c000=p.v[k0*nxy+j0*p.nx+i0], c100=p.v[k0*nxy+j0*p.nx+i1];
+          var c010=p.v[k0*nxy+j1*p.nx+i0], c110=p.v[k0*nxy+j1*p.nx+i1];
+          var c001=p.v[k1*nxy+j0*p.nx+i0], c101=p.v[k1*nxy+j0*p.nx+i1];
+          var c011=p.v[k1*nxy+j1*p.nx+i0], c111=p.v[k1*nxy+j1*p.nx+i1];
+          var z0=(c000*(1-fx)+c100*fx)*(1-fy)+(c010*(1-fx)+c110*fx)*fy;
+          var z1=(c001*(1-fx)+c101*fx)*(1-fy)+(c011*(1-fx)+c111*fx)*fy;
+          var val=z0*(1-fz)+z1*fz;
+
+          var norm=(val-R.lo)/span;
+          var a=opacity(norm, signed)*0.16;
+          if(a<=0.0008) continue;
+          var col=ramp(norm), ci=col.indexOf("(");
+          var parts=col.slice(ci+1,-1).split(",");
+          var contrib=a*(1-alpha);
+          r+= (Number(parts[0])-13)*contrib;
+          g+= (Number(parts[1])-18)*contrib;
+          b+= (Number(parts[2])-25)*contrib;
+          alpha+=contrib;
+        }
+      }
+      if(alpha>0.05) lit++;
+      d[k++]=r; d[k++]=g; d[k++]=b; d[k++]=255;
+    }
+  }
+
+  /* Nearest-neighbour off, so the small buffer reads as a soft render and not as pixels. */
+  var tmp=document.createElement("canvas"); tmp.width=VOL_W; tmp.height=VOL_H;
+  tmp.getContext("2d").putImageData(img,0,0);
+  x.imageSmoothingEnabled=true;
+  var scale=Math.min(w/VOL_W,(h-26)/VOL_H);
+  x.drawImage(tmp,(w-VOL_W*scale)/2,(h-26-VOL_H*scale)/2,VOL_W*scale,VOL_H*scale);
+
+  var pad=14, bw=210, bx=w-pad-bw, by=h-24;
+  for(var q=0;q<bw;q++){ x.fillStyle=ramp(q/bw); x.fillRect(bx+q,by,1,10); }
+  x.fillStyle="#7f8b9a"; x.font="12px ui-monospace,Consolas,monospace";
+  x.textAlign="right"; x.fillText(nice(R.lo), bx-8, by+9);
+  x.textAlign="left"; x.fillText(nice(R.hi)+" "+p.unit, bx+bw+8, by+9);
+  /* **Say when the picture is nearly empty.** A localised feature -- one hot cell in a block
+     of 729 -- is a small bright dot with everything else transparent, which is correct and
+     reads exactly like a broken renderer. Making it look bigger would be making the picture
+     lie, so the caption reports how much of the frame carries anything instead.
+
+     Measured rather than guessed: the exponent in `opacity` was tried at 1, 1.5 and 2 against
+     three real scenes and moved the occupied fraction from 0.2% to 0.1% on the hot spot. The
+     transfer function is not what makes a point source small. */
+  var frac = lit/(VOL_W*VOL_H);
+  var note = frac < 0.03
+    ? " \u00b7 " + (100*frac).toFixed(1) + "% of the frame is occupied: the feature is that "
+      + "small against the whole volume, and the montage below shows where"
+    : "";
+  cap(v, p.nx+" x "+p.ny+" x "+p.nz+" \u00b7 composited along each ray, so this shows shape and not "
+       +"values \u00b7 the montage below carries the numbers \u00b7 drag to rotate, scroll to zoom"
+       + note);
+}
+
 /* ---- 3D: bodies, depth sorted -------------------------------------------------------------- */
 function project(pt, s, w, h){
   var X=(pt[0]-s.c[0])/s.span, Y=(pt[1]-s.c[1])/s.span, Z=(pt[2]-s.c[2])/s.span;
@@ -437,7 +569,9 @@ function drawSeries(v){
 }
 
 function cap(v, text){
-  var el = document.getElementById("cap-" + (v.panel || "series"));
+  /* keyed by slot, not by panel: a volume has two views of the same panel and each writes its
+     own caption. Keying by panel made the second overwrite the first. */
+  var el = document.getElementById("cap-" + v.slot);
   if (el) el.textContent = text;
 }
 
@@ -447,6 +581,7 @@ function drawAll(){
     if(v.kind==="profile") drawProfile(v,f);
     else if(v.kind==="heatmap") drawHeat(v,f);
     else if(v.kind==="slices") drawSlices(v,f);
+    else if(v.kind==="volume") drawVolume(v,f);
     else if(v.kind==="scene") drawScene(v,f);
     else drawSeries(v);
   });
@@ -460,7 +595,7 @@ scrub.max=String(N-1);
 scrub.oninput=function(){ frame=Number(scrub.value); playing=false; play.textContent="Play"; drawAll(); };
 play.onclick=function(){ playing=!playing; play.textContent=playing?"Pause":"Play"; };
 
-views.filter(function(v){return v.kind==="scene";}).forEach(function(v){
+views.filter(function(v){return v.kind==="scene"||v.kind==="volume";}).forEach(function(v){
   v.c.addEventListener("pointerdown",function(e){ drag={x:e.clientX,y:e.clientY}; v.c.setPointerCapture(e.pointerId); });
   v.c.addEventListener("pointermove",function(e){
     if(!drag)return;

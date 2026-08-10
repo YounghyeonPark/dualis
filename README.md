@@ -24,7 +24,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 472 tests, all against closed forms
+cargo test --workspace                       # 473 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are six of those; three more
@@ -596,9 +596,11 @@ there is, is flat: `dualis-scene` gives each domain a `Pose` in world coordinate
 what they hold. A hierarchy is what you want when placements are relative and animated, and
 nothing here has needed one.
 
-The renderer is deliberately modest. `dualis-view` draws a filmstrip, a heatmap, a profile and a
+The renderer is deliberately modest. `dualis-view` draws a filmstrip, a heatmap, a profile, a
 point scene — depth-sorted back to front, which is painter's algorithm on a 2D canvas, with no
-depth buffer and no shading. The SVG has one fixed projection; the HTML report can be dragged to
+depth buffer and no shading — and a **raycast** of a 3D field, composited front to back and
+rotatable, beside a montage of every slice. The render shows shape and cannot be read for values;
+the montage is the reverse, and a volume gets both rather than a choice between them. The SVG has one fixed projection; the HTML report can be dragged to
 rotate and scrolled to zoom, and that is the whole camera model. It is enough to see whether a
 simulation did what you expected, and it is not a visualisation package. The JSON export exists
 for when it is not enough.

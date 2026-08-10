@@ -15,7 +15,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 
 | | |
 | --- | --- |
-| `out.html` | A report that **picks a view per domain from its shape**, and opens in a browser |
+| `out.html` | A report that **picks a view per domain from its shape**, and opens in a browser. A 3D field gets two: a rotatable render and every slice |
 | `out.svg` | A filmstrip: every frame on one page, one colour scale throughout so frames compare |
 | `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
