@@ -491,12 +491,17 @@ fn a_wall_channel_lowers_the_yield_and_raises_the_spread() {
 fn a_cold_basket_cools_the_shot_by_no_more_than_it_can_hold() {
     // With a jacket, because that is what is being measured. A basket that fills its grid has
     // metal only in the corners: the right heat capacity in the wrong shape.
+    //
+    // At 2 mm rather than the 1 mm the rest of this file uses. The claim is a capacity bound and
+    // does not care about the grid, and the metal is what sets the step here — a jacket at 1 mm
+    // made this test alone cost more than the other eleven together.
+    let cell = 2e-3;
     let mut p = Puck::new(
         "puck",
         Basket {
-            counts: (20, 20, 20),
-            cell: Length::from_si(DX),
-            radius: Length::from_si(8e-3),
+            counts: (20, 10, 20),
+            cell: Length::from_si(cell),
+            radius: Length::from_si(14e-3),
             ..Basket::espresso()
         },
     );
@@ -515,11 +520,11 @@ fn a_cold_basket_cools_the_shot_by_no_more_than_it_can_hold() {
             }
         }
     }
-    let al = Substance::aluminium_6061();
+    let steel = Substance::stainless_304();
     let c_wall = wall_cells as f64
-        * DX.powi(3)
-        * al.density.to_si()
-        * al.thermal.as_ref().unwrap().specific_heat.to_si();
+        * cell.powi(3)
+        * steel.density.to_si()
+        * steel.thermal.as_ref().unwrap().specific_heat.to_si();
 
     let dt = Time::from_si(p.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
     let mut bus = Exchange::new();
@@ -675,7 +680,7 @@ fn the_limit_is_where_positivity_fails() {
     );
     // The limit is finite and of a sane size for these cells: sub-millisecond, because a
     // millimetre cell with a millimetre-per-second pore velocity is not what sets it — conduction
-    // through the aluminium wall is.
+    // through the steel wall is.
     println!("  the limit is {limit:.3e} s");
     assert!(
         (1e-6..1e-1).contains(&limit),

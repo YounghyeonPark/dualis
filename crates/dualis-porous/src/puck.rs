@@ -185,9 +185,7 @@ impl Basket {
             grind: Grind::espresso(),
             porosity: 0.45,
             liquid: Liquid::water(),
-            // A basket is stainless; the catalogue has aluminium, whose volumetric heat capacity
-            // is within 15% of steel's, which is the property that matters to a shot.
-            wall: Substance::aluminium_6061(),
+            wall: Substance::stainless_304(),
             pressure: Pressure::from_si(9.0e5),
             temperature: Temperature::celsius(93.0),
         }

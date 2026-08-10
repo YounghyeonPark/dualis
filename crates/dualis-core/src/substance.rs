@@ -238,6 +238,42 @@ impl Substance {
         self
     }
 
+    /// Austenitic stainless, 304/18-8. What a portafilter basket, a boiler and most food-contact
+    /// hardware is.
+    ///
+    /// # It is a poor conductor and that is the point
+    ///
+    /// 16.2 W/m/K against aluminium's 167 — a factor of ten — while holding **more** heat per unit
+    /// volume, 4.0 MJ/m³/K against 2.4. So a steel part is a better *reservoir* and a worse
+    /// *spreader* than an aluminium one of the same size, which is why a group head is brass and
+    /// a basket is not.
+    ///
+    /// For an explicit conduction solver that combination is also the difference between a step of
+    /// 2.4 ms and one of 41 ms on a millimetre grid, because the limit goes as the diffusivity and
+    /// steel's is seventeen times lower. Reaching for aluminium because it is the metal already in
+    /// the catalogue costs an order of magnitude in run time *and* understates the thermal mass.
+    pub fn stainless_304() -> Substance {
+        Substance {
+            name: "304 stainless".to_string(),
+            density: Density::g_per_cm3(8.00),
+            thermal: Some(ThermalProps {
+                conductivity: ThermalConductivity::w_per_m_k(16.2),
+                specific_heat: SpecificHeat::j_per_kg_k(500.0),
+                expansion: ThermalExpansion::ppm_per_k(17.3),
+                // Rolled and passivated rather than mirror-polished, which is what a basket is.
+                emissivity: 0.28,
+            }),
+            mechanical: Some(MechanicalProps {
+                youngs_modulus: Pressure::from_si(193.0e9),
+                poisson_ratio: 0.29,
+                yield_strength: Pressure::from_si(215.0e6),
+            }),
+            acoustic: Some(AcousticProps {
+                sound_speed: Velocity::m_per_s(5_790.0),
+            }),
+        }
+    }
+
     /// Electrolytic tough-pitch copper: windings, heat spreaders, planes.
     ///
     /// The values are uncontroversial to three figures. The emissivity is not: this is **bright

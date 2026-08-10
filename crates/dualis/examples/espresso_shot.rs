@@ -684,8 +684,8 @@ fn wall_ring(p: &Puck) -> Vec<bool> {
 }
 
 fn wall_heat_capacity(p: &Puck) -> f64 {
-    let al = Substance::aluminium_6061();
-    let c = al.thermal.as_ref().expect("aluminium has thermal props");
+    let steel = Substance::stainless_304();
+    let c = steel.thermal.as_ref().expect("steel has thermal props");
     let mut cells = 0;
     for k in 0..NZ {
         for j in 0..NY {
@@ -696,5 +696,5 @@ fn wall_heat_capacity(p: &Puck) -> f64 {
             }
         }
     }
-    cells as f64 * DX.powi(3) * al.density.to_si() * c.specific_heat.to_si()
+    cells as f64 * DX.powi(3) * steel.density.to_si() * c.specific_heat.to_si()
 }

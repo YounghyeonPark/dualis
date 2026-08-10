@@ -14,6 +14,20 @@ messages carry the full account.
 
 ### Added
 
+- **`Substance::stainless_304`, and a basket made of what a basket is made of.**
+
+  `Basket::espresso` used aluminium because the catalogue had it. Steel conducts a tenth as well —
+  16.2 W/m/K against 167 — while holding **more** heat per unit volume, 4.0 MJ/m³/K against 2.4:
+  a better reservoir and a worse spreader, which is why a group head is brass and a basket is not.
+
+  The wall sets the explicit solver's step, and the limit goes as the diffusivity, so steel's is
+  seventeen times larger. `dualis-porous`'s suite went from **152 s to 5.8 s** in release and 52 s
+  to 6.7 s in debug — the mode CI actually runs — and the model got more accurate in the same
+  edit. It had made the debug matrix jobs ten times slower than the whole workspace had been.
+
+  Reaching for the metal already in the catalogue cost an order of magnitude in run time *and*
+  understated the thermal mass by 65%.
+
 - **A seventh domain: `dualis-porous`.** Flow through a packed bed, the heat it carries, and the
   dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed, a leaching
   heap and an aquifer.
