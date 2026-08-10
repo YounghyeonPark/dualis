@@ -115,17 +115,27 @@ fn the_readings_and_the_panel_describe_the_same_frame() {
             .iter()
             .find(|p| p.name == "bar")
             .expect("the bar is drawable");
-        // The panel is already celsius — `sample` carries an offset for exactly this, because a
-        // picture of a bar wants degrees and the domain stores kelvin. Subtracting again here
-        // was the first version of this test, and it failed by 273.15 in the most legible way
-        // a unit mistake ever fails.
-        let from_panel = panel.values().iter().cloned().fold(f64::MIN, f64::max);
+        // The panel is **kelvin** and the reading is celsius, and neither is a mistake: the field
+        // returns what the cells hold, `readings` returns the unit a column of temperatures is
+        // read in, and each says which it is. So the conversion is done here, from the units the
+        // two sides declare, rather than assumed — which is the only version of this test that
+        // would notice if one of them changed.
+        //
+        // It changed once already. While the application sampled fields itself it applied a
+        // -273.15 offset and labelled the result "C"; moving that to `dualis-scene` moved the
+        // conversion to whoever wants celsius, and this assertion is what caught it.
+        assert_eq!(panel.unit, "K", "the bar's field is what the cells hold");
+        let from_panel = panel.values().iter().cloned().fold(f64::MIN, f64::max) - 273.15;
         let from_readings = frame
             .readings
             .iter()
             .find(|r| r.domain == "bar" && r.label == "peak")
-            .expect("the bar reports a peak")
-            .value;
+            .expect("the bar reports a peak");
+        assert_eq!(
+            from_readings.unit, "C",
+            "a column of temperatures is read in celsius"
+        );
+        let from_readings = from_readings.value;
         assert!(
             (from_panel - from_readings).abs() < 1e-9,
             "at t = {:.4}: panel says {from_panel:.6}, readings say {from_readings:.6}",
@@ -193,4 +203,54 @@ fn a_moving_body_moves_and_the_picture_does_not() {
             .flat_map(|p| p.iter())
             .fold(f64::MAX, |m, v| m.min(*v));
     assert!(spread > 0.0, "nothing moved, so nothing was being framed");
+}
+
+/// **A field domain with no extent is not drawn, and nothing says so.**
+///
+/// Moving the capture into `dualis-scene` moved the extent out of the sampler and into
+/// `DomainSpec::placement`, where it is now a `match` a future variant could join without being
+/// noticed. The failure mode is not a panic: `capture` skips a field that nobody sized, and the
+/// result is a report that is one panel short. Nobody counts panels in a report.
+///
+/// So it is counted here, across every scene that ships, from the two sides that must agree —
+/// the simulation's own answer to "do you have a field", and the scene's answer to "how big is
+/// it". A new field domain that forgets its extent fails this and nothing else.
+#[test]
+fn every_domain_with_a_field_was_given_an_extent() {
+    let (mut checked, mut fields) = (0, 0);
+    for entry in std::fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("scenes"))
+        .expect("the scenes are there")
+    {
+        let path = entry.expect("readable").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let scene: Scene = serde_json::from_str(&std::fs::read_to_string(&path).expect("readable"))
+            .expect("it parses");
+        let world = World::build(scene.clone()).expect("it builds");
+        let placed = world.placements();
+
+        for spec in &scene.domains {
+            let has_field = world
+                .simulation()
+                .domain(spec.name())
+                .and_then(|d| d.as_field())
+                .is_some();
+            let sized = placed[spec.name()].extent.is_some();
+            assert_eq!(
+                has_field,
+                sized,
+                "{}: {} has a field: {has_field}, was given an extent: {sized}",
+                path.display(),
+                spec.name()
+            );
+            checked += 1;
+            fields += usize::from(has_field);
+        }
+    }
+    // Both counters, because the assertion above is an equality and passes perfectly on a run
+    // where nothing has a field at all. That is the vacuous version of this test, and it is the
+    // one a rewire that broke `as_field` everywhere would leave behind.
+    assert!(checked >= 14, "only {checked} domains were checked");
+    assert!(fields >= 8, "only {fields} of them had a field to size");
 }

@@ -6,8 +6,13 @@
 //! that turns out to be awkward. A library with no consumers is a library whose ergonomics
 //! nobody has measured.
 //!
-//! Findings are collected in `FRICTION.md` beside this crate. Seven of the twelve are fixed —
-//! this crate is the record of what the API was like before, and the reason it changed.
+//! Findings are collected in `FRICTION.md` beside this crate. Sixteen of the twenty-two are
+//! fixed — this crate is the record of what the API was like before, and the reason it changed.
+//!
+//! The layers it once carried are libraries now. `dualis-scene` owns capture, and this crate is
+//! left with what an *application* actually is: a file format, the domain types that format names,
+//! and one place saying how far each field extends. A consumer that wants to draw a run no longer
+//! has to reach into a binary that is `publish = false` to do it.
 
 #![deny(missing_docs)]
 
@@ -16,6 +21,7 @@ use dualis::prelude::*;
 // consumes it, and neither should have to depend on this application to name the type.
 pub use dualis::core::Reading;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // `Room` is in the prelude now (it was not, though `Tube` was — FRICTION 5). Still aliased,
 // because this crate has a `DomainSpec::Room` variant of its own and that name is the right
@@ -857,15 +863,29 @@ impl World {
     /// drawing.
     pub fn run(&mut self) -> Result<Vec<Frame>, Violation> {
         let dt = Time::from_si(self.scene.duration_s / self.scene.frames as f64);
+        let placed = self.placements();
         let mut frames = Vec::with_capacity(self.scene.frames + 1);
-        frames.push(self.capture());
+        frames.push(dualis::scene::capture(&self.sim, &placed));
         for _ in 0..self.scene.frames {
             self.sim.advance(dt)?;
             self.close_feedback();
-            frames.push(self.capture());
+            frames.push(dualis::scene::capture(&self.sim, &placed));
         }
-        unify_body_bounds(&mut frames);
+        dualis::scene::settle_framing(&mut frames);
         Ok(frames)
+    }
+
+    /// Where each domain sits, keyed by the name the simulation knows it under.
+    ///
+    /// Built once per run rather than per frame: a placement is a property of the scene, and a
+    /// scene does not move while it is being simulated. Rebuilding it 240 times would also have
+    /// made a placement that *did* drift look like a working feature.
+    pub fn placements(&self) -> BTreeMap<String, Placement> {
+        self.scene
+            .domains
+            .iter()
+            .map(|spec| (spec.name().to_string(), spec.placement()))
+            .collect()
     }
 
     /// Refresh every tracking winding's temperature from the node it follows.
@@ -914,315 +934,70 @@ impl World {
             }
         }
     }
-
-    /// Sample every drawable domain onto a grid at the current time.
-    ///
-    /// Note what is *not* here: any mention of `Room` or `Bar1D`. A domain that has a field
-    /// hands one over through `Domain::as_field`, and this samples it. Adding a domain type
-    /// to the scene format no longer means editing the renderer — which is what
-    /// `ScalarField` was for, and was not reachable until the trait had a way to offer one.
-    fn capture(&self) -> Frame {
-        let t = self.sim.time();
-        let readings = self
-            .scene
-            .domains
-            .iter()
-            .flat_map(|spec| self.readings_of(spec))
-            .collect();
-        let panels = self
-            .scene
-            .domains
-            .iter()
-            .filter_map(|spec| match self.sim.field(spec.name()) {
-                Some(field) => Some(sample(spec, field, t)),
-                // FRICTION 11: `Domain::as_field` covers the domains that *are* fields, and
-                // there is no counterpart for the ones that are a countable number of bodies.
-                // So a renderer wanting to draw an orbit or a box of atoms is back to
-                // downcasting and knowing the type — which is finding 3 again, for the other
-                // half of the domains.
-                None => self.bodies(spec),
-            })
-            .collect();
-        Frame {
-            time_s: t.to_si(),
-            panels,
-            readings,
-        }
-    }
-
-    /// The scalars one domain reports, whether or not it has a picture.
-    ///
-    /// **This was a `match` over every domain type**, downcasting to each in turn to pull out its
-    /// numbers — a layer knowing every physics by name, needing an edit each time one was added.
-    /// That is the single thing this workspace's structure exists to avoid, and splitting the
-    /// layers apart is what made it visible.
-    ///
-    /// `Domain::readings` moved the knowledge to where it belongs. A bar knows both ends of its
-    /// profile matter; a room knows its mean is zero by symmetry; a winding knows its resistance
-    /// is *why* its dissipation moves. None of that was ever this crate's to know.
-    fn readings_of(&self, spec: &DomainSpec) -> Vec<Reading> {
-        self.sim
-            .domain(spec.name())
-            .map(|d| d.readings())
-            .unwrap_or_default()
-    }
-
-    /// The domains that are bodies rather than fields, as dots.
-    ///
-    /// **This named three domains and downcast to each** — `NBody`, `ContactSystem`, `Fluid` —
-    /// which is `FRICTION.md` finding 11, recorded for months as "`as_field` covers half the
-    /// domains and there is no counterpart for the other half". Splitting the layers is what made
-    /// it unpayable: a scene layer that must name three physics to find out where anything *is*
-    /// needs editing every time a fourth arrives.
-    ///
-    /// `Domain::as_bodies` is that counterpart. The framing is computed here rather than asked
-    /// for, and that is the honest division: a periodic cell is a boundary condition and the
-    /// domain reports it, while an orbit's box is a property of the picture and nothing physical
-    /// sits at its edge.
-    fn bodies(&self, spec: &DomainSpec) -> Option<Panel> {
-        let domain = self.sim.domain(spec.name())?;
-        let bodies = domain.as_bodies()?;
-        let n = bodies.count();
-        let mut positions = Vec::with_capacity(n);
-        let mut values = Vec::with_capacity(n);
-        for i in 0..n {
-            let p = bodies.position(i).to_si();
-            positions.push([p.x, p.y, p.z]);
-            values.push(bodies.value(i));
-        }
-
-        // A real wall if there is one, and otherwise a box measured from the bodies themselves
-        // and padded — so it frames them without claiming anything sits at the edge.
-        let (bounds, boxed) = match bodies.cell() {
-            Some((lo, hi)) => {
-                let (lo, hi) = (lo.to_si(), hi.to_si());
-                ([lo.x, lo.y, lo.z, hi.x, hi.y, hi.z], true)
-            }
-            None => {
-                let r = positions
-                    .iter()
-                    .flat_map(|p| p.iter())
-                    .fold(0.0f64, |m, v| m.max(v.abs()))
-                    * 1.2;
-                let r = if r > 0.0 { r } else { 1.0 };
-                ([-r, -r, -r, r, r, r], false)
-            }
-        };
-
-        Some(Panel {
-            name: spec.name().to_string(),
-            unit: bodies.value_unit(),
-            data: PanelData::Points {
-                positions,
-                values,
-                bounds,
-                boxed,
-            },
-        })
-    }
 }
 
-/// Give every body panel one framing for the whole run.
+/// Re-exported from [`dualis::scene`], which is where they live now.
 ///
-/// `capture` measures a frame at a time and cannot see the future, so a panel without a real
-/// wall would come back framed to *that* frame — and then a body crossing the picture would look
-/// still while the picture moved. `PanelData::Points` documents the opposite ("fixed for the
-/// whole run so a body moving is a body moving"), and this is where that promise is kept.
-///
-/// Panels with a real wall are left alone: a periodic cell is a boundary condition and does not
-/// change because a run is longer.
-fn unify_body_bounds(frames: &mut [Frame]) {
-    let names: Vec<String> = frames
-        .first()
-        .map(|f| {
-            f.panels
-                .iter()
-                .filter(|p| matches!(p.data, PanelData::Points { boxed: false, .. }))
-                .map(|p| p.name.clone())
-                .collect()
-        })
-        .unwrap_or_default();
+/// They were defined here, because this crate was the only thing that had ever needed them and a
+/// type nobody else can reach costs nothing to keep local. That stopped being true the moment
+/// `publish = false` was the only reason a consumer could not draw a run: an application is not a
+/// place to keep the shape of an answer.
+pub use dualis::scene::{Extent, Frame, Panel, PanelData, Placement};
 
-    for name in names {
-        let mut widest = [0.0f64; 6];
-        for frame in frames.iter() {
-            if let Some(Panel {
-                data: PanelData::Points { bounds, .. },
+impl DomainSpec {
+    /// Where this domain sits, and how much of it to sample.
+    ///
+    /// **The only place in this application that matches on a domain type to draw one**, and it
+    /// is the right place: a scene format is a list of domain kinds already, so knowing them is
+    /// its job rather than an admission. Every other such match is gone — the scalars a domain
+    /// reports, the bodies it has, the unit its field is in, all of it is the domain's own.
+    ///
+    /// What is left here is the one thing a domain genuinely cannot answer: **how far a field
+    /// extends**. `ScalarField` is a function of position and does not stop anywhere; a field
+    /// that knew its own bounds would be a mesh. So the scene says, because the scene is what
+    /// wrote the size down in the first place.
+    ///
+    /// Spelled out variant by variant rather than with a `_`, and that is deliberate. A wildcard
+    /// here would give a newly added field domain no extent, and a domain with no extent is not
+    /// drawn — the failure would be a missing panel in a report nobody was watching closely,
+    /// which is exactly the shape of failure this crate keeps finding.
+    pub fn placement(&self) -> Placement {
+        match self {
+            // A room is a rectangle, sampled at its own cell spacing so the picture has the
+            // resolution the simulation does — no more, which would interpolate, and no less,
+            // which would alias a mode into a smoother one.
+            DomainSpec::Room {
+                cells_across,
+                width_m,
+                height_m,
                 ..
-            }) = frame.panels.iter().find(|p| p.name == name)
-            {
-                for k in 0..3 {
-                    widest[k] = widest[k].min(bounds[k]);
-                    widest[k + 3] = widest[k + 3].max(bounds[k + 3]);
-                }
+            } => {
+                let nx = (*cells_across).max(3);
+                let ny = ((height_m / width_m) * (nx - 1) as f64).round() as usize + 1;
+                Placement::field(Extent::rectangle(
+                    Length::m(*width_m),
+                    Length::m(*height_m),
+                    nx,
+                    ny.max(3),
+                ))
             }
-        }
-        for frame in frames.iter_mut() {
-            if let Some(Panel {
-                data: PanelData::Points { bounds, .. },
-                ..
-            }) = frame.panels.iter_mut().find(|p| p.name == name)
-            {
-                *bounds = widest;
+            // A bar is a line. One row, and the report picks a profile rather than a heatmap
+            // from that shape alone.
+            DomainSpec::Bar {
+                cells, length_mm, ..
+            } => Placement::field(Extent::line(Length::mm(*length_mm), (*cells).max(2))),
+            // Bodies, which carry their own positions and need no extent.
+            DomainSpec::Orbit { .. } | DomainSpec::Bounce { .. } | DomainSpec::Atoms { .. } => {
+                Placement::default()
             }
-        }
-    }
-}
-
-/// Sample a field over the extent the scene says it occupies.
-///
-/// The extent has to come from the scene rather than from the field, because `ScalarField`
-/// is a function of position and says nothing about where it stops. That is the right
-/// division — a field that knew its own bounds would be a mesh — but it does mean the caller
-/// supplies them, and here the scene already has them.
-fn sample(spec: &DomainSpec, field: &dyn ScalarField, t: Time) -> Panel {
-    let (nx, ny, w, h, unit, offset) = match spec {
-        DomainSpec::Room {
-            cells_across,
-            width_m,
-            height_m,
-            ..
-        } => {
-            let nx = (*cells_across).max(3);
-            let ny = ((height_m / width_m) * (nx - 1) as f64).round() as usize + 1;
-            (nx, ny.max(3), *width_m, *height_m, "Pa", 0.0)
-        }
-        // A heater has no field, so `Domain::as_field` returns `None` and `capture` never
-        // reaches here with one. Matching on it anyway rather than an `unreachable!`, because
-        // a panic reachable only through a future edit is worse than a panel nobody draws.
-        // Sources have no field, and bodies are handled by `World::bodies`, so neither
-        // reaches here. Matched rather than left to an `unreachable!`, because a panic a
-        // future edit could reach is worse than a panel nobody draws.
-        DomainSpec::Heater { .. }
-        | DomainSpec::Beam { .. }
-        | DomainSpec::Orbit { .. }
-        | DomainSpec::Bounce { .. }
-        | DomainSpec::Atoms { .. }
-        | DomainSpec::Lump { .. }
-        // A network declines a field on purpose: its nodes have capacities, not positions, and
-        // a conductance is not a distance. See `ThermalNetwork::as_field`.
-        | DomainSpec::Network { .. }
-        | DomainSpec::Winding { .. }
-        | DomainSpec::Light { .. } => (1, 1, 0.0, 0.0, "J", 0.0),
-        DomainSpec::Bar {
-            cells, length_mm, ..
-        } => (
-            (*cells).max(2),
-            1,
-            length_mm * 1e-3,
-            0.0,
-            "C",
-            -273.15, // the bar reports kelvin; a picture of a room wants celsius
-        ),
-    };
-
-    let mut values = Vec::with_capacity(nx * ny);
-    for j in 0..ny {
-        for i in 0..nx {
-            let x = if nx > 1 {
-                w * i as f64 / (nx - 1) as f64
-            } else {
-                0.0
-            };
-            let y = if ny > 1 {
-                h * j as f64 / (ny - 1) as f64
-            } else {
-                0.0
-            };
-            values.push(field.at(LengthVec::m(x, y, 0.0), t) + offset);
-        }
-    }
-    Panel {
-        name: spec.name().to_string(),
-        unit,
-        data: PanelData::Field { nx, ny, values },
-    }
-}
-
-/// One captured instant: every drawable domain, sampled.
-#[derive(Clone, Debug)]
-pub struct Frame {
-    /// Simulation time, in seconds.
-    pub time_s: f64,
-    /// One per drawable domain, in scene order.
-    pub panels: Vec<Panel>,
-    /// Named scalars from every domain, drawable or not, in scene order.
-    ///
-    /// **The asset most of this crate's domains actually have.** Eight of the fourteen shipped
-    /// scenes contain a domain that produces no picture — a heater, a lamp, a winding, a thermal
-    /// network — and for several of them the scalar *is* the result: the winding temperature is
-    /// what decides whether a motor survives, and it was reachable only by reading the terminal.
-    ///
-    /// A field has a picture and a number; a source has only a number. Collecting both makes a
-    /// run exportable as a table, which is the shape a plot wants and the shape a spreadsheet
-    /// wants, and neither was available before.
-    pub readings: Vec<Reading>,
-}
-
-/// One domain, captured for drawing.
-#[derive(Clone, Debug)]
-pub struct Panel {
-    /// Which domain this came from.
-    pub name: String,
-    /// What the values mean, for the legend.
-    pub unit: &'static str,
-    /// The shape of what was captured.
-    pub data: PanelData,
-}
-
-/// A continuum sampled on a grid, or a finite number of bodies at positions.
-///
-/// Two shapes rather than one because the domains genuinely are two kinds of thing. A room
-/// and a bar are fields: defined everywhere, and a picture of one is a raster. An orbit, a
-/// bouncing ball and a box of atoms are not: they are a countable number of things at places,
-/// and rasterising them would be inventing a continuum they do not have.
-///
-/// This is the distinction `ScalarField` cannot express, and it is why `Domain::as_field`
-/// returns `None` for three of the five domains rather than something contrived.
-#[derive(Clone, Debug)]
-pub enum PanelData {
-    /// A field, sampled onto a grid.
-    Field {
-        /// Samples across.
-        nx: usize,
-        /// Samples up. One for a bar, which has no second dimension.
-        ny: usize,
-        /// Row-major, `nx * ny` values.
-        values: Vec<f64>,
-    },
-    /// Bodies at positions in space, each carrying a value to colour it by.
-    ///
-    /// Three dimensions, because the physics is three-dimensional and always was: `NBody`,
-    /// `ContactSystem` and `Fluid` all carry `DVec3`. Flattening to a plane was the
-    /// *renderer's* simplification, and it threw away a whole axis of every orbit and every
-    /// box of atoms. The projection is the picture's business, not the simulation's.
-    Points {
-        /// Where each body is, in metres.
-        positions: Vec<[f64; 3]>,
-        /// One per body — a speed, a height, whatever the scene is about.
-        values: Vec<f64>,
-        /// `[x0, y0, z0, x1, y1, z1]`, the region to draw. Fixed for the whole run so a body
-        /// moving is a body moving and not the frame rescaling underneath it.
-        bounds: [f64; 6],
-        /// Whether to draw the bounding box as a wireframe. True for a periodic cell, which
-        /// is a real wall; false for an orbit, whose box is only the extent of the drawing.
-        boxed: bool,
-    },
-}
-
-impl Panel {
-    /// The scalar values, whichever shape this is.
-    pub fn values(&self) -> &[f64] {
-        match &self.data {
-            PanelData::Field { values, .. } | PanelData::Points { values, .. } => values,
-        }
-    }
-
-    /// Grid size, for a field. `None` for points, which have no grid.
-    pub fn grid(&self) -> Option<(usize, usize)> {
-        match self.data {
-            PanelData::Field { nx, ny, .. } => Some((nx, ny)),
-            PanelData::Points { .. } => None,
+            // No picture at all: sources, sinks, a lumped mass, a graph of nodes. Their result
+            // is a reading, and `Domain::readings` collects it without anybody placing them.
+            DomainSpec::Heater { .. }
+            | DomainSpec::Beam { .. }
+            | DomainSpec::Lump { .. }
+            | DomainSpec::Light { .. }
+            | DomainSpec::Winding { .. }
+            | DomainSpec::Network { .. } => Placement::default(),
         }
     }
 }

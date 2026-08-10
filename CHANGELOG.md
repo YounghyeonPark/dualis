@@ -10,6 +10,61 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+## [Unreleased]
+
+### Added
+
+- **`dualis-scene`**, the tenth crate and the middle of the three layers `ARCHITECTURE.md`
+  describes. `Placement`, `Extent`, `Frame`, `Panel`, `PanelData`, `capture`, `settle_framing`
+  — where a domain sits, and what one instant of a run looks like.
+
+  It **names no domain**, and `knows_no_physics.rs` demonstrates that rather than asserting it:
+  the test defines a physics inside the test file — a field, two bodies and a reading, in a crate
+  `dualis-scene` cannot possibly know about — places it and captures all three shapes. If a
+  physics invented in a test comes back whole, a real one costs one crate and nothing else moves.
+
+  Both were in `dualis-world`, which is `publish = false`. A consumer that wanted to draw a run
+  could not reach the shape of the answer at all.
+
+- **`Domain::readings`** and **`Reading`**: the named scalars a domain has when it has no picture.
+  Eight of the fourteen shipped scenes contain a domain that draws nothing — a heater, a lamp, a
+  winding, a thermal network — and for several the scalar *is* the result.
+
+- **`Domain::as_bodies`** and the **`Bodies`** trait: count, position, a value to colour by, and a
+  *real* wall or `None`. The counterpart to `as_field`, which covered only the domains that are
+  continua. `FRICTION.md` finding 11, recorded and unfixed for months, and paid the moment the
+  layers were separated: a scene layer that must name three physics to find out where anything
+  *is* needs editing every time a fourth arrives.
+
+  The trait draws a line the old code could not. A periodic cell is a boundary condition and the
+  domain reports it; an orbit's box is a property of the picture, and nothing physical sits at
+  its edge, so a view measures that one over the whole run instead of being told.
+
+- **`Simulation::domains`**: enumerate what is in a simulation. There was no way at all — a
+  caller could ask for a domain *by name*, which is no use to a layer that must visit every one.
+
+- **`ScalarField::unit`**: two characters for a legend, and the fifth place a layer had been
+  matching on domain types to get something a domain already knew.
+
+- **`Pose`** in `dualis-core`: a rigid motion, rotation and translation, no scale and no shear.
+  An isometry preserves every distance and angle exactly, which is the only class of placement a
+  physics can be moved by without its physics changing. The first test is
+  `placing_something_cannot_change_a_distance`.
+
+### Fixed
+
+- **A second domain could empty a channel another had already emptied, and the audit could not
+  see it.** `Exchange` counted takes but nothing compared the count across a turn, so two
+  consumers of one channel each reported a consistent ledger while the amount was delivered
+  twice. `Simulation::sweep` now compares takes per channel across the turn and raises a
+  `Violation` naming the channel.
+
+- **`Bar1D`'s field was labelled `"C"` and returns kelvin.** The application converted before
+  drawing, so the offset and the label were applied in the same expression and nothing could
+  disagree with anything. The field now says `"K"`, which is what the cells hold; the celsius a
+  picture wants is a view's conversion, and `FRICTION.md` 22 records that the library gives it
+  nowhere to live yet.
+
 ## [0.8.0] — 2026-08-09
 
 ### Added

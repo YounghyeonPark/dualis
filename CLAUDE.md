@@ -133,7 +133,7 @@ accumulates.
 The order matters: each crate must be live on the index before the next one resolves it.
 
 ```sh
-for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis; do
+for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-scene dualis; do
   cargo publish -p "$c" --locked || break
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel

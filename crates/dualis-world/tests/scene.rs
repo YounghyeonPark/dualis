@@ -205,7 +205,7 @@ fn a_scene_can_hold_more_than_one_domain() {
     // An isolated bar at a uniform temperature has nowhere to send heat, so it stays put.
     let bar = &frames[frames.len() - 1].panels[1];
     for v in bar.values() {
-        assert!((v - 20.0).abs() < 1e-9, "bar drifted to {v} C");
+        assert!((v - 293.15).abs() < 1e-9, "bar drifted to {v} K");
     }
 }
 
@@ -399,8 +399,13 @@ fn a_beam_heats_the_bar_where_it_lands() {
     // The shape. Conduction has had 0.2 s to smear it, so the peak is lower than the
     // Gaussian's and the check is a bound rather than an equality: the middle must still be
     // clearly hotter than the ends, and a uniform spread would put it at exactly 1.0.
-    let middle = profile[cells / 2] - 20.0;
-    let edge = profile[0] - 20.0;
+    // Ambient in kelvin, because the panel is kelvin: `ScalarField::at` returns what the cells
+    // hold and the celsius a picture wants is a view's conversion. Subtracting 20 here — which
+    // is what this said while the app did the conversion inside its own sampler — leaves 273.15
+    // in both terms and turns a ratio of 4 into a ratio of 1.002. The assertion would still have
+    // passed at `> 1.0` and measured nothing.
+    let middle = profile[cells / 2] - 293.15;
+    let edge = profile[0] - 293.15;
     assert!(
         middle / edge > 3.0,
         "the beam should land in the middle: centre rose {middle:.4} K, end {edge:.4} K, \
@@ -432,7 +437,7 @@ fn a_beam_heats_the_bar_where_it_lands() {
     );
 
     // The sampled panel is close but not equal, and the gap is the sampling and not a leak.
-    let sampled_rise = profile.iter().sum::<f64>() / cells as f64 - 20.0;
+    let sampled_rise = profile.iter().sum::<f64>() / cells as f64 - 293.15;
     let gap = (sampled_rise / mean_rise - 1.0).abs();
     assert!(
         gap > 1e-4 && gap < 0.05,
@@ -798,7 +803,7 @@ fn every_scene_that_ships_runs_and_says_something_true() {
             // 0.2 s now, which spans the beam being on and the spot starting to spread.
             "05-beam-on-bar.json" => {
                 let v = last.panels[0].values();
-                let (middle, end) = (v[v.len() / 2] - 20.0, v[0] - 20.0);
+                let (middle, end) = (v[v.len() / 2] - 293.15, v[0] - 293.15);
                 assert!(
                     middle > 2.0 * end,
                     "{name}: the beam landed in the middle: {middle:.4} K against {end:.4} K"

@@ -1,7 +1,7 @@
 //! dualis: physics for simulated worlds, in one dependency.
 //!
 //! A facade over the workspace. Nothing is implemented here — the point is that a
-//! consumer writes `dualis = "0.2"` rather than naming seven crates, and that the
+//! consumer writes `dualis = "0.2"` rather than naming nine crates, and that the
 //! integration tests which need two domains at once have somewhere to live.
 //!
 //! ```
@@ -56,19 +56,26 @@
 //! # The dependency rule
 //!
 //! ```text
-//! dualis-units      no dependencies but glam and serde
-//! dualis-core       depends on units
-//! dualis-optics     depends on core
-//! dualis-thermal    depends on core
-//! dualis-mechanics  depends on core
-//! dualis-acoustic   depends on core
-//! dualis-molecular  depends on core
-//! dualis            depends on all of them
+//! dualis-units       no dependencies but glam and serde
+//! dualis-core        depends on units          the kernel: what evolves, what it conserves
+//! dualis-optics      depends on core   ┐
+//! dualis-thermal     depends on core   │
+//! dualis-mechanics   depends on core   ├ one crate per physics, and none knows another
+//! dualis-acoustic    depends on core   │
+//! dualis-molecular   depends on core   │
+//! dualis-electrical  depends on core   ┘
+//! dualis-scene       depends on core           where things are, and what a run looks like
+//! dualis             depends on all of them
 //! ```
 //!
-//! None of the five domains knows about any of the others. They meet on the kernel's
+//! None of the six domains knows about any of the others. They meet on the kernel's
 //! [`Exchange`](dualis_core::Exchange), and each one that arrived left the others
-//! untouched — which is the claim the split was made to test, now held five times.
+//! untouched — which is the claim the split was made to test, now held six times.
+//!
+//! [`scene`] is one layer up rather than a seventh domain, and it is bound by the same rule
+//! from the other side: it depends on the kernel and names **no** domain at all, so a physics
+//! that arrives tomorrow is captured without it being edited. `ARCHITECTURE.md` is the long
+//! version.
 
 // Every public item carries a doc comment. Denied rather than warned: a public physics API
 // whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
@@ -80,6 +87,7 @@ pub use dualis_electrical as electrical;
 pub use dualis_mechanics as mechanics;
 pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
+pub use dualis_scene as scene;
 pub use dualis_thermal as thermal;
 pub use dualis_units as units;
 
@@ -112,6 +120,7 @@ pub mod prelude {
         fresnel_reflectance, fresnel_split, Hit, Material, Mtf, Psf, Pupil, Ray, Scatter,
         SpectralPower, Spectrum, SurfaceFinish, SurfaceOptics, Zernike, VISIBLE_RANGE,
     };
+    pub use dualis_scene::{capture, settle_framing, Extent, Frame, Panel, PanelData, Placement};
     pub use dualis_thermal::{
         Bar1D, Environment, LumpedMass, Node, SteadyState, ThermalNetwork, HEAT,
     };

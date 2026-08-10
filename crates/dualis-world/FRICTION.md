@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Sixteen of the twenty-one are fixed**, and five are recorded rather than actioned. The reasons
+**Sixteen of the twenty-two are fixed**, and six are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -265,14 +265,6 @@ arrives, and that is the one thing the structure exists to prevent. The trait dr
 old code could not: a periodic cell is a boundary condition and the domain reports it, while an
 orbit's box is a property of the picture and nothing physical sits at its edge.
 
-But it means the escape hatch covers one of the two shapes a domain can be, and anything
-wanting the other is back where finding 3 started. `PanelData` in this crate has both shapes
-because it had to.
-
-**Not fixed.** What it wants is a second optional accessor — bodies with positions, the way
-`as_field` gives a function of position — and that is an API commitment worth making on
-evidence rather than on one application's renderer. Recorded so the evidence is on file.
-
 ## 12. Four mechanics domains had never opted into `as_any`
 
 `NBody`, `TreeNBody`, `RigidBody` and `Rolling` all returned the default `None`, so
@@ -477,6 +469,28 @@ the kernel to carry state.
 
 ---
 
+## 22. A view wants a unit the domain does not store, and there is nowhere to say so
+
+`Bar1D` holds kelvin. Every picture of a bar in this application is in celsius. While this crate
+sampled fields itself that was four characters — an offset carried beside the extent — and the
+panel came back labelled `"C"`.
+
+Splitting the scene layer out took the sampling with it, and the offset had nowhere to go.
+`dualis-scene` cannot carry it: a conversion is a choice about presentation, and a layer that
+knows no domain cannot know that this one field wants 273.15 subtracted and the pressure beside
+it does not.
+
+**Not fixed, and the shape of the answer is not obvious.** `ScalarField::unit` at least makes it
+*detectable*: a panel now says `K` and a reading says `C`, and a test compares them by converting
+from the two declared units rather than assuming they match. That is the honest state and it is
+better than the old one, which was a silent relabelling — the offset and the label were applied
+in the same expression, so nothing could have disagreed with anything.
+
+What it wants is a view-level unit conversion with the *dimension* known, so that asking for
+celsius from a pressure field fails rather than subtracting 273.15 from a pascal. The library has
+that machinery — `Temperature` is a dimensioned type — and what it does not have is a way for a
+`&dyn ScalarField` to say which dimension it returns. Recorded rather than guessed at.
+
 ## What this says about the exercise
 
 Twenty-one findings, and the source has shifted four times. The first twelve came from writing the
@@ -485,8 +499,16 @@ taught** — one hunting outcomes that come out empty, one building against the 
 rather than the working tree. The seventeenth came from a third source again: adding a domain the
 library did not have, and finding that the *new* API had the old shape.
 
-Sixteen are fixed. That line said "ten" until this edit counted them, which is the failure
-`prose-auditor` exists for and the second time this file has been the one carrying it.
+Sixteen are fixed. That line said "ten" until a test counted them, which is the failure
+`prose-auditor` exists for and the second time this file has been the one carrying it — and the
+count is now checked by `friction_counts.rs` against the headings, because the author evidently
+cannot do it reliably and a reader cannot do it at a glance.
+
+Findings 11 and 22 are the same event seen twice. Pulling the scene layer into its own crate
+**paid** 11, which had sat unfixed for months, and **created** 22 in the same edit: a conversion
+that was invisible while one crate did everything became a thing somebody has to declare. That is
+what a layer boundary does — it turns assumptions into statements, and some of the statements
+turn out to be missing.
 
 Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was
 ergonomic or a defect in a domain; that one is a first-order accuracy defect in the *kernel's*

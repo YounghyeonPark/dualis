@@ -12,6 +12,7 @@ dependencies = [
  "dualis-mechanics",
  "dualis-molecular",
  "dualis-optics",
+ "dualis-scene",
  "dualis-thermal",
  "dualis-units",
  "glam",
