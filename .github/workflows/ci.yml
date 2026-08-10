@@ -103,7 +103,7 @@ jobs:
       - name: run every example
         run: |
           set -euo pipefail
-          for example in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench espresso_shot agents_quickstart readme_check; do
+          for example in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench espresso_shot portafilter_flow agents_quickstart readme_check; do
             echo "::group::$example"
             cargo run --locked --release --example "$example"
             echo "::endgroup::"

@@ -14,6 +14,40 @@ messages carry the full account.
 
 ### Added
 
+- **`portafilter_flow`**, which is the picture the domain was built to be able to draw: a shower
+  screen, a basket, a body and a spout, with parcels of water leaving the screen, working down
+  through the grounds and coming out the bottom darker than they went in.
+
+  Nothing places a streamline. A parcel is advected by the **pore** velocity of the solved Darcy
+  field — `u/ε`, not `u`, a factor of 2.2 — and its colour is what it has picked up from the cells
+  it crossed. Two checks make that a readout rather than a drawing: the mean transit comes out at
+  **0.981×** the closed form `εL/u`, and the load a parcel arrives with agrees with the domain's
+  own outlet TDS to **0.9996×**. A Lagrangian tracer and an Eulerian reading, agreeing.
+
+  The hardware and the water share one panel, so they occlude each other properly. What is solved
+  and what is only drawn is stated in a table rather than left to look the same.
+
+  With the wall gap the ring's water is through in 4.8 s against the core's 14.4 — **3.01× faster**
+  — and arrives carrying 18.0 kg/m³ against the even bed's 82.9. The same water, a fifth of the
+  coffee.
+
+- **Two defects the picture found that no test had.**
+
+  **`repack` did not re-solve.** The constructor does, because a quasi-static field read before its
+  solve is a field of zeros wearing the shape of an answer. Leaving the solve merely *stale* is
+  worse: the field left behind is the previous answer — smooth, bounded, the right order of
+  magnitude, and wrong by 42%. Widening the ring to 0.60 left `flow_rate` reporting the even bed's
+  flow to the last digit, 1.0000 where the closed form says 1.4188. Every existing test stepped the
+  puck before reading it, and a step re-solves. Every mutator ends solved now, and
+  `a_mutator_leaves_the_flow_solved` checks all three against their closed forms.
+
+  **An out-of-range probe returned zero, which made the outlet an attractor.** RK2's midpoint lands
+  further along than the parcel is, so a parcel one cell from the outlet probes past it. Zero there
+  parks it a hair inside the last cell — measured, 19.979 mm of a 20 mm bed — for the rest of the
+  run. Nothing about that looks wrong: the stream is steady, the colours are right, the flow rate is
+  right, and the water never reaches the cup. Visible only because the example counts arrivals and
+  the count was zero.
+
 - **`Substance::stainless_304`, and a basket made of what a basket is made of.**
 
   `Basket::espresso` used aluminium because the catalogue had it. Steel conducts a tenth as well —

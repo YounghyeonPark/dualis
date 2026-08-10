@@ -27,7 +27,7 @@ cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot 
 cargo test --workspace                       # 500 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are eleven of those; three more
+Add `out.svg` to either example and it draws the result. There are twelve of those; three more
 are checks rather than showcases, and the table is [further down](#examples).
 
 **The goal is to reproduce physical law in three dimensions**, in a structure that can accept
@@ -324,13 +324,14 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `room_in_three_dimensions` | The same room as `room_modes`, with a ceiling. The floor-to-ceiling mode at 71 Hz that a floor plan does not have *at all*, and a mode count growing as `f³` rather than `f²` |
 | `optical_bench` | **A 3D instrument, not a graph.** A doublet, a fold mirror turning the axis through 90°, three field angles — prescribed, traced, refocused, then *bent* until the spot falls inside the Airy disc. `optical_bench bench.html` gives a layout you rotate in a browser |
 | `espresso_shot` | **A machine, and the inside of what it is doing.** An espresso basket from the pump to the cup: Darcy's law solved on the permeability the grind gives, the dissolution that rides on the flow, and a vertical cut through three baskets — even, channelled, and pulled into a cold portafilter — as the shot runs. Grind, temperature and pressure each swept on their own, against the exponent each is supposed to carry |
+| `portafilter_flow` | **The machine, and the water going through it.** A shower screen, a basket, a body and a spout, with parcels of water leaving the screen and working down through the grounds — advected by the solved Darcy field at the *pore* velocity, and darkening as they pick up what they cross. Two baskets side by side, differing only in a loose ring at the wall. `portafilter_flow flow.html` turns in a browser; `flow.gltf` opens in Blender |
 | `busbar_rating` | **A design study rather than a demonstration.** A bolted busbar joint, from geometry to a production yield: the contact resistance solved as a field, the thermal path from a network, the electro-thermal fixed point, a rating by bisection, the margin to runaway, and 20 000 units against manufacturing tolerance. Every step against a closed form |
 
 Two more are run by CI without being in the table, because they are checks rather than
 showcases: `agents_quickstart`, the runnable form of [AGENTS.md](AGENTS.md), and
 `readme_check`, which re-runs this file's own code so the snippets above cannot rot.
 
-A fourteenth, `where_the_time_goes`, is a benchmark and is **not** run by CI. It measures rather than
+A fifteenth, `where_the_time_goes`, is a benchmark and is **not** run by CI. It measures rather than
 asserts, and a timing threshold on a shared runner fails for reasons that have nothing to do with
 the code. Run it by hand when a change should have made something faster: it is dependency-free,
 takes best-of-five, and prints where a step actually spends itself.

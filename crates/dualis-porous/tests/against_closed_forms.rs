@@ -688,6 +688,118 @@ fn the_limit_is_where_positivity_fails() {
     );
 }
 
+/// **Every mutator leaves the flow solved, and the closed form says by how much.**
+///
+/// The constructor solves, because a quasi-static field read before its solve is a field of zeros
+/// wearing the shape of an answer. `repack` did not, and the failure that produced is worse than
+/// zeros: the field left behind is *the previous answer* — smooth, bounded, the right order of
+/// magnitude, and wrong by 42%.
+///
+/// It was invisible to the rest of this file because every other test steps the puck before
+/// reading anything from it, and a step re-solves. It showed up the first time something asked a
+/// freshly repacked basket what its flow rate was.
+///
+/// The prediction is exact rather than a bound. Every column of cells from inlet to outlet is an
+/// independent series chain, so the basket is columns in **parallel** and its conductance is their
+/// sum; widening the ring changes only the ring's term:
+///
+/// ```text
+///   Q'/Q  =  (1 − f) + f · m(0.60)/m(0.45),    m(e) = e³/(1−e)²
+/// ```
+#[test]
+fn a_mutator_leaves_the_flow_solved() {
+    let (nx, ny, nz) = (16usize, 8usize, 16usize);
+    let before = bed_at(2e-3, (nx, ny, nz), 0.45, 9.0e5);
+    let mut after = bed_at(2e-3, (nx, ny, nz), 0.45, 9.0e5);
+
+    let mut ring = vec![false; nx * ny * nz];
+    let (mut packed, mut edge) = (0usize, 0usize);
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                if !after.is_packed(i, j, k) {
+                    continue;
+                }
+                let e = i == 0
+                    || k == 0
+                    || i + 1 == nx
+                    || k + 1 == nz
+                    || !after.is_packed(i - 1, j, k)
+                    || !after.is_packed(i + 1, j, k)
+                    || !after.is_packed(i, j, k - 1)
+                    || !after.is_packed(i, j, k + 1);
+                ring[i + nx * (j + ny * k)] = e;
+                if j == 0 {
+                    packed += 1;
+                    if e {
+                        edge += 1;
+                    }
+                }
+            }
+        }
+    }
+    after.repack(0.60, |i, j, k| ring[i + nx * (j + ny * k)]);
+
+    // Read the flow **without stepping**, which is the whole point.
+    let f = edge as f64 / packed as f64;
+    let mobility = |e: f64| e.powi(3) / (1.0 - e).powi(2);
+    let predicted = (1.0 - f) + f * mobility(0.60) / mobility(0.45);
+    let measured = after.flow_rate().to_si() / before.flow_rate().to_si();
+
+    println!("  ring is {:.1}% of the section", f * 100.0);
+    println!("  flow ratio measured {measured:.9}, columns in parallel give {predicted:.9}");
+    assert!(
+        after.converged(),
+        "a repacked basket must be solved, not merely marked stale: residual {:.3e}",
+        after.residual()
+    );
+    assert!(
+        (measured / predicted - 1.0).abs() < 1e-9,
+        "repack must re-solve: {measured:.6} against {predicted:.6}. A stale field would give \
+         exactly 1.000000, which is what this test was written for."
+    );
+    // And the stale answer is far enough away that this test would have caught it.
+    assert!(
+        (predicted - 1.0).abs() > 0.2,
+        "the two hypotheses have to be distinguishable: {predicted:.4} against a stale 1.0"
+    );
+
+    // The same for the other two mutators that change the flow problem.
+    let mut hotter = bed_at(2e-3, (nx, ny, nz), 0.45, 9.0e5);
+    let cold = hotter.flow_rate().to_si();
+    hotter.set_temperature(Temperature::celsius(75.0));
+    assert!(hotter.converged(), "set_temperature must leave it solved");
+    let warm = hotter.flow_rate().to_si();
+    // Water at 75 C is a quarter more viscous than at 93, and the flow is inversely proportional.
+    let mu_ratio = Liquid::water()
+        .viscosity(Temperature::celsius(75.0))
+        .to_si()
+        / Liquid::water()
+            .viscosity(Temperature::celsius(93.0))
+            .to_si();
+    println!(
+        "  cooling to 75 C: flow {:.6}x, 1/mu gives {:.6}x",
+        warm / cold,
+        1.0 / mu_ratio
+    );
+    assert!(
+        (warm / cold * mu_ratio - 1.0).abs() < 1e-9,
+        "Q goes as 1/mu: {:.6} against {:.6}",
+        warm / cold,
+        1.0 / mu_ratio
+    );
+
+    let mut harder = bed_at(2e-3, (nx, ny, nz), 0.45, 9.0e5);
+    let nine = harder.flow_rate().to_si();
+    harder.set_drive(Pressure::from_si(12.0e5));
+    assert!(harder.converged(), "set_drive must leave it solved");
+    assert!(
+        (harder.flow_rate().to_si() / nine / (12.0 / 9.0) - 1.0).abs() < 1e-9,
+        "Q goes as dp: {:.6}x for 12 bar against 9",
+        harder.flow_rate().to_si() / nine
+    );
+}
+
 /// **The five fields are all populated, and they are not each other.**
 ///
 /// The silent failure this guards against: a field accessor that compiles, renders and is empty —

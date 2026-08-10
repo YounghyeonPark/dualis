@@ -300,13 +300,13 @@ impl Puck {
     /// The pressure across the bed.
     pub fn set_drive(&mut self, p: Pressure) {
         self.drive = p.to_si();
-        self.invalidate();
+        self.resolve();
     }
 
     /// Set the temperature of every cell, bed and wall alike.
     pub fn set_temperature(&mut self, t: Temperature) {
         self.temperature.fill(t.to_si());
-        self.invalidate();
+        self.resolve();
     }
 
     /// Set the temperature of the basket wall only, leaving the bed where it is.
@@ -318,7 +318,7 @@ impl Puck {
                 self.temperature[idx] = t.to_si();
             }
         }
-        self.invalidate();
+        self.resolve();
     }
 
     /// Change the porosity of the cells a predicate selects.
@@ -345,7 +345,7 @@ impl Puck {
         }
         self.recount_dose();
         self.refresh_properties();
-        self.invalidate();
+        self.resolve();
     }
 
     /// Change the grind of the cells a predicate selects.
@@ -361,7 +361,7 @@ impl Puck {
                 }
             }
         }
-        self.invalidate();
+        self.resolve();
     }
 
     fn recount_dose(&mut self) {
@@ -373,9 +373,27 @@ impl Puck {
         self.extractable = self.dose * self.bed.soluble_fraction;
     }
 
-    fn invalidate(&mut self) {
+    /// Re-solve after something that changed the flow problem.
+    ///
+    /// # Every mutator ends solved, and this is why
+    ///
+    /// The constructor solves, for the reason `Conductor` writes down: a quasi-static field read
+    /// before its solve is a field of zeros wearing the shape of an answer. Marking the solve
+    /// stale and leaving it to the next [`Domain::step`] is worse than that, not better — the
+    /// field left behind is not zeros but *the previous answer*, which is smooth, bounded and
+    /// exactly the right order of magnitude.
+    ///
+    /// It was measured. `repack` widening the ring to 0.60 left `flow_rate` reporting the even
+    /// bed's flow to the last digit — a 42% error, and 1.0000 where the closed form says 1.4188.
+    /// Nothing in the suite saw it, because every test stepped the puck before reading anything
+    /// from it and a step re-solves.
+    ///
+    /// Re-solving costs one warm-started conjugate-gradient run, which from the previous field is
+    /// a handful of iterations. None of these methods is in a hot loop.
+    fn resolve(&mut self) {
         self.converged = false;
         self.residual = f64::INFINITY;
+        self.solve(self.tolerance);
     }
 
     /// Recompute the per-cell heat capacity and conductivity.
