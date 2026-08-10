@@ -24,6 +24,10 @@ exclude = [
     # crates and that was enough to split it out. A GPU stack is far past that, and none of the
     # eleven published crates may carry it. See runtime/viewer/Cargo.toml.
     "runtime/viewer",
+    # And the GPU accelerator, which is the same argument again plus one that is not about
+    # dependencies at all: WGSL has no f64, so a compute kernel is a *different computation* from
+    # the domain it accelerates. See runtime/gpu/README.md.
+    "runtime/gpu",
 ]
 resolver = "2"
 

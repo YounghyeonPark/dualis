@@ -294,13 +294,25 @@ Each is a crate on the kernel. None is a change to the layers.
 RTX rendering, GPU physics, USD and an interactive editor were asked about directly. Three of the
 four are additive and only heavy; the fourth is not.
 
-**GPU physics conflicts with rule 5.** Atomics and warp scheduling reorder floating-point
-reductions, and addition is not associative — so bit-for-bit across platforms, which
-`rng::tests::the_stream_is_pinned` holds to a digest, would be given up. There is a way through
-and this workspace has already used it once: `Ensemble` folds in fixed-size blocks so the answer
-does not depend on the thread count, and the same discipline works on a GPU. The rule it would
-need is that **the CPU domain is the reference and the GPU is an accelerator**, with a test that
-the two agree to a stated tolerance and the CPU as arbiter.
+**GPU physics conflicts with rule 5**, and `runtime/gpu` is the first answer to that. Atomics
+and warp scheduling reorder floating-point reductions, and addition is not associative — so
+bit-for-bit, which `rng::tests::the_stream_is_pinned` holds to a digest, would be given up.
+
+The arrangement that survives it: **the CPU domain is the reference and the GPU is an
+accelerator**, with a test that measures how far apart they land. The stencil itself is safe —
+each cell reads six neighbours and writes itself, with no reduction and so no order to depend on
+— and reductions stay on the CPU, summed in index order after a readback.
+
+The measurement is 191× on a 64³ grid, and it comes with a cost that is not about speed: WGSL has
+no `f64`, so an accelerated domain is single precision against the library's double. It conserves
+to `5e-11` where the CPU holds `9e-15`, which is below `Simulation`'s default `1e-9` audit — so a
+scene using one has to loosen `conservation_tolerance_for(ENERGY, ..)`, and choosing that number
+is choosing what the run may lose.
+
+That crate also found the thing worth knowing about single precision here: it was never the
+problem. Storing absolute kelvin made `sum − 6·centre` subtract two numbers agreeing to five
+digits, keeping less than one digit of the answer. Storing the **deviation** from the reference —
+which the linear stencil commutes with exactly — improved the divergence 1660× at no cost.
 
 The other three belong **above the layers**, in workspaces of their own, for the reason
 `bindings/python` already established. Measured: the library resolves 12 external crates, the

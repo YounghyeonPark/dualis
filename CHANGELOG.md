@@ -14,6 +14,37 @@ messages carry the full account.
 
 ### Added
 
+- **`runtime/gpu`**: `Solid3D`'s seven-point stencil as a WGSL compute shader, implementing
+  `Domain` so it drops into a `Simulation`. Its own workspace, and the rule is that **the CPU
+  domain is the reference and this is a cache of it**.
+
+  Measured, 400 steps: 3.5× at 16³, 24× at 32³, 85× at 48³, **191× at 64³**. The GPU column is
+  flat at ~0.055 s — it is bound by dispatch overhead, not the stencil, so what the table really
+  shows is the CPU's `n³` growing away from a constant.
+
+  WGSL has no `f64`, so this is a *different computation*, not a faster one. It conserves to
+  `5.0e-11` where the CPU holds `9.1e-15`, which is below `Simulation`'s default `1e-9` audit — a
+  scene using it must loosen `conservation_tolerance_for(ENERGY, ..)`, and `GpuSolid` declines
+  `books_balance` for the same reason.
+
+  Reductions stay on the CPU. A mean summed with atomics depends on which workgroup finished
+  first, and addition is not associative, so `ledger` reads the grid back and sums in index order.
+
+### Fixed
+
+- **Single precision was never the problem; spending it on an offset was.** The GPU buffer first
+  held absolute kelvin and diverged from the reference by `1.4e-3` after two hundred steps — a
+  thousand times what accumulation predicts.
+
+  The update is `centre + F·(sum − 6·centre)`. Near 293 K that `sum` is about 1759, where `f32`'s
+  resolution is `1.2e-4`, and the difference being extracted is of order `1e-3` K. Subtracting two
+  numbers that agree to five digits keeps **less than one digit** of the answer, every step.
+
+  The buffer holds `T − T₀` now, where the same numbers sit near 1 K and the subtraction keeps
+  about four digits. Divergence `1.449e-3` → `8.7e-7`, conservation drift `7.4e-7` → `1.2e-10`.
+  The stencil is linear, so subtracting a constant commutes with it exactly and the fix cost
+  nothing.
+
 - **`dualis_view::gltf`**: a frame as glTF 2.0, so Blender, three.js, Omniverse, a USD pipeline
   or macOS Quick Look can open a result. **No new dependency** — glTF is JSON with the binary
   base64'd into a `data:` URI, and this crate already writes JSON by hand, so `dualis-view` still

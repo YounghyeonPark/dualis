@@ -24,3 +24,4 @@ __pycache__/
 # The viewer's own build output. Its workspace is excluded from the root one, so the
 # `/target` rule above does not reach it.
 /runtime/viewer/target/
+/runtime/gpu/target/

@@ -155,6 +155,29 @@ jobs:
         working-directory: runtime/viewer
         run: cargo build --workspace
 
+  gpu:
+    name: gpu accelerator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runtime/gpu
+      - name: fmt and clippy
+        working-directory: runtime/gpu
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets -- -D warnings
+      # The comparison against the CPU domain needs a real adapter, which a runner has not got.
+      # Every test skips with a printed reason rather than quietly, and a software rasteriser is
+      # deliberately not used: it would be checking a different implementation than anyone runs.
+      - name: it builds, and the tests say why they skipped
+        working-directory: runtime/gpu
+        run: cargo test -- --nocapture
+
   python:
     name: python bindings
     runs-on: ubuntu-latest
