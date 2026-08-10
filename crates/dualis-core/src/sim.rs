@@ -52,6 +52,7 @@ use std::collections::BTreeMap;
 
 use dualis_units::Time;
 
+use crate::bodies::Bodies;
 use crate::conserved::{audit, Ledger, Violation};
 use crate::field::ScalarField;
 use crate::integrator::substeps_for;
@@ -207,6 +208,19 @@ pub trait Domain {
     fn readings(&self) -> Vec<Reading> {
         Vec::new()
     }
+
+    /// This domain as a countable set of bodies, if that is what it is.
+    ///
+    /// The counterpart to [`as_field`](Domain::as_field), and between them they cover both kinds
+    /// of thing a domain can be. A caller wanting to draw, measure or export no longer has to
+    /// name `NBody`, `ContactSystem` or `Fluid` — which it did for months, recorded as
+    /// `FRICTION.md` finding 11, until splitting the layers made it unpayable.
+    ///
+    /// Opt-in and `None` by default, with the hazard that default has now taught three times: a
+    /// domain that forgets is silently absent rather than broken.
+    fn as_bodies(&self) -> Option<&dyn Bodies> {
+        None
+    }
 }
 
 /// Delegation, so a domain chosen at run time can be added like any other.
@@ -248,6 +262,9 @@ impl Domain for Box<dyn Domain> {
     }
     fn readings(&self) -> Vec<Reading> {
         (**self).readings()
+    }
+    fn as_bodies(&self) -> Option<&dyn Bodies> {
+        (**self).as_bodies()
     }
     fn as_any(&self) -> Option<&dyn Any> {
         (**self).as_any()

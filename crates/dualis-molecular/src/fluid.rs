@@ -36,8 +36,10 @@
 #![deny(missing_docs)]
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, Rng, Violation};
-use dualis_units::{Energy, Length, Mass, Pressure, Temperature, Time, Volume, BOLTZMANN};
+use dualis_core::{Bodies, Domain, Exchange, Kind, Ledger, Rng, Violation};
+use dualis_units::{
+    Energy, Length, LengthVec, Mass, Pressure, Temperature, Time, Volume, BOLTZMANN,
+};
 use glam::DVec3;
 
 use crate::box_::{CellList, PeriodicBox};
@@ -376,6 +378,30 @@ impl Fluid {
     }
 }
 
+/// Atoms in a periodic box.
+///
+/// The one implementor with a `cell`, and it is not decoration: an atom leaving one face enters
+/// the opposite one, so that box is a boundary condition. Drawing it is drawing physics, which
+/// is exactly the distinction `Bodies::cell` exists to draw.
+impl Bodies for Fluid {
+    fn count(&self) -> usize {
+        Fluid::count(self)
+    }
+    fn position(&self, i: usize) -> LengthVec {
+        LengthVec::from_si(Fluid::position(self, i))
+    }
+    fn value(&self, i: usize) -> f64 {
+        self.velocity(i).length()
+    }
+    fn value_unit(&self) -> &'static str {
+        "m/s"
+    }
+    fn cell(&self) -> Option<(LengthVec, LengthVec)> {
+        let l = self.bounds().length;
+        Some((LengthVec::from_si(DVec3::ZERO), LengthVec::m(l, l, l)))
+    }
+}
+
 impl Domain for Fluid {
     fn name(&self) -> &str {
         &self.name
@@ -462,6 +488,10 @@ impl Domain for Fluid {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+
+    fn as_bodies(&self) -> Option<&dyn Bodies> {
+        Some(self)
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

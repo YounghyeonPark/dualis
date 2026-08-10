@@ -864,6 +864,7 @@ impl World {
             self.close_feedback();
             frames.push(self.capture());
         }
+        unify_body_bounds(&mut frames);
         Ok(frames)
     }
 
@@ -967,55 +968,50 @@ impl World {
     }
 
     /// The domains that are bodies rather than fields, as dots.
+    ///
+    /// **This named three domains and downcast to each** — `NBody`, `ContactSystem`, `Fluid` —
+    /// which is `FRICTION.md` finding 11, recorded for months as "`as_field` covers half the
+    /// domains and there is no counterpart for the other half". Splitting the layers is what made
+    /// it unpayable: a scene layer that must name three physics to find out where anything *is*
+    /// needs editing every time a fourth arrives.
+    ///
+    /// `Domain::as_bodies` is that counterpart. The framing is computed here rather than asked
+    /// for, and that is the honest division: a periodic cell is a boundary condition and the
+    /// domain reports it, while an orbit's box is a property of the picture and nothing physical
+    /// sits at its edge.
     fn bodies(&self, spec: &DomainSpec) -> Option<Panel> {
-        let (positions, values, bounds, boxed, unit) = match spec {
-            DomainSpec::Orbit { name, radii_m, .. } => {
-                let n = self.sim.domain_as::<NBody>(name)?;
-                let r = radii_m.iter().cloned().fold(1.0f64, f64::max) * 1.2;
-                let (mut p, mut v) = (Vec::new(), Vec::new());
-                for i in 0..n.count() {
-                    let b = n.body(i);
-                    let x = b.position.to_si();
-                    p.push([x.x, x.y, x.z]);
-                    v.push(b.velocity.to_si().length());
-                }
-                (p, v, [-r, -r, -r, r, r, r], false, "m/s")
+        let domain = self.sim.domain(spec.name())?;
+        let bodies = domain.as_bodies()?;
+        let n = bodies.count();
+        let mut positions = Vec::with_capacity(n);
+        let mut values = Vec::with_capacity(n);
+        for i in 0..n {
+            let p = bodies.position(i).to_si();
+            positions.push([p.x, p.y, p.z]);
+            values.push(bodies.value(i));
+        }
+
+        // A real wall if there is one, and otherwise a box measured from the bodies themselves
+        // and padded — so it frames them without claiming anything sits at the edge.
+        let (bounds, boxed) = match bodies.cell() {
+            Some((lo, hi)) => {
+                let (lo, hi) = (lo.to_si(), hi.to_si());
+                ([lo.x, lo.y, lo.z, hi.x, hi.y, hi.z], true)
             }
-            DomainSpec::Bounce { name, drop_m, .. } => {
-                let c = self.sim.domain_as::<ContactSystem>(name)?;
-                let (mut p, mut v) = (Vec::new(), Vec::new());
-                for i in 0..c.count() {
-                    let b = c.body(i);
-                    let x = b.position.to_si();
-                    p.push([x.x, x.y, x.z]);
-                    v.push(b.velocity.to_si().length());
-                }
-                let half = drop_m * 0.45;
-                (
-                    p,
-                    v,
-                    [-half, -half, 0.0, half, half, *drop_m * 1.05],
-                    true,
-                    "m/s",
-                )
+            None => {
+                let r = positions
+                    .iter()
+                    .flat_map(|p| p.iter())
+                    .fold(0.0f64, |m, v| m.max(v.abs()))
+                    * 1.2;
+                let r = if r > 0.0 { r } else { 1.0 };
+                ([-r, -r, -r, r, r, r], false)
             }
-            DomainSpec::Atoms { name, .. } => {
-                let f = self.sim.domain_as::<Fluid>(name)?;
-                let l = f.bounds().length;
-                let (mut p, mut v) = (Vec::new(), Vec::new());
-                for i in 0..f.count() {
-                    let x = f.position(i);
-                    p.push([x.x, x.y, x.z]);
-                    v.push(f.velocity(i).length());
-                }
-                // The periodic cell is a real boundary, so it gets drawn.
-                (p, v, [0.0, 0.0, 0.0, l, l, l], true, "m/s")
-            }
-            _ => return None,
         };
+
         Some(Panel {
             name: spec.name().to_string(),
-            unit,
+            unit: bodies.value_unit(),
             data: PanelData::Points {
                 positions,
                 values,
@@ -1023,6 +1019,53 @@ impl World {
                 boxed,
             },
         })
+    }
+}
+
+/// Give every body panel one framing for the whole run.
+///
+/// `capture` measures a frame at a time and cannot see the future, so a panel without a real
+/// wall would come back framed to *that* frame — and then a body crossing the picture would look
+/// still while the picture moved. `PanelData::Points` documents the opposite ("fixed for the
+/// whole run so a body moving is a body moving"), and this is where that promise is kept.
+///
+/// Panels with a real wall are left alone: a periodic cell is a boundary condition and does not
+/// change because a run is longer.
+fn unify_body_bounds(frames: &mut [Frame]) {
+    let names: Vec<String> = frames
+        .first()
+        .map(|f| {
+            f.panels
+                .iter()
+                .filter(|p| matches!(p.data, PanelData::Points { boxed: false, .. }))
+                .map(|p| p.name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for name in names {
+        let mut widest = [0.0f64; 6];
+        for frame in frames.iter() {
+            if let Some(Panel {
+                data: PanelData::Points { bounds, .. },
+                ..
+            }) = frame.panels.iter().find(|p| p.name == name)
+            {
+                for k in 0..3 {
+                    widest[k] = widest[k].min(bounds[k]);
+                    widest[k + 3] = widest[k + 3].max(bounds[k + 3]);
+                }
+            }
+        }
+        for frame in frames.iter_mut() {
+            if let Some(Panel {
+                data: PanelData::Points { bounds, .. },
+                ..
+            }) = frame.panels.iter_mut().find(|p| p.name == name)
+            {
+                *bounds = widest;
+            }
+        }
     }
 }
 

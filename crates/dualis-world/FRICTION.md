@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Fifteen of the twenty-one are fixed**, and six are recorded rather than actioned. The reasons
+**Sixteen of the twenty-one are fixed**, and five are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -256,6 +256,15 @@ Not because the fix was wrong. Those three genuinely are not fields: they are a 
 number of bodies at places, and rasterising them would invent a continuum they do not have.
 `as_field` returning `None` for them is the honest answer.
 
+**Fixed.** `Domain::as_bodies` returns `Option<&dyn Bodies>`: count, position, a value to colour
+by, and a *real* wall or `None`. Sixty lines of downcasting in this crate became one call.
+
+It sat here for months and was paid the moment the layers were split apart -- a scene layer that
+must name three physics to find out where anything *is* needs editing every time a fourth
+arrives, and that is the one thing the structure exists to prevent. The trait draws a line the
+old code could not: a periodic cell is a boundary condition and the domain reports it, while an
+orbit's box is a property of the picture and nothing physical sits at its edge.
+
 But it means the escape hatch covers one of the two shapes a domain can be, and anything
 wanting the other is back where finding 3 started. `PanelData` in this crate has both shapes
 because it had to.
@@ -476,7 +485,7 @@ taught** — one hunting outcomes that come out empty, one building against the 
 rather than the working tree. The seventeenth came from a third source again: adding a domain the
 library did not have, and finding that the *new* API had the old shape.
 
-Fifteen are fixed. That line said "ten" until this edit counted them, which is the failure
+Sixteen are fixed. That line said "ten" until this edit counted them, which is the failure
 `prose-auditor` exists for and the second time this file has been the one carrying it.
 
 Finding 13 is the one that changes the ledger on this exercise. Every earlier finding was

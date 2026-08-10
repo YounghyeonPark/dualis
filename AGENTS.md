@@ -133,7 +133,7 @@ of them are commentary.
 | crate | what it holds |
 | --- | --- |
 | `dualis-units` | `Length`, `Time`, `Mass`, `Energy`, `Power`, … and the vector forms. Dimensions in the type |
-| `dualis-core` | The kernel: `Domain`, `Exchange`, `Simulation`, `Schedule`, `Ledger`, `Violation`, `Interface`, `Flux`, `Rng`, `Ensemble` for Monte Carlo and sweeps, `Pose` for placing a domain in space, integrators, fields |
+| `dualis-core` | The kernel: `Domain`, `Exchange`, `Simulation`, `Schedule`, `Ledger`, `Violation`, `Interface`, `Flux`, `Rng`, `Ensemble`, `Pose`, `Bodies` and `Reading` for what a domain offers a viewer, integrators, fields |
 | `dualis-optics` | Radiometry, Fresnel and coatings, dispersion, rays, Airy diffraction, MTF, Zernike, PSFs, detector noise |
 | `dualis-thermal` | `LumpedMass`, `Bar1D` conduction, `ThermalNetwork` of n bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |

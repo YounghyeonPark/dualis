@@ -49,8 +49,8 @@
 //! rather than proving anything — it is the native runs in CI that establish the
 //! claim, and the wasm run that establishes the *answer* is the same one.
 
-use dualis_core::{velocity_verlet, Domain, Exchange, Kind, Ledger, Newtonian, Violation};
-use dualis_units::{Energy, Length, Mass, Time};
+use dualis_core::{velocity_verlet, Bodies, Domain, Exchange, Kind, Ledger, Newtonian, Violation};
+use dualis_units::{Energy, Length, LengthVec, Mass, Time};
 use glam::DVec3;
 
 use crate::{conserved, Body, Coords, GRAVITATION};
@@ -536,6 +536,22 @@ impl Newtonian for TreeNBody {
     }
 }
 
+/// The same bodies, approximated differently. Same reading, same absence of a wall.
+impl Bodies for TreeNBody {
+    fn count(&self) -> usize {
+        TreeNBody::count(self)
+    }
+    fn position(&self, i: usize) -> LengthVec {
+        self.body(i).position
+    }
+    fn value(&self, i: usize) -> f64 {
+        self.body(i).velocity.to_si().length()
+    }
+    fn value_unit(&self) -> &'static str {
+        "m/s"
+    }
+}
+
 impl Domain for TreeNBody {
     fn name(&self) -> &str {
         &self.name
@@ -617,6 +633,10 @@ impl Domain for TreeNBody {
     /// Opted in so a caller can read the bodies back out — a test asserting an orbit, a
     /// renderer drawing one. Every other domain with state to show already does this; these
     /// were simply never asked, which is what a library with no consumer looks like.
+    fn as_bodies(&self) -> Option<&dyn Bodies> {
+        Some(self)
+    }
+
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }

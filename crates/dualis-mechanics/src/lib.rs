@@ -43,7 +43,9 @@ pub use rigid::{Inertia, RigidBody};
 pub use tree::TreeNBody;
 
 use dualis_core::conserved::quantity;
-use dualis_core::{velocity_verlet, Domain, Exchange, Kind, Ledger, Newtonian, State, Violation};
+use dualis_core::{
+    velocity_verlet, Bodies, Domain, Exchange, Kind, Ledger, Newtonian, State, Violation,
+};
 use dualis_units::{
     Damping, Energy, Length, LengthVec, Mass, Momentum, Qty, Stiffness, Time, Velocity, VelocityVec,
 };
@@ -320,6 +322,26 @@ impl Newtonian for NBody {
     }
 }
 
+/// Bodies under gravity: speed is what a reader wants to see.
+///
+/// No `cell`: an orbit has no wall. Its extent is a property of the picture, and a view that
+/// wants to frame it should measure the positions over the whole run rather than be told a
+/// number this domain would have to invent.
+impl Bodies for NBody {
+    fn count(&self) -> usize {
+        NBody::count(self)
+    }
+    fn position(&self, i: usize) -> LengthVec {
+        self.body(i).position
+    }
+    fn value(&self, i: usize) -> f64 {
+        self.body(i).velocity.to_si().length()
+    }
+    fn value_unit(&self) -> &'static str {
+        "m/s"
+    }
+}
+
 impl Domain for NBody {
     fn name(&self) -> &str {
         &self.name
@@ -409,6 +431,10 @@ impl Domain for NBody {
     /// Opted in so a caller can read the bodies back out — a test asserting an orbit, a
     /// renderer drawing one. Every other domain with state to show already does this; these
     /// were simply never asked, which is what a library with no consumer looks like.
+    fn as_bodies(&self) -> Option<&dyn Bodies> {
+        Some(self)
+    }
+
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
@@ -596,6 +622,23 @@ impl ContactSystem {
     }
 }
 
+/// Bodies that can touch something. The floor is a real constraint and not a drawing bound, but
+/// it is a half-space rather than a box, so there is still no `cell` to report.
+impl Bodies for ContactSystem {
+    fn count(&self) -> usize {
+        ContactSystem::count(self)
+    }
+    fn position(&self, i: usize) -> LengthVec {
+        self.body(i).position
+    }
+    fn value(&self, i: usize) -> f64 {
+        self.body(i).velocity.to_si().length()
+    }
+    fn value_unit(&self) -> &'static str {
+        "m/s"
+    }
+}
+
 impl Domain for ContactSystem {
     fn name(&self) -> &str {
         &self.name
@@ -712,6 +755,10 @@ impl Domain for ContactSystem {
     /// that wants to say "the joules that crossed the bus are the joules that went missing"
     /// has to weaken itself to an inequality against the starting energy. See
     /// `crates/dualis/tests/friction_heats.rs`, which made exactly that compromise.
+    fn as_bodies(&self) -> Option<&dyn Bodies> {
+        Some(self)
+    }
+
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }

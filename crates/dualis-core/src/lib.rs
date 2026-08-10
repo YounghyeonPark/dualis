@@ -103,6 +103,7 @@
 // whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
 // paragraph exists somewhere, and not in the sense a reader needs.
 #![deny(missing_docs)]
+pub mod bodies;
 pub mod conserved;
 pub mod ensemble;
 pub mod field;
@@ -116,6 +117,7 @@ pub mod substance;
 pub mod transform;
 pub mod vector;
 
+pub use bodies::Bodies;
 pub use conserved::{audit, Conserves, Ledger, Violation};
 pub use ensemble::{Ensemble, Estimate};
 pub use field::{ScalarField, VectorField};

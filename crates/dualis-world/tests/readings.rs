@@ -145,3 +145,52 @@ fn the_readings_and_the_panel_describe_the_same_frame() {
         assert_eq!(left.unit, "J");
     }
 }
+
+/// **A body panel's framing does not move between frames.**
+///
+/// `PanelData::Points` promises it — "fixed for the whole run so a body moving is a body moving
+/// and not the frame rescaling underneath it" — and the promise became breakable when framing
+/// moved out of the scene format and into a measurement. `capture` sees one frame and cannot see
+/// the future, so without a pass over the finished run each frame would be framed to itself.
+///
+/// Caught by writing this rather than by anything failing, which is the wrong order.
+#[test]
+fn a_moving_body_moves_and_the_picture_does_not() {
+    let frames = run("06-orbits.json");
+    let first = frames
+        .first()
+        .and_then(|f| f.panels.iter().find(|p| p.name == "orbits"))
+        .or_else(|| frames.first().and_then(|f| f.panels.first()))
+        .expect("the orbit draws bodies");
+    let dualis_world::PanelData::Points { bounds: want, .. } = first.data else {
+        panic!("expected bodies");
+    };
+
+    for (i, frame) in frames.iter().enumerate() {
+        for panel in &frame.panels {
+            if let dualis_world::PanelData::Points { bounds, boxed, .. } = panel.data {
+                assert!(!boxed, "an orbit has no wall to report");
+                assert_eq!(bounds, want, "frame {i} reframed {}", panel.name);
+            }
+        }
+    }
+
+    // And the bodies really did move inside that fixed frame, or the check is vacuous.
+    let moved = frames
+        .iter()
+        .filter_map(|f| f.panels.first())
+        .filter_map(|p| match &p.data {
+            dualis_world::PanelData::Points { positions, .. } => positions.first().copied(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let spread = moved
+        .iter()
+        .flat_map(|p| p.iter())
+        .fold(f64::MIN, |m, v| m.max(*v))
+        - moved
+            .iter()
+            .flat_map(|p| p.iter())
+            .fold(f64::MAX, |m, v| m.min(*v));
+    assert!(spread > 0.0, "nothing moved, so nothing was being framed");
+}
