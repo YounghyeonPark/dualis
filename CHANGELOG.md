@@ -3,14 +3,14 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found seventeen places it is awkward, twelve of which have been changed — see the
-0.2.0 entry below.
+has already found twenty-two places it is awkward, sixteen of which have been changed — see
+`crates/dualis-world/FRICTION.md`.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
-## [Unreleased]
+## [0.9.0] — 2026-08-10
 
 ### Added
 
@@ -662,7 +662,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.9.0
 [0.8.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.8.0
 [0.7.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.7.0
 [0.6.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.6.0

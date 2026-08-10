@@ -13,7 +13,7 @@ Everything below describes the Rust API.
 
 ```toml
 [dependencies]
-dualis = "0.8"
+dualis = "0.9"
 ```
 
 API docs: <https://docs.rs/dualis>. Source: <https://github.com/YounghyeonPark/dualis>.
@@ -140,6 +140,8 @@ of them are commentary.
 | `dualis-acoustic` | The wave equation on a staggered grid: `Tube`, `Room`, impedance boundaries |
 | `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
 | `dualis-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path |
+| `dualis-scene` | One layer up. `Placement`, `Extent`, `capture` — where a domain sits and what one instant of a run looks like, as `Frame`, `Panel`, `PanelData`. Names no domain |
+| `dualis-view` | Two layers up. `svg` filmstrip, `html` report that opens in a browser with nothing installed, `readings_csv`, `to_json`. The view is chosen by the shape of the data |
 
 `Schedule` picks how they interact: `OneWay`, `Staggered` (declaration order is execution
 order), `Iterative { max_iter, tol }` for strong coupling, `Multirate` for domains with very
@@ -206,7 +208,7 @@ They are listed here so it does not have to be loudly.
   `rand::thread_rng`, and reductions over unordered collections all break this.
 - **Domains do not depend on each other.** If your new physics needs to `use dualis_thermal`,
   the design is wrong — publish on a channel instead. The kernel depends on no domain either.
-- **Every public item is documented.** `#![deny(missing_docs)]` is set in all ten crates.
+- **Every public item is documented.** `#![deny(missing_docs)]` is set in all eleven crates.
 - **MSRV is 1.78**, checked by CI.
 - **Tolerances are earned.** A number in an `assert!` should trace to an effect — an
   integrator's order, `1/√N` for a sample count, a discretisation. If you cannot say which,
