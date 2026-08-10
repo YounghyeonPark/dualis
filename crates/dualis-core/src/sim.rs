@@ -722,6 +722,19 @@ impl Simulation {
         &self.bus
     }
 
+    /// Every domain, in the order they were added.
+    ///
+    /// `domain` answers by name, which is right for a caller that knows what it is looking for
+    /// and useless for one that must visit them all. A layer capturing a run has to enumerate,
+    /// and without this it had to be handed the list by whoever built the simulation — which
+    /// means the layer above knows the composition rather than asking.
+    ///
+    /// Order is declaration order, which is also execution order under the staggered schedules,
+    /// so a caller iterating this sees domains in the order they act.
+    pub fn domains(&self) -> impl Iterator<Item = &dyn Domain> + '_ {
+        self.domains.iter().map(|d| &**d as &dyn Domain)
+    }
+
     /// A domain by name, through the trait. For the concrete type, see
     /// [`Simulation::domain_as`].
     pub fn domain(&self, name: &str) -> Option<&dyn Domain> {

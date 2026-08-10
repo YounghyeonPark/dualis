@@ -34,6 +34,18 @@ pub trait ScalarField {
     /// The value at a place and time, in this field's SI base unit.
     fn at(&self, p: LengthVec, t: Time) -> f64;
 
+    /// What this field is measured in — `"Pa"`, `"C"`, `"V"`.
+    ///
+    /// The fifth thing a layer above had to know a domain by name to find out. A legend, an axis
+    /// and a CSV header all need it, and none of them should have to match on domain types to
+    /// get a two-character string.
+    ///
+    /// Defaults to `""`, which renders as a quantity with no unit — visibly odd rather than
+    /// quietly wrong, which is the best a default can do here.
+    fn unit(&self) -> &'static str {
+        ""
+    }
+
     /// ∇f, by central differences over `h`. Units are the field's per metre.
     fn gradient(&self, p: LengthVec, t: Time, h: Length) -> DVec3 {
         let step = h.to_si();

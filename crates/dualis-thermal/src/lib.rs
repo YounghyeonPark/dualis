@@ -704,6 +704,16 @@ impl Domain for Bar1D {
 /// and that is an unavoidable property of sampling a discrete field, not a rough edge that
 /// could be polished out.
 impl ScalarField for Bar1D {
+    /// **Kelvin**, because that is what the cells hold.
+    ///
+    /// Not celsius. `readings` reports celsius and a picture of a bar usually wants celsius, but
+    /// both of those are *conversions a view chooses*; the field returns what it stores. Labelling
+    /// this "C" would have put 293.15 under a degrees-celsius header, which is the failure a unit
+    /// on a legend exists to prevent.
+    fn unit(&self) -> &'static str {
+        "K"
+    }
+
     fn at(&self, p: LengthVec, _t: Time) -> f64 {
         let last = self.cells.len() - 1;
         // Position in cell-index space: cell centres land on the integers.

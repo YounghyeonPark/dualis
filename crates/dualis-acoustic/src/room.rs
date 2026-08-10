@@ -574,6 +574,10 @@ impl Domain for Room {
 ///
 /// Depth is ignored: this is a two-dimensional model and says so.
 impl ScalarField for Room {
+    fn unit(&self) -> &'static str {
+        "Pa"
+    }
+
     fn at(&self, p: LengthVec, _t: Time) -> f64 {
         let v = p.to_si();
         let (u, w) = (v.x / self.dx, v.y / self.dx);

@@ -179,10 +179,17 @@ tolerances, and that is a kernel change nobody has needed yet.
    `publish = false`. A consumer cannot reach `Scene`, `Frame` or the report generator at all.
    This is the largest gap between what is built and what is usable.
 
-   The first piece is done: `Domain::readings` and `Reading` are in the kernel, so collecting a
-   run's scalars no longer requires knowing every domain by name. Splitting the layers is what
-   made that requirement visible — the app had a hundred-line `match` over domain types, and a
-   layer cannot carry one.
+   `dualis-scene` exists now: `Placement`, `Extent`, `Frame`, `Panel`, `capture`. It names no
+   domain, and a test defines a physics inside itself to prove it — if that is captured, adding a
+   physics costs one crate.
+
+   Getting there needed **five** things the layer had been doing by matching on domain types:
+   `Domain::readings`, `Domain::as_bodies`, `Simulation::domains`, `ScalarField::unit`, and
+   `Placement::extent` for the region a field occupies. Each was invisible while one crate did
+   everything.
+
+   What remains of the move: `dualis-world` still owns `Frame` and the views. Re-pointing it at
+   the new crate, and lifting `render`/`report` into a `dualis-view`, is mechanical.
 3. **3D field domains.** Conduction through a solid, and the wave equation with a ceiling. Both
    are the existing 1D and 2D schemes with one more index, and both have strong closed forms.
 4. **A field formulation of electricity.** Current density and potential on a grid, so `I²R`

@@ -75,6 +75,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dualis-scene"
+version = "0.8.0"
+dependencies = [
+ "dualis-core",
+ "dualis-units",
+ "glam",
+]
+
+[[package]]
 name = "dualis-thermal"
 version = "0.8.0"
 dependencies = [
