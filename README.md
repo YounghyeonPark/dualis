@@ -15,7 +15,7 @@ result is reproducible bit for bit — across platforms, across optimisation lev
 WebAssembly, and under sixteen threads as readily as one.
 
 ```sh
-cargo add dualis                             # one dependency, all eleven crates
+cargo add dualis                             # one dependency, all eleven published crates
 pip install dualis                           # or from Python, see bindings/python
 ```
 

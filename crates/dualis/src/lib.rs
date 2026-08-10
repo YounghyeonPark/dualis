@@ -1,7 +1,7 @@
 //! dualis: physics for simulated worlds, in one dependency.
 //!
 //! A facade over the workspace. Nothing is implemented here — the point is that a
-//! consumer writes `dualis = "0.9"` rather than naming ten crates, and that the
+//! consumer writes `dualis = "0.10"` rather than naming ten crates, and that the
 //! integration tests which need two domains at once have somewhere to live.
 //!
 //! ```

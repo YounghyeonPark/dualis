@@ -2,7 +2,7 @@
 
 `dualis-world` exists to use the SDK from outside and write down where that is awkward. A
 library with no consumers is a library whose ergonomics nobody has measured, and none of the
-434 tests inside the workspace can answer this question about themselves — they are written by
+472 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it, couples
@@ -521,11 +521,19 @@ everything it had ever been handed was flat. The seventh domain found it in an a
 
 ## What this says about the exercise
 
-Twenty-one findings, and the source has shifted four times. The first twelve came from writing the
-application; four came from **running the two subagents built out of what the first twelve
-taught** — one hunting outcomes that come out empty, one building against the *published* 0.1.0
-rather than the working tree. The seventeenth came from a third source again: adding a domain the
-library did not have, and finding that the *new* API had the old shape.
+Twenty-three findings, and the source has shifted four times.
+
+| how many | where they came from |
+| --- | --- |
+| 1–12 | writing the application against the API |
+| 13–16 | **running the two subagents built out of what the first twelve taught** — one hunting outcomes that come out empty, one building against the *published* 0.1.0 rather than the working tree |
+| 17, 23 | adding a domain the library did not have, and finding the *new* API had the old shape |
+| 18–22 | **splitting the application into layers**, which turns assumptions into statements |
+
+The last two rows are the ones a reader should take away, because neither is "use the API and see
+what hurts". Building the next domain and pulling out a layer are both cheap, and each finds a
+class of thing the other cannot: a domain finds what the layers above it assumed, and a layer
+finds what one crate doing everything had hidden.
 
 Seventeen are fixed. That line said "ten" until a test counted them, which is the failure
 `prose-auditor` exists for and the second time this file has been the one carrying it — and the

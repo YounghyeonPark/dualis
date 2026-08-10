@@ -38,7 +38,7 @@ Stated in full in CONTRIBUTING.md. The compressed version:
    counts, and there is a pinned digest that says so.
 4. **The kernel must never depend on a domain**, and no domain may depend on another. That
    claim is the reason for the crate split and has now been held through six domains.
-5. **Every public item is documented.** `#![deny(missing_docs)]` in all eleven crates.
+5. **Every public item is documented.** `#![deny(missing_docs)]` in all twelve crates.
 
 ## The subagent team
 
@@ -119,7 +119,7 @@ caught it — nothing in the gate above reads that directory at all.
 cd bindings/python
 cargo fmt --check && cargo clippy --release --all-targets -- -D warnings
 python -m maturin build --release
-python -m pip install --force-reinstall target/wheels/dualis-0.9.0-*.whl
+python -m pip install --force-reinstall target/wheels/dualis-0.10.0-*.whl
 python tests/test_dualis.py
 ```
 

@@ -93,7 +93,8 @@ alters that constant, that is the finding** — it is never the fix.
 cargo clippy --workspace --lib -- -W missing_docs 2>&1 | grep -c "^warning: missing"
 ```
 
-Must be `0`. All eleven crates carry `#![deny(missing_docs)]`, so a regression is a build
+Must be `0`. All twelve crates carry `#![deny(missing_docs)]` — the eleven published ones
+and `dualis-world` — so a regression is a build
 failure — but check that the attribute is still present and still positioned before any item,
 since an inner attribute after the first item is a compile error and it is easy to reintroduce
 while editing the top of a file.
@@ -139,7 +140,7 @@ for d in crates/*/; do printf "%s " "$d"; ls "$d" | grep -c LICENSE; done   # ea
 New since the workspace went to crates.io, and the one invariant here that cannot be fixed after
 the fact: a published version is permanent. You may yank it, you may not replace it.
 
-`dualis` 0.8.0 is on crates.io and the tree is 0.9.0. So a change to the public API has a
+`dualis` 0.9.0 is on crates.io and the tree is 0.10.0. So a change to the public API has a
 version consequence, and `0.x` semantics mean **a breaking change needs the minor bumped**.
 
 Do not take those two numbers on trust — this line has been stale before. The two commands

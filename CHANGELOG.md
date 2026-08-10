@@ -10,7 +10,12 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
-## [Unreleased]
+## [0.10.0] — 2026-08-10
+
+Three domains gained a third dimension and electricity gained a field, so
+`ARCHITECTURE.md`'s six gaps are down to one. **Breaking**, in two places, both in
+`dualis-scene`: `Extent::new` takes an `nz`, and `Panel::grid` returns a triple. Everything
+else is additive.
 
 ### Added
 
@@ -804,7 +809,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.10.0
 [0.9.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.9.0
 [0.8.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.8.0
 [0.7.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.7.0
