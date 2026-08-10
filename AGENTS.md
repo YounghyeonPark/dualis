@@ -249,7 +249,8 @@ also pass it, then go and check *that*.
   them. `cargo run --example melting`. Give any of them a path and it writes an SVG. Two are
   specifically about three dimensions: `heat_in_three_dimensions` and `room_in_three_dimensions`.
   `busbar_rating` is the one shaped like an engineer's working day rather than a demonstration —
-  geometry to rating to production yield, every step checked.
+  geometry to rating to production yield, every step checked. `optical_bench` is the one that
+  draws the *instrument*: rays through a folded doublet, as a 3D layout you rotate in a browser.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — the three layers, what is built and what is missing,
   and the rules that make "add a physics" cost one crate.
 - **[README.md](README.md)** — the long version, including what is deliberately *not* here.

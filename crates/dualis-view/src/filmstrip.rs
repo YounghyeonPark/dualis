@@ -112,6 +112,12 @@ fn draw(p: &Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String {
             let plane = &values[k * nx * ny..(k + 1) * nx * ny];
             raster(*nx, *ny, plane, x0, y0, size, extent)
         }
+        PanelData::Paths {
+            vertices,
+            starts,
+            values,
+            bounds,
+        } => strands(vertices, starts, values, bounds, x0, y0, size, extent),
         PanelData::Points {
             positions,
             values,
@@ -159,6 +165,78 @@ fn corners(b: &[f64; 6]) -> [[f64; 3]; 8] {
         [x1, y1, z1],
         [x0, y1, z1],
     ]
+}
+
+/// Paths as polylines in the same axonometric view the bodies get.
+///
+/// Back to front by mean depth, so a ray in front covers one behind rather than whichever was
+/// last in the array — the same rule `scatter` follows, for the same reason.
+#[allow(clippy::too_many_arguments)]
+fn strands(
+    vertices: &[[f64; 3]],
+    starts: &[usize],
+    values: &[f64],
+    bounds: &[f64; 6],
+    x0: f64,
+    y0: f64,
+    size: f64,
+    extent: f64,
+) -> String {
+    let projected: Vec<(f64, f64, f64)> = corners(bounds).iter().map(|c| project(*c)).collect();
+    let (mut ax0, mut ay0, mut ax1, mut ay1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    let (mut d0, mut d1) = (f64::MAX, f64::MIN);
+    for (a, u, d) in &projected {
+        ax0 = ax0.min(*a);
+        ax1 = ax1.max(*a);
+        ay0 = ay0.min(*u);
+        ay1 = ay1.max(*u);
+        d0 = d0.min(*d);
+        d1 = d1.max(*d);
+    }
+    let span = (ax1 - ax0).max(ay1 - ay0).max(1e-30);
+    let pad = 0.06 * size;
+    let inner = size - 2.0 * pad;
+    let to_screen = |a: f64, u: f64| {
+        (
+            x0 + pad + (a - ax0) / span * inner,
+            y0 + pad + inner - (u - ay0) / span * inner,
+        )
+    };
+
+    let mut runs: Vec<(f64, usize)> = Vec::with_capacity(starts.len());
+    for k in 0..starts.len() {
+        let from = starts[k];
+        let to = starts.get(k + 1).copied().unwrap_or(vertices.len());
+        let mean = vertices[from..to]
+            .iter()
+            .map(|v| project(*v).2)
+            .sum::<f64>()
+            / (to - from).max(1) as f64;
+        runs.push((mean, k));
+    }
+    runs.sort_by(|a, b| b.0.total_cmp(&a.0));
+
+    let mut s = String::new();
+    for (mean, k) in runs {
+        let from = starts[k];
+        let to = starts.get(k + 1).copied().unwrap_or(vertices.len());
+        let points: Vec<String> = vertices[from..to]
+            .iter()
+            .map(|v| {
+                let (a, u, _) = project(*v);
+                let (px, py) = to_screen(a, u);
+                format!("{px:.2},{py:.2}")
+            })
+            .collect();
+        let t = ((d1 - mean) / (d1 - d0).max(1e-30)).clamp(0.0, 1.0);
+        let colour = faded(values[k] / extent, 1.0 - t);
+        s.push_str(&format!(
+            "<polyline points='{}' fill='none' stroke='{colour}' stroke-width='{:.2}'/>\n",
+            points.join(" "),
+            0.9 + 1.1 * t
+        ));
+    }
+    s
 }
 
 /// Bodies as dots in an axonometric view, in a frame fixed for the whole run.

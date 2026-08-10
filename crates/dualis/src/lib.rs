@@ -110,7 +110,10 @@ pub mod prelude {
     // supply one were not exported. A consumer wanting a material the catalogue does not carry
     // had to reach through two module paths to say so.
     pub use dualis_core::substance::{AcousticProps, MechanicalProps, ThermalProps};
-    pub use dualis_core::{Ensemble, Estimate, Pose};
+    // `Reading`, `Tolerances` and `Bodies` were reachable only through `dualis::core`. Each is a
+    // type a consumer meets while building a frame, setting an audit or writing a domain, which
+    // is what a prelude is for.
+    pub use dualis_core::{Bodies, Ensemble, Estimate, Pose, Reading, Tolerances};
     pub use dualis_electrical::{Conductor, Winding};
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,

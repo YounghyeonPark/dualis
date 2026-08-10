@@ -27,7 +27,7 @@ cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot 
 cargo test --workspace                       # 473 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are nine of those; three more
+Add `out.svg` to either example and it draws the result. There are ten of those; three more
 are checks rather than showcases, and the table is [further down](#examples).
 
 **The goal is to reproduce physical law in three dimensions**, in a structure that can accept
@@ -318,6 +318,7 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `lens_spots` | An achromatic doublet *solved* from the Abbe numbers and then traced ray by ray in 3D — focal length, spherical aberration and colour, each against a formula the trace did not compute |
 | `heat_in_three_dimensions` | A point of heat in a block of aluminium. The peak falls as `t^(-3/2)`, and **that exponent is the dimensionality** — a bar gives `-1/2`, a plate `-1`. Nothing 1D can produce it |
 | `room_in_three_dimensions` | The same room as `room_modes`, with a ceiling. The floor-to-ceiling mode at 71 Hz that a floor plan does not have *at all*, and a mode count growing as `f³` rather than `f²` |
+| `optical_bench` | **A 3D instrument, not a graph.** A doublet, a fold mirror turning the axis through 90°, three field angles — prescribed, traced, refocused, then *bent* until the spot falls inside the Airy disc. `optical_bench bench.html` gives a layout you rotate in a browser |
 | `busbar_rating` | **A design study rather than a demonstration.** A bolted busbar joint, from geometry to a production yield: the contact resistance solved as a field, the thermal path from a network, the electro-thermal fixed point, a rating by bisection, the margin to runaway, and 20 000 units against manufacturing tolerance. Every step against a closed form |
 
 Two more are run by CI without being in the table, because they are checks rather than

@@ -18,7 +18,7 @@ cargo deny check                       # needs `cargo install cargo-deny`
 And the examples, which are tests that print:
 
 ```sh
-for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating agents_quickstart readme_check; do
+for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench agents_quickstart readme_check; do
   cargo run --locked --release --example "$e" || break
 done
 ```

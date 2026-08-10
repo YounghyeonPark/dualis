@@ -70,6 +70,19 @@ fn frames() -> Vec<Frame> {
                         },
                     },
                     Panel {
+                        name: "rays".into(),
+                        unit: "nm",
+                        // Two paths of three vertices each, going different ways, so a view that
+                        // drew only the first or joined them into one is distinguishable.
+                        data: PanelData::paths(
+                            vec![
+                                vec![[0.0, 0.0, 0.0], [1.0, 0.5, 0.0], [2.0, 0.0, 1.0 + t]],
+                                vec![[0.0, 0.0, 0.0], [1.0, -0.5, 0.0], [2.0, -1.0, -1.0]],
+                            ],
+                            vec![486.1, 656.3],
+                        ),
+                    },
+                    Panel {
                         name: "specks".into(),
                         unit: "m/s",
                         data: PanelData::Points {
@@ -102,15 +115,17 @@ fn frames() -> Vec<Frame> {
 fn the_report_picks_a_view_per_shape() {
     let page = html("hand-built", &frames());
 
-    for kind in ["profile", "heatmap", "volume", "slices", "scene", "series"] {
+    for kind in [
+        "profile", "heatmap", "volume", "slices", "layout", "scene", "series",
+    ] {
         assert!(
             page.contains(&format!("data-kind=\"{kind}\"")),
             "no {kind} view"
         );
     }
-    // Four panels plus one card for the readings — and the 3D one gets **two**, a render and a
-    // montage, because neither answers the other's question.
-    assert_eq!(page.matches("class=\"card\"").count(), 6);
+    // Five panels plus one card for the readings — and the 3D field gets **two**, a render and
+    // a montage, because neither answers the other's question.
+    assert_eq!(page.matches("class=\"card\"").count(), 7);
 
     // **The volume is not drawn as a plane.** `lump` is 2×2×3, and a view that ignored `nz`
     // would render its first four values and call it done — a perfectly plausible heatmap of a
@@ -264,7 +279,7 @@ fn every_declared_view_is_wired_to_something_that_draws_it() {
             &rest[..rest.find('"').expect("a closing quote")]
         })
         .collect();
-    assert!(kinds.len() >= 6, "only {} canvases: {kinds:?}", kinds.len());
+    assert!(kinds.len() >= 7, "only {} canvases: {kinds:?}", kinds.len());
 
     // **Inside `drawAll`, not anywhere on the page.** The first version of this searched the whole
     // document, and passed with the dispatch deliberately broken — because the *rotation* filter
@@ -316,4 +331,47 @@ fn every_declared_view_is_wired_to_something_that_draws_it() {
 
     // And the volume and the montage really are the same panel seen twice.
     assert!(slots.contains(&"lump-volume") && slots.contains(&"lump-slices"));
+}
+
+/// **A path is a run, not a bag of points.**
+///
+/// `PanelData::paths` flattens runs into one array with an index, and the thing that can go wrong
+/// is losing which vertex belongs to which path — at which point a traced ray becomes a scatter
+/// and the one property that makes it a ray is gone.
+#[test]
+fn paths_keep_their_runs() {
+    let f = frames();
+    let panel = f[0].panels.iter().find(|p| p.name == "rays").unwrap();
+
+    assert_eq!(panel.values(), &[486.1, 656.3]);
+    assert_eq!(panel.path(0).unwrap().len(), 3);
+    assert_eq!(panel.path(1).unwrap().len(), 3);
+    assert_eq!(panel.path(0).unwrap()[1], [1.0, 0.5, 0.0]);
+    assert_eq!(panel.path(1).unwrap()[1], [1.0, -0.5, 0.0]);
+    assert!(panel.path(2).is_none(), "there is no third path");
+    assert!(panel.grid().is_none(), "a path panel is not a grid");
+
+    // A run of fewer than two points is dropped rather than kept as a degenerate line, and the
+    // values follow the runs that survived rather than the ones that were offered.
+    let thin = PanelData::paths(
+        vec![vec![[0.0; 3]], vec![[0.0; 3], [1.0, 0.0, 0.0]]],
+        vec![1.0, 2.0],
+    );
+    let panel = Panel {
+        name: "thin".into(),
+        unit: "",
+        data: thin,
+    };
+    assert_eq!(
+        panel.values(),
+        &[2.0],
+        "the surviving run keeps its own value"
+    );
+    assert_eq!(panel.path(0).unwrap().len(), 2);
+
+    // And the box is measured from the geometry rather than left at a default.
+    let PanelData::Paths { bounds, .. } = panel.data else {
+        panic!("expected paths");
+    };
+    assert_eq!(bounds, [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
 }

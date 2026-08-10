@@ -14,6 +14,26 @@ messages carry the full account.
 
 ### Added
 
+- **`PanelData::Paths`** in `dualis-scene`, and a **`layout`** view in `dualis-view`: runs of
+  connected points in space — a ray through a lens train, a trajectory, a field line — drawn
+  rotatably and depth-sorted beside the field and body views.
+
+  The third shape, and it took an optical bench to need it. A field is defined everywhere and a
+  body is somewhere; a **path** is a thing that went from one place to another, and drawing a
+  traced ray as a scatter of its vertices loses the one property that makes it a ray.
+
+- **`optical_bench`**, an example that draws the *instrument* rather than a graph. A doublet, a
+  fold mirror turning the axis through 90°, three field angles, and an image plane — prescribed,
+  traced, refocused, and then **bent** until the spot lands inside the Airy disc:
+
+  ```text
+    effective focal length   97.8 mm   measured from a traced ray, not assumed
+    RMS spot, as prescribed  209.2 um  47x the diffraction limit
+    RMS spot, bent           0.57 um   0.13x — diffraction-limited
+  ```
+
+  `cargo run --release --example optical_bench bench.html` gives a layout you rotate in a browser.
+
 - **`busbar_rating`**, an example shaped like an engineer's working day rather than a
   demonstration. A bolted busbar joint, geometry to production yield:
 
@@ -46,8 +66,9 @@ messages carry the full account.
   The second is `room_modes` with a ceiling: the floor-to-ceiling mode at 71 Hz that a floor plan
   does not have *at all*, and a mode count checked against Weyl's three-term estimate.
 
-- **`Solid3D` in the prelude.** It was missing, so the first example that reached for it had to
-  name the crate.
+- **`Solid3D`, `Reading`, `Bodies` and `Tolerances` in the prelude.** Each was reachable only
+  through `dualis::core` or its own crate, and each is a type a consumer meets while building a
+  frame, setting an audit or writing a domain. Found by examples reaching for them.
 
 - **A `volume` view** in `dualis-view`: a 3D field is raycast — trilinear sampling, front-to-back
   compositing, rotatable with the same camera the bodies view uses — **beside** the slice montage

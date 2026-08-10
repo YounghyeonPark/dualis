@@ -62,6 +62,23 @@ pub fn to_json(title: &str, frames: &[Frame]) -> String {
                      \"values\": {}",
                     numbers(values)
                 )),
+                PanelData::Paths {
+                    vertices,
+                    starts,
+                    values,
+                    bounds,
+                } => {
+                    let flat: Vec<f64> = vertices.iter().flatten().copied().collect();
+                    let heads: Vec<f64> = starts.iter().map(|k| *k as f64).collect();
+                    out.push_str(&format!(
+                        "\"kind\": \"paths\", \"bounds\": {}, \"starts\": {}, \
+                         \"vertices\": {}, \"values\": {}",
+                        numbers(bounds),
+                        numbers(&heads),
+                        numbers(&flat),
+                        numbers(values)
+                    ));
+                }
                 PanelData::Points {
                     positions,
                     values,

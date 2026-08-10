@@ -23,6 +23,7 @@
 //! | a 2D field | a heatmap that animates, on one colour scale throughout |
 //! | a 3D field | a rotatable render **and** every z-slice as a montage — see below |
 //! | points in space | a rotatable 3D scene, depth-sorted, that animates |
+//! | paths in space | a rotatable 3D layout: rays through a lens train, a trajectory |
 //!
 //! A volume gets **both**, and that is not indecision. A raycast composites values along each
 //! ray, so it shows the shape of a field and a reader cannot get a number back out of it; the
@@ -80,6 +81,7 @@ pub fn html(title: &str, frames: &[Frame]) -> String {
     if let Some(first) = frames.first() {
         for panel in &first.panels {
             let kinds: &[&str] = match &panel.data {
+                PanelData::Paths { .. } => &["layout"],
                 PanelData::Field { nz, .. } if *nz > 1 => &["volume", "slices"],
                 PanelData::Field { ny, .. } if *ny <= 1 => &["profile"],
                 PanelData::Field { .. } => &["heatmap"],
@@ -96,6 +98,7 @@ pub fn html(title: &str, frames: &[Frame]) -> String {
                     match *kind {
                         "profile" => "1D field &middot; profile",
                         "heatmap" => "2D field &middot; heatmap",
+                        "layout" => "paths &middot; 3D, drag to rotate",
                         "volume" => "3D field &middot; rendered, drag to rotate",
                         "slices" => "3D field &middot; every z-slice, and the numbers",
                         _ => "bodies &middot; 3D, drag to rotate",
@@ -148,6 +151,22 @@ fn json(frames: &[Frame]) -> String {
                     "\"kind\":\"field\",\"nx\":{nx},\"ny\":{ny},\"nz\":{nz},\"v\":{}",
                     nums(values)
                 )),
+                PanelData::Paths {
+                    vertices,
+                    starts,
+                    values,
+                    bounds,
+                } => {
+                    let flat: Vec<f64> = vertices.iter().flatten().copied().collect();
+                    let heads: Vec<f64> = starts.iter().map(|k| *k as f64).collect();
+                    out.push_str(&format!(
+                        "\"kind\":\"paths\",\"b\":{},\"s\":{},\"p\":{},\"v\":{}",
+                        nums(bounds),
+                        nums(&heads),
+                        nums(&flat),
+                        nums(values)
+                    ));
+                }
                 PanelData::Points {
                     positions,
                     values,
@@ -240,8 +259,8 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--hot)}
 h2{margin:0;font-size:15px;font-weight:620;letter-spacing:-.01em}
 .kind{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dim);letter-spacing:.04em}
 canvas.view{display:block;width:100%;height:auto;background:#0a0e13}
-canvas[data-kind=scene],canvas[data-kind=volume]{cursor:grab;touch-action:none}
-canvas[data-kind=scene]:active,canvas[data-kind=volume]:active{cursor:grabbing}
+canvas[data-kind=scene],canvas[data-kind=volume],canvas[data-kind=layout]{cursor:grab;touch-action:none}
+canvas[data-kind=scene]:active,canvas[data-kind=volume]:active,canvas[data-kind=layout]:active{cursor:grabbing}
 .cap{margin:0;padding:9px 14px 12px;font-family:ui-monospace,Consolas,monospace;
  font-size:11.5px;color:var(--dim)}
 @media (prefers-reduced-motion:reduce){.bar button{outline:1px dashed var(--dim)}}
@@ -497,6 +516,46 @@ function drawVolume(v, f){
        + note);
 }
 
+/* ---- 3D: paths, depth sorted --------------------------------------------------------------- */
+function drawLayout(v, f){
+  var x=v.ctx, w=v.c.width, h=v.c.height, p=panelOf(f,v.panel), R=range[v.panel];
+  x.fillStyle="#0a0e13"; x.fillRect(0,0,w,h);
+  var b=p.b, s={c:[(b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2],
+                span:Math.max(b[3]-b[0],b[4]-b[1],b[5]-b[2])||1};
+
+  /* Sorted by mean depth and drawn back to front, so a ray in front covers one behind rather
+     than whichever happened to be last in the array. */
+  var n=p.s.length, order=[];
+  for(var k=0;k<n;k++){
+    var from=p.s[k], to=(k+1<n?p.s[k+1]:p.p.length/3), d=0;
+    for(var i=from;i<to;i++) d+=project([p.p[3*i],p.p[3*i+1],p.p[3*i+2]],s,w,h).d;
+    order.push({k:k, from:from, to:to, d:d/Math.max(1,to-from)});
+  }
+  order.sort(function(a,b){ return b.d-a.d; });
+
+  var span=(R.hi-R.lo)||1;
+  order.forEach(function(o){
+    x.beginPath();
+    for(var i=o.from;i<o.to;i++){
+      var q=project([p.p[3*i],p.p[3*i+1],p.p[3*i+2]],s,w,h);
+      i===o.from ? x.moveTo(q.x,q.y) : x.lineTo(q.x,q.y);
+    }
+    x.strokeStyle=ramp((p.v[o.k]-R.lo)/span);
+    /* Nearer paths a little heavier, which is the only depth cue a line has. */
+    x.lineWidth=Math.max(0.6, 2.6/Math.max(0.4,o.d));
+    x.globalAlpha=0.9;
+    x.stroke();
+  });
+  x.globalAlpha=1;
+
+  var pad=14, bw=210, bx=w-pad-bw, by=h-24;
+  for(var q2=0;q2<bw;q2++){ x.fillStyle=ramp(q2/bw); x.fillRect(bx+q2,by,1,10); }
+  x.fillStyle="#7f8b9a"; x.font="12px ui-monospace,Consolas,monospace";
+  x.textAlign="right"; x.fillText(nice(R.lo), bx-8, by+9);
+  x.textAlign="left"; x.fillText(nice(R.hi)+" "+p.unit, bx+bw+8, by+9);
+  cap(v, p.s.length+" paths \u00b7 colour is "+p.unit+" \u00b7 drag to rotate, scroll to zoom");
+}
+
 /* ---- 3D: bodies, depth sorted -------------------------------------------------------------- */
 function project(pt, s, w, h){
   var X=(pt[0]-s.c[0])/s.span, Y=(pt[1]-s.c[1])/s.span, Z=(pt[2]-s.c[2])/s.span;
@@ -582,6 +641,7 @@ function drawAll(){
     else if(v.kind==="heatmap") drawHeat(v,f);
     else if(v.kind==="slices") drawSlices(v,f);
     else if(v.kind==="volume") drawVolume(v,f);
+    else if(v.kind==="layout") drawLayout(v,f);
     else if(v.kind==="scene") drawScene(v,f);
     else drawSeries(v);
   });
@@ -595,7 +655,9 @@ scrub.max=String(N-1);
 scrub.oninput=function(){ frame=Number(scrub.value); playing=false; play.textContent="Play"; drawAll(); };
 play.onclick=function(){ playing=!playing; play.textContent=playing?"Pause":"Play"; };
 
-views.filter(function(v){return v.kind==="scene"||v.kind==="volume";}).forEach(function(v){
+views.filter(function(v){
+  return v.kind==="scene"||v.kind==="volume"||v.kind==="layout";
+}).forEach(function(v){
   v.c.addEventListener("pointerdown",function(e){ drag={x:e.clientX,y:e.clientY}; v.c.setPointerCapture(e.pointerId); });
   v.c.addEventListener("pointermove",function(e){
     if(!drag)return;

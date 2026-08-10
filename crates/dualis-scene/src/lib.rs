@@ -215,6 +215,27 @@ pub enum PanelData {
         /// `nx * ny * nz` values, x fastest, then y, then z.
         values: Vec<f64>,
     },
+    /// Runs of connected points in world coordinates — a ray through a lens train, a
+    /// trajectory, a field line.
+    ///
+    /// The third shape, and it took an optical bench to need it. A field is defined everywhere
+    /// and a body is somewhere; a **path** is a thing that went from one place to another, and
+    /// neither of the other two can say that. Drawing a traced ray as a scatter of its vertices
+    /// loses the one property that makes it a ray.
+    ///
+    /// Flat, with an index, rather than a `Vec<Vec<_>>`: it crosses to a wire format and to a
+    /// canvas, and both want one array. [`PanelData::paths`] does the flattening.
+    Paths {
+        /// Every vertex of every path, end to end.
+        vertices: Vec<[f64; 3]>,
+        /// Where each path begins in `vertices`. Path `k` runs from `starts[k]` to `starts[k+1]`,
+        /// and the last to the end.
+        starts: Vec<usize>,
+        /// One value per path, to colour it by — a wavelength, a field angle, a speed.
+        values: Vec<f64>,
+        /// `[x0, y0, z0, x1, y1, z1]`, the region to draw.
+        bounds: [f64; 6],
+    },
     /// Bodies at positions **in world coordinates**, each with a value to colour it by.
     Points {
         /// Where each body is.
@@ -229,11 +250,64 @@ pub enum PanelData {
     },
 }
 
+impl PanelData {
+    /// Build a [`PanelData::Paths`] from runs of points, flattening them and measuring the box.
+    ///
+    /// One value per path. A path with fewer than two points is dropped rather than kept as a
+    /// degenerate line — and the count of what was dropped is not hidden, because a caller whose
+    /// rays all failed to trace should see an empty panel rather than a sparse one.
+    pub fn paths(runs: impl IntoIterator<Item = Vec<[f64; 3]>>, values: Vec<f64>) -> PanelData {
+        let mut vertices = Vec::new();
+        let mut starts = Vec::new();
+        let mut kept = Vec::new();
+        for (k, run) in runs.into_iter().enumerate() {
+            if run.len() < 2 {
+                continue;
+            }
+            starts.push(vertices.len());
+            vertices.extend(run);
+            kept.push(values.get(k).copied().unwrap_or(0.0));
+        }
+        let mut bounds = [f64::MAX, f64::MAX, f64::MAX, f64::MIN, f64::MIN, f64::MIN];
+        for v in &vertices {
+            for a in 0..3 {
+                bounds[a] = bounds[a].min(v[a]);
+                bounds[a + 3] = bounds[a + 3].max(v[a]);
+            }
+        }
+        if vertices.is_empty() {
+            bounds = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
+        }
+        PanelData::Paths {
+            vertices,
+            starts,
+            values: kept,
+            bounds,
+        }
+    }
+}
+
 impl Panel {
     /// The scalar values, whichever shape this is.
     pub fn values(&self) -> &[f64] {
         match &self.data {
-            PanelData::Field { values, .. } | PanelData::Points { values, .. } => values,
+            PanelData::Field { values, .. }
+            | PanelData::Points { values, .. }
+            | PanelData::Paths { values, .. } => values,
+        }
+    }
+
+    /// The vertices of path `k`, for a caller that wants one run at a time.
+    pub fn path(&self, k: usize) -> Option<&[[f64; 3]]> {
+        match &self.data {
+            PanelData::Paths {
+                vertices, starts, ..
+            } => {
+                let from = *starts.get(k)?;
+                let to = starts.get(k + 1).copied().unwrap_or(vertices.len());
+                Some(&vertices[from..to])
+            }
+            _ => None,
         }
     }
 
@@ -241,7 +315,7 @@ impl Panel {
     pub fn grid(&self) -> Option<(usize, usize, usize)> {
         match self.data {
             PanelData::Field { nx, ny, nz, .. } => Some((nx, ny, nz)),
-            PanelData::Points { .. } => None,
+            _ => None,
         }
     }
 
@@ -256,7 +330,7 @@ impl Panel {
             PanelData::Field { nx, ny, nz, values } => {
                 (k < *nz).then(|| &values[k * nx * ny..(k + 1) * nx * ny])
             }
-            PanelData::Points { .. } => None,
+            _ => None,
         }
     }
 }
@@ -385,7 +459,8 @@ fn points(name: &str, bodies: &dyn dualis_core::Bodies, pose: Pose) -> Panel {
 /// picture moved. Call this once on a finished run.
 ///
 /// Panels with a real wall are left alone: a periodic cell is a boundary condition and does not
-/// grow because a run is longer.
+/// grow because a run is longer. So are [`PanelData::Paths`], whose box is measured from the
+/// geometry a caller handed over rather than from anything that moves.
 pub fn settle_framing(frames: &mut [Frame]) {
     let names: Vec<String> = frames
         .first()
