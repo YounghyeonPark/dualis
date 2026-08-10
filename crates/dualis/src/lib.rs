@@ -127,7 +127,7 @@ pub mod prelude {
     };
     pub use dualis_scene::{capture, settle_framing, Extent, Frame, Panel, PanelData, Placement};
     pub use dualis_thermal::{
-        Bar1D, Environment, LumpedMass, Node, SteadyState, ThermalNetwork, HEAT,
+        Bar1D, Environment, LumpedMass, Node, Solid3D, SteadyState, ThermalNetwork, HEAT,
     };
     pub use dualis_units::{
         AccelerationVec, Area, Conductance, Conductivity, Current, CurrentDensity, Damping,

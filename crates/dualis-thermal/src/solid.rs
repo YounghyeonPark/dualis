@@ -374,6 +374,22 @@ impl Domain for Solid3D {
     /// factor is the reason `Schedule::Multirate` exists: a block and a lumped mass in one scene
     /// differ by five orders of magnitude in the step they can take, and a single global step
     /// would make the cheap domain pay the expensive one's bill.
+    ///
+    /// # Stable is not accurate, and this is only the first
+    ///
+    /// At **exactly** this step the sharpest mode the grid can hold has an amplification factor of
+    /// `−1`. It flips sign every step and never decays. That is what marginal stability means and
+    /// it is not a defect — the scheme does not diverge there, which is the whole of what a
+    /// stability limit claims.
+    ///
+    /// It does mean sharp initial data is carried badly. A point source excites that mode as hard
+    /// as anything can, and the peak comes out **1.96×** the exact answer while the conservation
+    /// audit stays exact to the last bit. At half this step it is 1.005×.
+    ///
+    /// So take a fraction of it when the initial condition is sharp. `Schedule::Multirate` divides
+    /// by `ceil(dt / limit)` and so usually lands comfortably inside, but a caller stepping by
+    /// hand can sit exactly on it. `cargo run --example heat_in_three_dimensions` is the
+    /// measurement.
     fn max_stable_dt(&self, _now: Time) -> Time {
         let Some(alpha) = self.substance.diffusivity() else {
             return Time::from_si(f64::INFINITY);

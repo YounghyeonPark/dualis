@@ -27,7 +27,7 @@ cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot 
 cargo test --workspace                       # 473 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are six of those; three more
+Add `out.svg` to either example and it draws the result. There are eight of those; three more
 are checks rather than showcases, and the table is [further down](#examples).
 
 **The goal is to reproduce physical law in three dimensions**, in a structure that can accept
@@ -316,6 +316,8 @@ cargo run --example beam_hot_spot out.svg    # and a picture
 | `room_modes` | Why a small room booms at one note, and why that note is not a note. Four mode shapes and a corner trace |
 | `melting` | A Lennard-Jones crystal melting, read off its own radial distribution rather than declared |
 | `lens_spots` | An achromatic doublet *solved* from the Abbe numbers and then traced ray by ray in 3D — focal length, spherical aberration and colour, each against a formula the trace did not compute |
+| `heat_in_three_dimensions` | A point of heat in a block of aluminium. The peak falls as `t^(-3/2)`, and **that exponent is the dimensionality** — a bar gives `-1/2`, a plate `-1`. Nothing 1D can produce it |
+| `room_in_three_dimensions` | The same room as `room_modes`, with a ceiling. The floor-to-ceiling mode at 71 Hz that a floor plan does not have *at all*, and a mode count growing as `f³` rather than `f²` |
 
 Two more are run by CI without being in the table, because they are checks rather than
 showcases: `agents_quickstart`, the runnable form of [AGENTS.md](AGENTS.md), and

@@ -14,6 +14,21 @@ messages carry the full account.
 
 ### Added
 
+- **Two 3D examples**, `heat_in_three_dimensions` and `room_in_three_dimensions`, run by CI like
+  the rest.
+
+  The first is built on the closed form for an instantaneous point source: the peak falls as
+  `t^(-d/2)`, and **that exponent is the dimensionality**. A bar gives `-1/2`, a plate `-1`, a
+  block `-3/2`. Fitted at `-1.514` inside the window where the source is still a point and the
+  block still looks infinite, against `-1.362` before it and `-0.245` after — so the window is
+  demonstrated rather than asserted.
+
+  The second is `room_modes` with a ceiling: the floor-to-ceiling mode at 71 Hz that a floor plan
+  does not have *at all*, and a mode count checked against Weyl's three-term estimate.
+
+- **`Solid3D` in the prelude.** It was missing, so the first example that reached for it had to
+  name the crate.
+
 - **A `volume` view** in `dualis-view`: a 3D field is raycast — trilinear sampling, front-to-back
   compositing, rotatable with the same camera the bodies view uses — **beside** the slice montage
   rather than instead of it. A render shows shape and a reader cannot get a number back out of it;
@@ -153,6 +168,16 @@ else is additive.
   mode nothing announces. It is a field, and only a field.
 
 ### Fixed
+
+- **`Solid3D::max_stable_dt` was documented as a limit and read as a recommendation.** At exactly
+  `dx²/6α` the sharpest mode the grid can hold has an amplification factor of `-1`: marginally
+  stable, so it flips sign every step and never decays. A point source excites it as hard as
+  anything can, and the peak comes out **1.96×** the closed form — from a scheme that never
+  diverges and whose conservation audit is exact to the last bit. At half the limit it is 1.005×.
+
+  Nothing is wrong with the limit; it is a stability limit and stability is all it claims. The
+  documentation now says so, and `heat_in_three_dimensions` runs at half of it with the numbers
+  for all three cases in its header.
 
 - **A quasi-static domain reported an answer before it had one.** `Conductor::new` left the
   potential at zeros, so the first captured frame reported a resistance 24× below the floor
