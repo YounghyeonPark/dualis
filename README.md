@@ -6,7 +6,8 @@
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
 physics, and six domains built on it that do: **light, heat, motion, sound, electricity,
-and matter one atom at a time.**
+and matter one atom at a time.** Two layers above them place a simulation in the world and
+draw it, and neither knows a domain either.
 
 Dimensions live in the type system, so `Length + Time` does not compile. Conservation is
 audited rather than assumed, and a `Violation` names what went missing and where. Every
@@ -23,11 +24,11 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 395 tests, all against closed forms
+cargo test --workspace                       # 434 tests, all against closed forms
 ```
 
-Add `out.svg` to either example and it draws the result. There are six of them; the table
-is [further down](#examples).
+Add `out.svg` to either example and it draws the result. There are six of those; three more
+are checks rather than showcases, and the table is [further down](#examples).
 
 **The goal is to reproduce physical law in three dimensions**, in a structure that can accept
 physics nobody has written yet without the parts already written having to change.
@@ -46,7 +47,7 @@ Where no closed form exists, the README says so.
 There is now one consumer, `dualis-world`, and its first job was not to be a good application
 but to use the SDK the way a stranger would.
 [`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
-**twenty-one findings, sixteen fixed and five argued down in writing.** The first twelve came from
+**twenty-two findings, sixteen fixed and six argued down in writing.** The first twelve came from
 writing the application. The next four came from running the subagents that were built out of
 what the first twelve taught — and one of those is a first-order accuracy defect in the
 kernel's own scheduler, in the schedule chosen *for* accuracy, which the conservation audit
@@ -55,8 +56,15 @@ bus for its substep's share instead of the whole interval, and multirate went fr
 the two schedules to fourteen times better than the alternative.
 
 The seventeenth arrived a third way again — by adding a domain the library did not have, and
-finding that the *new* API had the old shape. Five of the seventeen are now the same underlying
-decision, which is the sort of thing only a count makes visible.
+finding that the *new* API had the old shape. Five of them are the same underlying decision,
+which is the sort of thing only a count makes visible.
+
+The last five came from a fourth source: **splitting the application into layers**. That is the
+one worth reading if you only read one part of the file. Pulling the scene and view layers out
+into crates paid finding 11, which had sat unfixed for months, and *created* finding 22 in the
+same edit — a unit conversion that was invisible while one crate did everything became something
+somebody has to declare, and the library has nowhere to declare it. A layer boundary turns
+assumptions into statements, and some of the statements turn out to be missing.
 
 Not one of the library's own tests could have found any of them. The ergonomic ones because a
 test is written by somebody who already knows the shape; the two real defects because nothing
@@ -81,15 +89,22 @@ its own scheme. There are tests for those rates now.
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with fourteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
+The last three are the workspace's answer to the same question from three sides: what a
+simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels
+like to use both from outside (`dualis-world`). The first two are libraries because a consumer
+who can state a simulation should not have to write a plotting stack to see it.
+
 ```text
 dualis-units       no dependencies but glam and serde
-dualis-core        depends on units
+dualis-core        depends on units                     ── the kernel
 dualis-optics      depends on core     ─┐
-dualis-thermal     depends on core      ├─  none of these knows about
-dualis-mechanics   depends on core      │   any of the others
-dualis-acoustic    depends on core      │
+dualis-thermal     depends on core      │
+dualis-mechanics   depends on core      ├─  one crate per physics, and
+dualis-acoustic    depends on core      │   none of them knows another
 dualis-molecular   depends on core      │
 dualis-electrical  depends on core     ─┘
+dualis-scene       depends on core                      ── where things are
+dualis-view        depends on scene                     ── how to draw that
 dualis             depends on all of them
 dualis-world       depends on the facade, and nothing depends on it
 ```
@@ -97,6 +112,14 @@ dualis-world       depends on the facade, and nothing depends on it
 **The kernel must never depend on a domain.** If a new physics needs the kernel
 changed, the kernel was wrong — that rule is what makes "add sound, add fluids" a
 matter of writing a crate rather than editing this one.
+
+**And the layers above must not know one either**, which is the same rule from the other side.
+`dualis-scene` asks each domain what it *offers* — a field, a set of bodies, some readings — and
+`dualis-view` dispatches on the shape of what came back. Neither names a domain, and neither
+merely claims that: `dualis-scene`'s test defines a physics inside the test file and captures it
+whole, and `dualis-view`'s tests are driven by frames written out by hand, because a test that
+ran a real scene could not tell *a heatmap because the data is a 2D grid* apart from *a heatmap
+because that domain was a room*.
 
 Six domains are now the proof rather than an assertion. Optics publishes absorbed
 light as heat and thermal consumes it; mechanics publishes a dashpot's dissipation on
@@ -298,6 +321,11 @@ Two more are run by CI without being in the table, because they are checks rathe
 showcases: `agents_quickstart`, the runnable form of [AGENTS.md](AGENTS.md), and
 `readme_check`, which re-runs this file's own code so the snippets above cannot rot.
 
+A ninth, `where_the_time_goes`, is a benchmark and is **not** run by CI. It measures rather than
+asserts, and a timing threshold on a shared runner fails for reasons that have nothing to do with
+the code. Run it by hand when a change should have made something faster: it is dependency-free,
+takes best-of-five, and prints where a step actually spends itself.
+
 Each one prints its numbers and **asserts** them, so CI runs all of them on every commit.
 An example is a claim that the library works, which makes a quietly broken one worse than
 no example at all — every value printed has been checked against a closed form or against
@@ -307,9 +335,16 @@ give none and it just checks. Nothing generated is committed.
 Plotting has no dependency. SVG is text, so it is a `format!` and a file write — no
 encoder, no fonts, and it opens by double-click. `examples/common/svg.rs` is about three
 hundred and fifty lines and is the right size for this job; when it stops being, the answer is
-`dualis-world` rather than a bigger version of it. That turned out to be a prediction rather
-than a plan: `dualis-world` had to write its own renderer, because this one lives under
-`examples/` where no other crate can reach it — `FRICTION.md` finding 4.
+a crate rather than a bigger version of it. That turned out to be a prediction rather than a
+plan: `dualis-world` had to write its own renderer, because this one lives under `examples/`
+where no other crate can reach it — `FRICTION.md` finding 4.
+
+`dualis-view` is that crate now, and it does **not** close finding 4, which is worth being
+precise about. It draws a `Frame` — a captured instant of a running simulation. An example plots
+an encircled-energy curve or an MTF against spatial frequency, which is an arbitrary pair of
+axes and not a frame of anything. The two want different interfaces, so the duplication is still
+there and the finding stays open on its own terms rather than being closed by something adjacent
+to it.
 
 The examples also exist to keep the library honest in a way tests cannot. `ScalarField` was
 written as the interface a visualiser would read a simulation through and then sat with no
@@ -556,8 +591,22 @@ would either fail on correct code or hide a real leak.
 
 ## What is not here
 
-No scene graph, and no renderer *in the library*. `dualis-world` has both — a JSON scene
-format and an SVG filmstrip — which is why it is a separate crate and is not published.
+No scene *graph* — no parent-child transform hierarchy, no culling, no traversal order. What
+there is, is flat: `dualis-scene` gives each domain a `Pose` in world coordinates and captures
+what they hold. A hierarchy is what you want when placements are relative and animated, and
+nothing here has needed one.
+
+The renderer is deliberately modest. `dualis-view` draws a filmstrip, a heatmap, a profile and a
+point scene — depth-sorted back to front, which is painter's algorithm on a 2D canvas, with no
+depth buffer and no shading. The SVG has one fixed projection; the HTML report can be dragged to
+rotate and scrolled to zoom, and that is the whole camera model. It is enough to see whether a
+simulation did what you expected, and it is not a visualisation package. The JSON export exists
+for when it is not enough.
+
+The JSON scene *format* is still `dualis-world`'s and not the library's, which is why that crate
+is unpublished. A file format is a compatibility promise, and this one is not ready to make one:
+it renamed a field once already and nothing failed, because serde discards unknown keys by
+default — which is how `deny_unknown_fields` came to be on every type in it.
 
 Rigid bodies are spheres where they collide. `RigidBody` rotates with an applied torque
 and an arbitrary inertia tensor, but `Sphere` and `Rolling` are the only things that
@@ -706,3 +755,8 @@ holds an allow-list and CI fails on anything outside it. Twelve external crates 
 writing, of which three reach a *published* artifact — `glam`, `serde` and `serde_core`, all under
 the same `MIT OR Apache-2.0`. `dualis-world` also links `serde_json` and its three
 transitive crates, but it is not published. The rest are compile-time or test-only.
+
+Two crates were added in 0.9.0 and the count did not move. `dualis-view` has **no** dependency
+at all beyond `dualis-scene`: SVG and HTML are text, so a renderer is a `format!` and a file
+write, and the alternative would have put a plotting stack into the tree of every consumer who
+wanted a picture.

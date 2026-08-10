@@ -203,8 +203,9 @@ pub trait Domain {
     /// wants. Nobody but the domain knows which.
     ///
     /// Empty by default, and opt-in like [`as_any`](Domain::as_any) and
-    /// [`as_field`](Domain::as_field) — with the same hazard those two have taught twice: a
-    /// domain that forgets it is silently absent from every table rather than broken.
+    /// [`as_field`](Domain::as_field) — with the hazard `as_any` has already taught once: four
+    /// mechanics domains never opted into it, and an orbit scene ran, conserved, and drew nothing
+    /// at all. A domain that forgets this one is silently absent from every table, not broken.
     fn readings(&self) -> Vec<Reading> {
         Vec::new()
     }

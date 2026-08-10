@@ -29,6 +29,17 @@ which is reasonable code in isolation.
 unavailable as "skip".** Grep for `filter_map`, `flatten`, `unwrap_or_default`, `.ok()`, `if
 let Some` with no `else`, and ask what the user sees when the `None` arm is taken.
 
+There are **four** of these opt-ins now — `as_any`, `as_field`, `as_bodies`, `readings` — and
+`dualis-scene` is built entirely out of asking them. That is deliberate: it is what lets the
+layer name no domain. It also means the blast radius of forgetting one grew from "a caller
+cannot downcast" to "this physics does not appear in any picture, table or export".
+
+The related one this workspace found by writing the check rather than by anything failing:
+`Placement::extent`. A field domain with no extent is not sampled, and `capture` skips it — so
+a scene format that gains a field variant and forgets the extent produces a report one panel
+short. `every_domain_with_a_field_was_given_an_extent` counts them across all fourteen scenes
+from the two sides that must agree. **Ask of any new opt-in: what counts it?**
+
 ### A config key the parser ignores
 
 `serde` ignores unknown fields by default. `tests/scene.rs`'s room helper kept emitting

@@ -36,6 +36,12 @@ One scale per panel, fixed across every frame, in all four views. A frame that r
 quantity *look* constant while it changes by orders of magnitude, and that is the one thing a
 picture of a simulation must never do.
 
+**All four writers are `dualis-view`, and none of them is this application's.** This crate is
+`publish = false`, so while they lived here they were unreachable — a consumer who could state a
+simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` takes the frames
+`dualis_scene::capture` produces, and everything the table above describes is available to any
+program without going near a scene file.
+
 Nothing generated is committed.
 
 `cargo run -p dualis-world -- --emit-default scene.json` writes a starting point.
@@ -187,6 +193,12 @@ nominal dimensions predict.
 **The bar's peak is not its mean.** In `04`, six joules raise 20 mm of aluminium by 1.240 K on
 average, but the peak reads 1.302 K after four seconds. Heat arriving on a plain channel has no
 place, so `Bar1D` puts it in the first cell and conduction has not finished levelling it.
+
+**A bar's panel is in kelvin and its readings are in celsius**, and both say which. The field
+returns what the cells hold; celsius is a conversion a view chooses, and no view here makes it.
+So `04` prints `|K| 294.4821` for a bar whose hottest cell is at 21.33 °C. It said `|C| 21.3321` while this
+application sampled fields itself and applied the offset in the same expression as the label —
+which meant nothing could disagree with anything. `FRICTION.md` 22 is that gap, still open.
 
 **The bouncing ball ends at zero.** `07` prints the last frame, and by one second the ball has
 stopped. The bounces are in the middle of the strip, not at its end.

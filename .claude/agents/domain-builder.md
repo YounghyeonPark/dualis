@@ -1,6 +1,6 @@
 ---
 name: domain-builder
-description: Scaffold a new physics domain as its own crate on the dualis-core kernel, following the recipe the five existing domains established. Use when adding a physics this workspace does not model. Produces the crate, its Domain impl, its closed-form tests and its wiring, and stops to report if the kernel would have to change.
+description: Scaffold a new physics domain as its own crate on the dualis-core kernel, following the recipe the six existing domains established. Use when adding a physics this workspace does not model. Produces the crate, its Domain impl, its closed-form tests and its wiring, and stops to report if the kernel would have to change.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
@@ -54,10 +54,24 @@ useful paragraph for a reader.
 - `as_any` returning `Some(self)`. **Not optional in practice**: four mechanics domains skipped
   it and `Simulation::domain_as` could not reach any of them, so a renderer drew an empty frame
   with no error anywhere. If the domain has state anyone outside would read, take the opt-in.
-- `as_field` returning `Some(self)` if the domain *is* a field, so a renderer can sample it
+- `as_field` returning `Some(self)` if the domain *is* a field, so a layer above can sample it
   without knowing what it is. Return `None` honestly if it is a countable number of bodies
   instead — that is what `Fluid` and `NBody` do, and inventing a continuum for them would be
-  worse than declining.
+  worse than declining. If you return `Some`, also implement `ScalarField::unit`: a legend needs
+  it, the default is `""`, and a *wrong* one is worse than a missing one — `Bar1D` was labelled
+  `"C"` while returning kelvin, and nothing could disagree with anything.
+- `as_bodies` returning `Some(self)` if the domain is the other shape: a countable number of
+  things at places. `count`, `position`, one `value` to colour by, and `cell` — which reports a
+  **real wall** like a periodic cell and `None` for a domain whose extent is a property of the
+  picture. Do not invent a box here; a view measures that one itself.
+- `readings` returning the named scalars this domain is *for*. Not a uniform summary: a mean over
+  a pressure field is zero by symmetry and would be a column of noise. A domain that draws
+  nothing at all — a source, a network, a lumped model — has these as its entire output.
+
+**These last three are what `dualis-scene` and `dualis-view` see, and all three are opt-in.**
+A domain that skips them compiles, runs, conserves, and is silently absent from every report and
+every table. That is the whole reason to take them: those two crates name no domain, so the only
+thing that puts a new physics into a picture is the physics answering when asked.
 
 **6. Refuse rather than diverge.** If a caller exceeds a stability limit or violates a
 precondition, return a `Violation` naming the limit and by how much it was broken. `Bar1D`
@@ -71,8 +85,16 @@ and not only the value — that is what found the acoustic boundary defect.
 **8. Wire the facade.** `crates/dualis/Cargo.toml`, the `pub use` in its `lib.rs`, and the
 prelude if the types are ones a caller reaches for.
 
-**9. Update the README**: the crate table, the dependency diagram, the domain count in prose,
-and the "what is not here" section.
+**9. Update the prose**, which is more places than it looks and has shipped stale repeatedly:
+`README.md` (crate table, dependency diagram, domain count, "what is not here"), `AGENTS.md`
+(the "what is in the box" table), `ARCHITECTURE.md` (the dimensional coverage matrix — say
+honestly whether the new domain is 1D, 2D or 3D), `CONTRIBUTING.md` and `CLAUDE.md` where they
+list what the kernel knows nothing about, the publish loop in `CLAUDE.md`, and the repository
+description. Run `prose-auditor` afterwards rather than trusting the list.
+
+**10. A scene, if `dualis-world` can express it.** Fourteen ship, all run by CI through the real
+binary, and each asserts one number that is a property of the physics rather than of the file. A
+domain with a scene is a domain somebody has used from outside.
 
 ## Stop and report if
 

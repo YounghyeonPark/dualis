@@ -20,8 +20,15 @@ cargo test --workspace 2>&1 | grep "test result: ok" | awk -F'[ ;]' '{s+=$4} END
 cargo test --doc --workspace 2>&1 | grep "test result" | awk -F'[ ;]' '{s+=$4} END {print s}'
 cargo clippy --workspace --lib -- -W missing_docs 2>&1 | grep -c "^warning: missing"
 cargo metadata --format-version 1 | python -c "import json,sys; d=json.load(sys.stdin); print(len([p for p in d['packages'] if p.get('source')]), 'external deps')"
-ls crates/dualis/examples/*.rs | wc -l
+find crates -path '*examples*' -name '*.rs' -not -path '*common*' | wc -l   # NOT just crates/dualis
+ls crates/*/Cargo.toml | wc -l                                             # crates, published + not
+ls crates/dualis-world/scenes/*.json | wc -l
+gh repo view --json description,repositoryTopics
 ```
+
+The examples one is worth the longer command: `ls crates/dualis/examples/*.rs` misses
+`readme_check`, which lives in `dualis-optics`, and counts the `common/` module if the glob is
+loosened. A count that is wrong in both directions at once looks stable and is not.
 
 For a physics number quoted in prose, run the example or test that produces it and compare. The
 examples print their values precisely so this is cheap.
@@ -34,7 +41,16 @@ examples print their values precisely so this is cheap.
   heat, mechanics and acoustics, and later omitted molecular dynamics. Check it:
   `gh repo view --json description`.
 - **Counts in prose.** "A facade over the six" when there were seven. "None of the four" when
-  there were five. Every added crate touches several sentences.
+  there were five. Every added crate touches several sentences — 0.9.0 added two crates and moved
+  a count in nine files, including the repository description, the publish loop in `CLAUDE.md`,
+  and this agent's sibling `invariant-guard`.
+- **A count in a shell command's comment.** `invariant-guard` carried
+  `grep -c deny(missing_docs) crates/*/src/lib.rs   # ten ones` — the command was right and the
+  expected answer beside it was two crates stale, which is the version of this failure that
+  survives a reader running the command.
+- **A number that was an estimate wearing a measurement's clothes.** "pyo3 brings about fifteen
+  crates" was the size of the whole bindings workspace, not pyo3's contribution, which is seven.
+  Both numbers are fine; the sentence was claiming the wrong one.
 - **A capability claim that was overtaken.** "There is no multipole beyond the monopole" stayed
   in the README for several commits after the quadrupole landed.
 - **A defect described as present after it was fixed.** The README documented the acoustic wall
@@ -58,7 +74,12 @@ examples print their values precisely so this is cheap.
    functions and types, and links. A renamed item leaves a dangling mention that rustdoc cannot
    catch when it is in a plain sentence rather than a doc link.
 6. **Claims of absence.** "There is no X" and "X is deliberately not here" age worst, because
-   adding X rarely prompts anyone to go looking for the sentence that denied it.
+   adding X rarely prompts anyone to go looking for the sentence that denied it. The README's
+   "no renderer *in the library*" survived the release that published one.
+7. **Counts that already have a test.** `documented_version.rs` checks every `dualis = "x.y"` in
+   `AGENTS.md` and `README.md`, and `friction_counts.rs` parses `FRICTION.md`'s summary against
+   its own headings. Do not re-audit those by hand — run them, and if you find a count that ought
+   to be checked and is not, say so: a test is worth more than a correction.
 
 ## Report
 

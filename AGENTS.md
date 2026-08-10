@@ -121,8 +121,8 @@ cannot drift.
 cargo run --example agents_quickstart
 ```
 
-Read that file before writing your own domain. It is about a hundred and sixty lines and half
-of them are commentary.
+Read that file before writing your own domain. It is about two hundred and fifty lines, a third
+of them commentary.
 
 ---
 
@@ -243,8 +243,10 @@ also pass it, then go and check *that*.
 
 ## Where to look next
 
-- **`examples/`** — five worked problems that print their numbers and assert every one of
+- **`examples/`** — six worked problems that print their numbers and assert every one of
   them. `cargo run --example melting`. Give any of them a path and it writes an SVG.
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — the three layers, what is built and what is missing,
+  and the rules that make "add a physics" cost one crate.
 - **[README.md](README.md)** — the long version, including what is deliberately *not* here.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the conventions, and the gate CI runs.
 - **[CLAUDE.md](CLAUDE.md)** — working on dualis rather than with it.

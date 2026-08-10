@@ -112,11 +112,19 @@ extending lives in Rust, and [the workspace](https://github.com/YounghyeonPark/d
 A `Simulation` is also bound to the thread that created it. `Domain` is not `Send`, and the
 binding says so rather than asking the kernel for a bound it does not offer.
 
+**There is no scene or view binding.** The Rust side has `dualis-scene` for capturing a run and
+`dualis-view` for drawing one; neither crosses. Nothing forbids it in principle — the reason is
+that a Python caller already has matplotlib, pandas and every plotting stack there is, and what
+they want from this side is the *numbers*: `profile`, `node_temperatures`, `temperature`,
+`ledger`. Handing them an SVG instead would be the worse half of both worlds. If you want the
+HTML report, run the scene from Rust.
+
 ## Building
 
-Its own cargo workspace, deliberately: pyo3 brings about fifteen crates and links libpython, and
-the library's lockfile, licence allow-list and WebAssembly jobs are promises that should not have
-to accommodate a Python extension.
+Its own cargo workspace, deliberately. This one resolves fifteen external crates where the
+library resolves twelve, seven of them pyo3's and appearing nowhere in the library, plus a
+libpython link — and the library's lockfile, licence allow-list and WebAssembly jobs are promises
+that should not have to accommodate a Python extension.
 
 ```sh
 cd bindings/python

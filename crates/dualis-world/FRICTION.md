@@ -2,7 +2,7 @@
 
 `dualis-world` exists to use the SDK from outside and write down where that is awkward. A
 library with no consumers is a library whose ergonomics nobody has measured, and none of the
-395 tests inside the workspace can answer this question about themselves — they are written by
+434 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it, couples
@@ -418,8 +418,9 @@ it a write was never protecting anything.
 
 The same opt-in hazard as findings 7 and 12, and this time it was handled in the same change:
 `as_any_mut` defaults to `None`, so a domain that forgets it is silently unwritable rather than
-broken. All twelve domains that implement `as_any` got the counterpart beside it, including the
-`Box<dyn Domain>` forwarding impl, and the kernel's own front-page example.
+broken. Every domain that implements `as_any` got the counterpart beside it — twelve at the time, and
+fifteen sites now including the two the application defines — along with the `Box<dyn Domain>`
+forwarding impl and the kernel's own front-page example.
 
 Scene 13 is the loop closed, and it measures what the application-level version costs.
 

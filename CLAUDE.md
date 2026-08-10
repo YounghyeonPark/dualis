@@ -81,9 +81,14 @@ through the real binary — and `deny`.
 
 Its purpose is to use the SDK the way a stranger would and report back. Read
 `crates/dualis-world/FRICTION.md` before changing the public API — it is the only record of
-what the library feels like from outside, and five of its twenty-one findings are the same
+what the library feels like from outside, and five of its twenty-two findings are the same
 underlying decision: **the API is comfortable when the set of parts is known at compile time
 and awkward the moment it is not.**
+
+It is no longer where the scene and view layers live. Both are libraries now — `dualis-scene`
+and `dualis-view` — and what is left here is what an application actually is: a JSON format, the
+domain types that format names, and one place saying how far each field extends. Anything you
+find yourself adding to this crate that a *consumer* would want is in the wrong crate.
 
 Finding 6 was a live defect in `Room` and in `Tube`, and it is fixed: the first velocity update
 of the staggered leapfrog now travels half a step. Two tests in `dualis-acoustic` and one in
@@ -94,14 +99,21 @@ first step, by design — `Room::startup_adjustment` reports the `O(h²)` differ
 ## The Python bindings
 
 `bindings/python` is a **separate cargo workspace**, excluded from the root one. That is the
-escalation this repository wrote down for itself, and pyo3 is what triggered it: fifteen crates
-and a libpython link, against a library that has kept to twelve external dependencies with every
-one gated by `deny.toml`. Folding it in would put pyo3's tree in the library's lockfile and make
+escalation this repository wrote down for itself, and pyo3 is what triggered it. Measured rather
+than estimated: that workspace resolves **fifteen** external crates where the library resolves
+twelve, and **seven** of them — `pyo3`, `pyo3-ffi`, `pyo3-macros`, `pyo3-macros-backend`, `heck`,
+`libc`, `once_cell` — appear nowhere in the library, which has every one of its twelve gated by
+`deny.toml`. Plus a libpython link. Folding it in would put pyo3's tree in the library's lockfile and make
 `cargo build --workspace` need a Python development environment.
 
 The gate above therefore does not touch it. It has its own CI job, which builds a wheel,
 **installs it**, and runs `tests/test_dualis.py` — because "the cdylib compiles" proves neither
 half of "pip install then import". Its own gate:
+
+**A version bump has to reach it.** `bindings/python/Cargo.toml` pins `dualis` by exact version
+as well as by path, so bumping the root workspace and not this leaves it resolving a version that
+no longer exists. That failed the 0.9.0 release, and only the `python bindings` job could have
+caught it — nothing in the gate above reads that directory at all.
 
 ```sh
 cd bindings/python
@@ -120,9 +132,14 @@ simulation.
 
 ### How often to release, and the order
 
-Nine crates are published together and share one version. A published version is permanent — it
-can be yanked, never replaced — so the cost of a release is nine permanent version numbers on
-crates.io, one on PyPI, and a prose sweep.
+Eleven crates are published together and share one version. A published version is permanent —
+it can be yanked, never replaced — so the cost of a release is eleven permanent version numbers
+on crates.io, one on PyPI, and a prose sweep.
+
+The prose sweep is not optional and is the part that gets skipped. A release moves the test
+count, the crate count, the FRICTION totals and the install line in four documents that no
+compiler reads. Three of those *are* under test — `documented_version.rs` and
+`friction_counts.rs` — and the rest have shipped stale more than once.
 
 **Release on new public API that somebody outside would reach for.** A new crate, a new type, a
 new method on an existing one. Not on a docs fix, not on a CI change, not to exercise the release

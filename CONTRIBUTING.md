@@ -18,7 +18,7 @@ cargo deny check                       # needs `cargo install cargo-deny`
 And the examples, which are tests that print:
 
 ```sh
-for e in beam_hot_spot airy_pattern detector_snr room_modes melting agents_quickstart readme_check; do
+for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots agents_quickstart readme_check; do
   cargo run --locked --release --example "$e" || break
 done
 ```
@@ -68,7 +68,7 @@ fail there rather than quietly producing different physics.
 ### The kernel must never depend on a domain
 
 `dualis-core` knows about conservation, integration, scheduling and boundaries. It knows
-nothing about light, heat, motion, sound or matter. If a new physics needs the kernel changed,
+nothing about light, heat, motion, sound, electricity or matter. If a new physics needs the kernel changed,
 the kernel was wrong — with one narrow exception, which is that the *coupling mechanism* itself
 can turn out to be under-specified. That happened once and the README explains why it was not a
 violation of the rule.
@@ -77,9 +77,16 @@ Domain crates do not depend on each other either. Rustdoc enforces this in a way
 knowing: an intra-doc link from `dualis-acoustic` to `Bar1D` does not resolve, because the
 dependency is not there, and `-D warnings` turns that into a build failure.
 
+The same rule runs the other way for the two layers above the domains. `dualis-scene` and
+`dualis-view` depend on the kernel and on each other, and on **no domain at all** — so a physics
+added tomorrow is captured and drawn without either being edited. Each proves that rather than
+asserting it: the scene layer's test defines a physics inside the test file, and the view
+layer's tests are driven by frames written out by hand. A test that ran a real simulation could
+not tell *the right view for this shape of data* apart from *the right view for that domain*.
+
 ### Every public item is documented
 
-`#![deny(missing_docs)]` in all ten crates. A one-line summary that names the unit is enough
+`#![deny(missing_docs)]` in all eleven crates. A one-line summary that names the unit is enough
 for a constructor; anything with a trap in it should say what the trap is.
 
 ### Say what was wrong, not only what changed

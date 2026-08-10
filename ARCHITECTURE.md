@@ -19,17 +19,23 @@ promise dates.
     ┌─────────────────────────────────────────────────────────────┐
     │  ANALYSIS      what a person or an agent asks of a run       │
     │                cameras · 3D · 2D · graphs · measurements     │
+    │                                              `dualis-view`   │
     └───────────────────────────▲─────────────────────────────────┘
                                 │  reads
     ┌───────────────────────────┴─────────────────────────────────┐
     │  SCENE         where things are, and how they meet           │
     │                placement · interfaces · one clock            │
+    │                                             `dualis-scene`   │
     └───────────────────────────▲─────────────────────────────────┘
                                 │  reads
     ┌───────────────────────────┴─────────────────────────────────┐
     │  PHYSICS       what evolves, and what it conserves           │
     │                the kernel, and one crate per physics         │
+    │                            `dualis-core` + six domain crates │
     └─────────────────────────────────────────────────────────────┘
+
+As of 0.9.0 all three are crates on crates.io. Before that the upper two lived inside an
+unpublished application, so a consumer could run a simulation and had no way to see it.
 ```
 
 **The arrows point one way and that is load-bearing.** Analysis reads the scene; the scene reads
@@ -48,8 +54,7 @@ to learn anything about them.
 
 ### Layer 2 — scene
 
-Where things are, and how they meet. This layer is the one the goal most needs and the one that
-barely exists today.
+Where things are, and how they meet. `dualis-scene`.
 
 It owns three things:
 
@@ -60,15 +65,28 @@ It owns three things:
   surface it crossed*, audited face by face rather than on the total.
 - **The clock.** One `Simulation`, one schedule, one audit across everything placed in it.
 
+`capture` turns all of that into a `Frame` at an instant, by asking each domain what it *offers*
+— `as_field` for a continuum, `as_bodies` for a countable set, `readings` for scalars. It names
+no domain, and `knows_no_physics.rs` demonstrates rather than asserts that: it defines a physics
+inside the test file and captures it whole.
+
 ### Layer 3 — analysis
 
-What a person asks of a run. Views — a camera, a 3D scene, a 2D section, a graph — and derived
-quantities.
+What a person asks of a run. `dualis-view`: a filmstrip as SVG, a self-contained HTML report,
+a CSV of every domain's scalars, and the frames as JSON.
 
-The rule here is already proven and should be extended rather than replaced: **views dispatch on
-the shape of the data, not on the name of the domain.** Scalars over time become a chart, a 1D
-field a profile, a 2D field a heatmap, points a 3D scene. A new domain gets a correct picture
-without this layer learning it exists.
+The rule here is proven and should be extended rather than replaced: **views dispatch on the
+shape of the data, not on the name of the domain.** Scalars over time become a chart, a 1D field
+a profile, a 2D field a heatmap, points a 3D scene. A new domain gets a correct picture without
+this layer learning it exists.
+
+Its tests are driven by frames written out by hand rather than by a simulation, which is the only
+way to check that rule at all: a test that ran a real scene could not tell *a heatmap because the
+data is a 2D grid* apart from *a heatmap because that domain was a room*.
+
+One more rule holds throughout, and it is the easiest to break by accident: **the scale is fixed
+across a run**. A picture that renormalises per frame makes a decay look like a steady state, and
+per-frame normalisation is what you get if you do not think about it.
 
 ---
 
@@ -119,7 +137,7 @@ hot spot, and its documentation says so.
 
 ---
 
-## Placement: half built
+## Placement: built, in two halves that must not touch
 
 The kernel has `ScalarField` and `VectorField` — functions of position — `Interface` and `Flux`
 for discretised boundaries, and now `Pose`. Until `Pose` a domain's coordinates *were* world
@@ -136,12 +154,18 @@ Placement has two uses, and they must not share a type:
   distance, a grid rotated against another. This is `Pose`, and it is **built**. The scene layer
   assigns it; a domain reads only its own coordinates.
 - **Presentational placement** — a position given to something that has none, purely so a viewer
-  can draw it. A thermal network node on a diagram. This is **not built**, on purpose: it belongs
-  to the scene crate, above the kernel, where the physics cannot reach it.
+  can draw it. A thermal network node on a diagram. This is `Placement::marker`, and it is
+  **built**, in `dualis-scene`: above the kernel, above every domain, where no physics can reach
+  it.
 
-Keeping them apart is structural rather than a naming convention. If they shared a type, someone
-would eventually feed a drawing coordinate into a conductance and nothing would fail loudly — so
-the second one lives in a crate the first cannot see.
+Keeping them apart is structural rather than a naming convention. They are separated by *which
+crate they live in* — if they shared a type, someone would eventually feed a drawing coordinate
+into a conductance and nothing would fail loudly.
+
+`Placement` also carries an `Extent`, and that third field is the one nobody predicted. A
+`ScalarField` is a function of position and does not stop anywhere; a field that knew its own
+bounds would be a mesh. So the region to sample has to come from above, and the scene is where
+the size was written down in the first place.
 
 ---
 
@@ -154,7 +178,9 @@ These are not style. Each one is what makes some part of the goal reachable.
 2. **No domain may depend on another.** They meet on the bus. Six domains have now been added
    without this breaking, which is the evidence that the split is real.
 3. **The arrows point one way.** Analysis → scene → physics. A domain that can see the scene can
-   see another domain.
+   see another domain through it. This is enforced by cargo rather than by discipline now that
+   each layer is a crate: `dualis-scene` does not appear in any domain's manifest, so a domain
+   reaching upward does not compile.
 4. **Conservation is audited, not assumed.** The audit is what makes an unfamiliar coupling
    trustworthy, which matters more as the number of domains grows, not less.
 5. **Results are bit-for-bit across platforms.** A simulation that gives a different answer on a

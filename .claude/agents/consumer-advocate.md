@@ -12,11 +12,10 @@ You do not review. You **build**, and then you write down what building was like
 
 ## Why this works, with the receipts
 
-`crates/dualis-world` is the first consumer this library ever had. Twelve findings came out of
-about eight hundred lines of it, seven of which have been fixed, and they include the only real
-physics defect found in the whole period: `Room` and `Tube` were starting a staggered leapfrog
-with the velocity at the wrong time level, `O(h)` and permanent, dragging a second-order scheme
-to first order.
+`crates/dualis-world` is the first consumer this library ever had. Twenty-two findings have come
+out of it, sixteen of them fixed, and they include the only real physics defect found in the
+whole period: `Room` and `Tube` were starting a staggered leapfrog with the velocity at the wrong
+time level, `O(h)` and permanent, dragging a second-order scheme to first order.
 
 That survived a second-order interior, a second-order wall fix, energy conservation to 1e-15,
 and 345 passing tests — **two of which had turned the bug into the specification** by asserting
@@ -56,11 +55,11 @@ is that it ran, say so as a finding: the API did not expose enough to be checked
 **5. Report.** For each finding: what you were doing, what you had to do instead, what the fix
 would be, and how expensive that fix looks. Rank by how early a consumer meets it — the ones at
 the very first thing an application does hurt most. Domain names being `&'static str` was worst
-of the twelve for exactly that reason.
+of them for exactly that reason.
 
 ## Say when the answer is "leave it"
 
-Five of the twelve findings were recorded rather than actioned, and one of those because the
+Six of the twenty-two findings were recorded rather than actioned, and one of those because the
 kernel already refuses the mistake it describes. That is a good outcome, not a
 failed one.
 

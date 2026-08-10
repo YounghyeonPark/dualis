@@ -12,10 +12,11 @@ Report violations most severe first, each with file, line and the fix. Say plain
 ## 1. The kernel must never depend on a domain
 
 `dualis-core` knows about conservation, integration, scheduling, boundaries, fields and
-sampling. It knows nothing about light, heat, motion, sound or matter.
+sampling. It knows nothing about light, heat, motion, sound, electricity or matter — and nothing
+about the two layers above it either, which is the same rule pointing the other way.
 
 ```sh
-grep -rn "dualis_optics\|dualis_thermal\|dualis_mechanics\|dualis_acoustic\|dualis_molecular" crates/dualis-core/ crates/dualis-units/
+grep -rn "dualis_optics\|dualis_thermal\|dualis_mechanics\|dualis_acoustic\|dualis_molecular\|dualis_electrical\|dualis_scene\|dualis_view" crates/dualis-core/ crates/dualis-units/
 ```
 
 Must be empty, including doc comments and doc links.
@@ -30,8 +31,8 @@ whether a domain forced the edit, and whether the addition names any specific ph
 Match on the **underscore** form in source and on the dependency in the manifest:
 
 ```sh
-for a in optics thermal mechanics acoustic molecular; do
-  for b in optics thermal mechanics acoustic molecular; do
+for a in optics thermal mechanics acoustic molecular electrical; do
+  for b in optics thermal mechanics acoustic molecular electrical; do
     [ "$a" = "$b" ] && continue
     grep -n "dualis_$b" crates/dualis-$a/src/*.rs 2>/dev/null
     grep -n "^dualis-$b" crates/dualis-$a/Cargo.toml 2>/dev/null
@@ -39,7 +40,19 @@ for a in optics thermal mechanics acoustic molecular; do
 done
 ```
 
-Must be empty.
+Must be empty. And the layers above must name **no** domain at all, which is the strongest form
+of the same rule and the reason "add a physics" costs one crate:
+
+```sh
+for d in optics thermal mechanics acoustic molecular electrical; do
+  grep -rn "dualis_$d\|dualis-$d" crates/dualis-scene/ crates/dualis-view/
+done
+```
+
+Must also be empty — including tests. Both crates test that property by construction rather than
+by grep (`dualis-scene` defines a physics inside its test file; `dualis-view` builds frames by
+hand), so a test that reached for a real domain would be the first sign the property was being
+given up for convenience.
 
 The underscore matters and a coarser pattern gives false positives — this check was written the
 lazy way first and immediately flagged three. **Prose mentions are fine**, and `dualis-mechanics`
@@ -86,7 +99,7 @@ since an inner attribute after the first item is a compile error and it is easy 
 while editing the top of a file.
 
 ```sh
-grep -c "deny(missing_docs)" crates/*/src/lib.rs   # ten ones
+grep -c "deny(missing_docs)" crates/*/src/lib.rs   # twelve ones
 ```
 
 ## 5. The promises CI makes

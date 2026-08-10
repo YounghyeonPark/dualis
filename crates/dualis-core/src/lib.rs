@@ -37,11 +37,33 @@
 //! | [`sim`] | Several domains on one clock: quasi-static, multirate, iterative coupling |
 //! | [`scene`] | Where two domains meet: shared boundaries, and flux that knows its place |
 //! | [`field`] | Scalar and vector fields, with gradient, divergence, curl, Laplacian |
+//! | [`bodies`] | The other shape a domain can be: a countable number of things at places |
+//! | [`pose`] | Rigid motion — a rotation and a translation, and deliberately nothing more |
 //! | [`substance`] | Thermal, mechanical and acoustic properties of matter |
 //! | [`motion`] | Closed-form rigid motion and time gating |
 //! | [`rng`] | A deterministic generator, and the sampling built on it |
+//! | [`ensemble`] | Many independent samples in parallel, with an answer that does not depend on how many threads produced it |
 //! | [`transform`] | The discrete Fourier transform, accurate rather than fast |
 //! | [`vector`] | Basis construction and reflection — the vector maths no domain owns |
+//!
+//! [`scene`] here is **not** the `dualis-scene` crate, and the collision is worth naming. This
+//! module is where two domains *meet* — an [`Interface`] cut into faces and a [`Flux`] that
+//! knows which one it crossed — and it is kernel business because the audit runs on it. The
+//! crate one layer up is where a domain *sits*, which is a statement about the world and not
+//! about physics, and it is above every domain for that reason.
+//!
+//! # What a domain offers a layer above it
+//!
+//! Four optional accessors, none of which the kernel uses itself: [`ScalarField`] through
+//! `as_field` for a continuum, [`Bodies`] through `as_bodies` for a countable set, [`Reading`]
+//! through `readings` for the scalars a domain has when it has no picture, and `as_any` for a
+//! caller that knows the concrete type.
+//!
+//! They exist so that a layer which must visit every domain never has to name one. **All four
+//! are opt-in and default to nothing**, which is the hazard worth stating once: a domain that
+//! forgets is silently absent from every table and every picture rather than failing to
+//! compile. That has happened — four mechanics domains never opted into `as_any`, and an orbit
+//! scene ran, conserved, and drew nothing at all.
 //!
 //! # A domain, and the audit that checks it
 //!
