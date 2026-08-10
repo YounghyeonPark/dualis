@@ -1,6 +1,6 @@
 # Scenes
 
-Sixteen worlds described as data, covering all six of the library's domains — fifteen of them
+Seventeen worlds described as data, covering all six of the library's domains — sixteen of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -20,7 +20,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.csv` | Every domain's scalars over time, one row per frame, units in the header |
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 
-`.csv` is the one that reaches the domains a picture cannot. Eight of these sixteen scenes have
+`.csv` is the one that reaches the domains a picture cannot. Eight of these seventeen scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -103,6 +103,20 @@ The scene test carries a matching list, so an undrawable scene has to earn its p
 explicit check rather than passing by having nothing to check.
 
 ## Electricity — `dualis-electrical`
+
+| Scene | What it shows |
+| --- | --- |
+| `17-a-busbar-with-a-notch` | A 12 × 5 × 5 mm copper busbar with a notch three cells deep, driven at 1 mV. The resistance is **solved** rather than stated: 12.39 µΩ, against 8.28 µΩ for the full section |
+
+The scene that shows why a field formulation is worth the solve. `ρL/A` is a statement about a
+uniform bar, and a bar with a notch is not one — so the file states a *shape* and a material, and
+the resistance comes out. The test asserts two bounds rather than the measured value: above
+`ρL/A` for the full section, because removing conductor cannot help, and above a naive series
+estimate that treats the notched slice as a shorter bar, because the current also has to spread
+back out. The excess over the second **is** the spreading resistance, and it has no closed form
+for this shape.
+
+The potential is the panel, in volts. What a picture of it shows is where the current is going.
 
 | Scene | What it shows |
 | --- | --- |
@@ -197,7 +211,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all sixteen on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all seventeen on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

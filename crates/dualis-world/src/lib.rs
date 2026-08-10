@@ -258,6 +258,30 @@ pub enum DomainSpec {
         #[serde(default)]
         exposes: Option<Boundary>,
     },
+    /// A block of conductor with two electrodes, **solved** for its potential.
+    ///
+    /// `dualis-electrical`'s `Conductor`. Every other source in this format states its watts and
+    /// `winding` computes them from `I²R`; this one computes them from a *shape*. Nobody states a
+    /// resistance — it comes out of the solve, and for a uniform block it comes out as `ρL/A`
+    /// exactly, which is what makes a notch or a via checkable at all.
+    Conductor {
+        /// Domain name.
+        name: String,
+        /// Cells along x, y and z. Current runs along x, between the two end faces.
+        cells: [usize; 3],
+        /// The side of one cubic cell.
+        cell_mm: f64,
+        /// Resistivity of the bulk material, in ohm-metres. Copper is 1.724e-8.
+        resistivity_ohm_m: f64,
+        /// The potential difference across the end faces.
+        volts: f64,
+        /// Cells to make insulating, as `[i, j, k]`. A notch, a via wall, a crack.
+        ///
+        /// This is the whole reason to solve rather than to state: a block with a notch has a
+        /// resistance that is a property of its geometry and no formula gives it.
+        #[serde(default)]
+        blocked: Vec<[usize; 3]>,
+    },
     /// A room with a **ceiling**: the wave equation in three dimensions.
     ///
     /// `dualis-acoustic`'s `Hall`. `DomainSpec::Room` is a floor plan and does not have the
@@ -475,6 +499,7 @@ impl DomainSpec {
             | DomainSpec::Bar { name, .. }
             | DomainSpec::Block { name, .. }
             | DomainSpec::Hall { name, .. }
+            | DomainSpec::Conductor { name, .. }
             | DomainSpec::Heater { name, .. }
             | DomainSpec::Beam { name, .. }
             | DomainSpec::Orbit { name, .. }
@@ -793,6 +818,34 @@ impl DomainSpec {
                     None => bar,
                 })
             }
+            DomainSpec::Conductor {
+                name,
+                cells,
+                cell_mm,
+                resistivity_ohm_m,
+                volts,
+                blocked,
+            } => {
+                let mut c = dualis::electrical::Conductor::new(
+                    name.clone(),
+                    (cells[0], cells[1], cells[2]),
+                    Length::mm(*cell_mm),
+                    dualis::units::Resistivity::ohm_m(*resistivity_ohm_m),
+                    dualis::units::Voltage::v(*volts),
+                );
+                // A practical insulator rather than a literal zero: a conductance of exactly zero
+                // makes the system singular for any cell it isolates, and the solver would be
+                // right to refuse. Twelve orders of magnitude is a crack, not a wire.
+                let insulator = dualis::units::Resistivity::ohm_m(resistivity_ohm_m * 1e12);
+                for at in blocked {
+                    c.set_resistivity(at[0], at[1], at[2], insulator);
+                }
+                // Re-solved here rather than left to the first step, because `blocked` changed
+                // the problem after the constructor solved the unnotched one — and the first
+                // frame is captured before anything steps.
+                c.solve(1e-12);
+                Box::new(c)
+            }
             DomainSpec::Hall {
                 name,
                 width_m,
@@ -1093,6 +1146,18 @@ impl DomainSpec {
             DomainSpec::Bar {
                 cells, length_mm, ..
             } => Placement::field(Extent::line(Length::mm(*length_mm), (*cells).max(2))),
+            // A conductor is a volume, sampled at its own cells: the potential is what the
+            // solve produces, and a picture of it is where the current is going.
+            DomainSpec::Conductor { cells, cell_mm, .. } => Placement::field(Extent::volume(
+                LengthVec::from_si(
+                    glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
+                        * cell_mm
+                        * 1e-3,
+                ),
+                cells[0],
+                cells[1],
+                cells[2],
+            )),
             // A hall is a volume too, sampled at its own node count — which is the spacing the
             // width sets, applied to all three axes, so the picture has the resolution the
             // simulation does and no more.

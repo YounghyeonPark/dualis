@@ -101,7 +101,7 @@ The physics layer is six crates deep and dimensionally uneven. This is the hones
 | `dualis-optics` | **3D rays**; no volumetric field | rays done, fields missing |
 | `dualis-acoustic` | **3D** `Hall`; **2D** `Room`; **1D** `Tube` | done |
 | `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
-| `dualis-electrical` | **none** — scalars only | needs a field formulation |
+| `dualis-electrical` | **3D** `Conductor`; `Winding` is a lumped `I²R` | done |
 
 Two observations follow, and they point in opposite directions.
 
@@ -240,8 +240,15 @@ tolerances, and that is a kernel change nobody has needed yet.
    `dualis-scene` could have noticed on its own; every field it had ever been handed was flat.
    `samples` is a triple now, `PanelData::Field` carries `nz`, and the type system made all three
    view sites decide what to do about it.
-4. **A field formulation of electricity.** Current density and potential on a grid, so `I²R`
-   becomes a consequence rather than a parameter.
+4. ~~**A field formulation of electricity.**~~ Done. `Conductor` solves `∇·(σ∇φ) = 0` by
+   conjugate gradients and reads `J = −σ∇φ` off it, so a resistance is a property of a shape.
+   `ρL/A` comes out exactly for a uniform block; a notch comes out as whatever the notch gives,
+   which is the point — spreading resistance has no closed form for an arbitrary geometry.
+
+   It is the first **elliptic** domain here, and the first whose failure mode is a solver rather
+   than a stability limit. An iterative solve stopped at its iteration cap returns a field that is
+   smooth, bounded and shaped exactly like an answer, so `step` refuses one that did not converge
+   and the residual is a *reading* rather than an internal number.
 5. **Per-quantity tolerances**, when a scene mixes domains whose achievable accuracies differ by
    orders of magnitude.
 6. **A renderer with depth.** The analysis layer draws with painter's algorithm on a 2D canvas.

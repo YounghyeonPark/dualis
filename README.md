@@ -24,7 +24,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 453 tests, all against closed forms
+cargo test --workspace                       # 461 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are six of those; three more
@@ -82,12 +82,12 @@ its own scheme. There are tests for those rates now.
 | `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
 | `dualis-acoustic` | Sound: the wave equation on a staggered grid in one, two and three dimensions, impedance boundaries |
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
-| `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature |
+| `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature, and a **field** formulation where `I²R` is solved out of a shape rather than stated |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV and JSON. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
 | `dualis` | A facade over the other ten, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with sixteen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with seventeen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a
 simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels

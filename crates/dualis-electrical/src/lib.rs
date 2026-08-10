@@ -84,6 +84,10 @@ pub const HEAT: &str = quantity::ENERGY;
 /// wire table is built from.
 pub const COPPER_RESISTIVITY_20C: f64 = 1.724e-8;
 
+pub mod conductor;
+
+pub use conductor::Conductor;
+
 /// Temperature coefficient of copper's resistivity, per kelvin, referenced to 20 °C.
 ///
 /// `ρ(T) = ρ₂₀(1 + α(T − 20 °C))`. Linear, which is good to a per cent or so from about −50 °C

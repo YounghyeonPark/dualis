@@ -999,6 +999,65 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 // And the panel is a volume, sampled at the grid's own node count.
                 assert_eq!(last.panels[0].grid(), Some(hall.nodes()));
             }
+            // **A resistance that no formula gives.** A 12 x 5 x 5 mm copper busbar with a
+            // notch three cells deep across the middle, driven at 1 mV.
+            //
+            // Two bounds, both provable, and neither is a value: `rho L/A` for the full section
+            // is a floor, because removing conductor cannot help; and a naive series estimate
+            // that treats the notched slice as a shorter bar of reduced section is *also* a
+            // floor, because the current has to spread back out and spreading costs. The excess
+            // over the second is the spreading resistance, and it has no closed form for this
+            // shape -- which is the entire reason to solve rather than to state.
+            //
+            // Measured 12.392 uohm, against 8.275 for the full section and 9.310 for the naive
+            // series. A bound rather than the measurement, because the measurement is what the
+            // code produced and a test that asserts it checks nothing.
+            "17-a-busbar-with-a-notch.json" => {
+                let bar = world
+                    .simulation()
+                    .domain_as::<dualis::electrical::Conductor>("busbar")
+                    .expect("the busbar is still there");
+                assert!(bar.converged(), "residual {:.3e}", bar.residual());
+
+                let (rho, dx) = (1.724e-8, 1e-3);
+                let full = rho * (12.0 * dx) / (25.0 * dx * dx);
+                let naive = rho * (11.0 * dx) / (25.0 * dx * dx) + rho * dx / (10.0 * dx * dx);
+                let got = bar.resistance().to_si();
+                assert!(
+                    got > full * 1.2,
+                    "{name}: a notch must cost: {got:.4e} against rho L/A = {full:.4e}"
+                );
+                assert!(
+                    got > naive,
+                    "{name}: spreading costs more than a series estimate:                      {got:.4e} against {naive:.4e}"
+                );
+
+                // Tellegen, through the scene format: the power from the field equals the power
+                // at the terminals.
+                let terminal = bar.drive().to_si() * bar.current().to_si();
+                assert!(
+                    (bar.dissipation().to_si() / terminal - 1.0).abs() < 1e-9,
+                    "{name}: field power against terminal power"
+                );
+
+                // And every joule it paid, the heatsink took -- which the audit at 1e-9 also
+                // says, from the other side.
+                let sink = last
+                    .readings
+                    .iter()
+                    .find(|r| r.domain == "heatsink" && r.label == "absorbed")
+                    .expect("the heatsink reports what it absorbed");
+                assert!(
+                    (sink.value / bar.dissipated_energy().to_si() - 1.0).abs() < 1e-9,
+                    "{name}: {} J absorbed against {} J paid",
+                    sink.value,
+                    bar.dissipated_energy().to_si()
+                );
+
+                // The panel is the potential, a volume, at the conductor's own cell count.
+                assert_eq!(last.panels[0].grid(), Some(bar.counts()));
+                assert_eq!(last.panels[0].unit, "V");
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

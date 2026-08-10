@@ -139,7 +139,7 @@ of them commentary.
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
 | `dualis-acoustic` | The wave equation on a staggered grid: `Tube` (1D), `Room` (2D), `Hall` (3D, with the vertical and oblique modes a floor plan cannot have), impedance boundaries |
 | `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
-| `dualis-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path |
+| `dualis-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path. `Conductor`: `∇·(σ∇φ)=0` solved on a grid, so a resistance is a property of a *shape* — `ρL/A` exactly for a bar, and whatever a notch gives for a notch |
 | `dualis-scene` | One layer up. `Placement`, `Extent`, `capture` — where a domain sits and what one instant of a run looks like, as `Frame`, `Panel`, `PanelData`. Names no domain |
 | `dualis-view` | Two layers up. `svg` filmstrip, `html` report that opens in a browser with nothing installed, `readings_csv`, `to_json`. The view is chosen by the shape of the data |
 

@@ -402,6 +402,19 @@ pub type Charge = Qty<0, 0, 1, 1, 0, 0, 0>;
 pub type Voltage = Qty<2, 1, -3, -1, 0, 0, 0>;
 /// Ohms — volts per ampere.
 pub type Resistance = Qty<2, 1, -3, -2, 0, 0, 0>;
+/// Ω·m — resistance times length. The property of a *material*, where [`Resistance`] is the
+/// property of a particular piece of one.
+///
+/// The distinction is the whole point of a field formulation of current: `R = ρL/A` is a
+/// statement about a uniform bar, and a shape that is not a uniform bar does not have one.
+pub type Resistivity = Qty<3, 1, -3, -2, 0, 0, 0>;
+/// S/m — the reciprocal of [`Resistivity`], and what a finite-volume solve actually wants,
+/// because conductances in parallel add where resistances do not.
+pub type Conductivity = Qty<-3, -1, 3, 2, 0, 0, 0>;
+/// V/m — the gradient of a potential.
+pub type ElectricField = Qty<1, 1, -3, -1, 0, 0, 0>;
+/// A/m² — current per unit area. What actually flows, and the thing `I` is an integral of.
+pub type CurrentDensity = Qty<-2, 0, 0, 1, 0, 0, 0>;
 /// J·K⁻¹ — mass times specific heat. How much heat a thing can hide before it
 /// shows up as a temperature.
 pub type HeatCapacity = Qty<2, 1, -2, 0, -1, 0, 0>;
@@ -473,6 +486,13 @@ product!(Voltage, Current => Power);
 // Ohm's law, declared rather than asserted: this line compiling is the check that ohms times
 // amperes are volts, and with the line above it that `I²R` comes out in watts.
 product!(Resistance, Current => Voltage);
+// The field form of Ohm's law: J = sigma E. These lines compiling is the check that
+// (S/m)*(V/m) is A/m^2, and that resistivity really is the reciprocal of conductivity.
+product!(Conductivity, ElectricField => CurrentDensity);
+product!(Resistivity, CurrentDensity => ElectricField);
+product!(Resistance, Length => Resistivity);
+product!(CurrentDensity, Area => Current);
+product!(ElectricField, Length => Voltage);
 product!(Mass, Area => MomentOfInertia);
 product!(MomentOfInertia, Frequency => AngularMomentum);
 product!(Stiffness, Length => Force);
@@ -530,6 +550,53 @@ impl Area {
 // ---------------------------------------------------------------------------
 // Unit-bearing entry and exit. The only place a factor of 1000 may appear.
 // ---------------------------------------------------------------------------
+
+impl Resistivity {
+    /// Ohm-metres. Copper is 1.724e-8 at 20 °C, aluminium 2.65e-8, and a resistor's ceramic
+    /// substrate is fourteen orders of magnitude up from either.
+    pub fn ohm_m(v: f64) -> Resistivity {
+        Qty(v)
+    }
+    /// µΩ·cm, which is what a materials datasheet quotes: copper is 1.724.
+    pub fn micro_ohm_cm(v: f64) -> Resistivity {
+        Qty(v * 1e-8)
+    }
+    /// The conductivity that is its reciprocal. Zero resistivity gives an infinite
+    /// conductivity, which is the honest answer and not a panic.
+    pub fn conductivity(self) -> Conductivity {
+        Qty(1.0 / self.0)
+    }
+}
+
+impl Conductivity {
+    /// Siemens per metre.
+    pub fn s_per_m(v: f64) -> Conductivity {
+        Qty(v)
+    }
+    /// The resistivity that is its reciprocal.
+    pub fn resistivity(self) -> Resistivity {
+        Qty(1.0 / self.0)
+    }
+}
+
+impl ElectricField {
+    /// Volts per metre.
+    pub fn v_per_m(v: f64) -> ElectricField {
+        Qty(v)
+    }
+}
+
+impl CurrentDensity {
+    /// Amperes per square metre.
+    pub fn a_per_m2(v: f64) -> CurrentDensity {
+        Qty(v)
+    }
+    /// A/mm², which is how a cable's rating is quoted — 5 A/mm² is a normal continuous
+    /// figure for insulated copper in air.
+    pub fn a_per_mm2(v: f64) -> CurrentDensity {
+        Qty(v * 1e6)
+    }
+}
 
 impl Resistance {
     /// Ohms.

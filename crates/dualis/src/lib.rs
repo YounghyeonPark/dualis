@@ -96,7 +96,9 @@ pub use dualis_view as view;
 
 /// Everything most simulations need, in one `use`.
 pub mod prelude {
-    pub use dualis_acoustic::{impedance, reflection_coefficient, End, Impedance, Room, Tube};
+    pub use dualis_acoustic::{
+        impedance, reflection_coefficient, End, Hall, Impedance, Room, Tube,
+    };
     pub use dualis_core::conserved::quantity;
     pub use dualis_core::{
         audit, basis_for, oriented_against, reflect, velocity_verlet, Domain, Dynamics, Exchange,
@@ -109,7 +111,7 @@ pub mod prelude {
     // had to reach through two module paths to say so.
     pub use dualis_core::substance::{AcousticProps, MechanicalProps, ThermalProps};
     pub use dualis_core::{Ensemble, Estimate, Pose};
-    pub use dualis_electrical::Winding;
+    pub use dualis_electrical::{Conductor, Winding};
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,
     };
@@ -128,9 +130,10 @@ pub mod prelude {
         Bar1D, Environment, LumpedMass, Node, SteadyState, ThermalNetwork, HEAT,
     };
     pub use dualis_units::{
-        AccelerationVec, Area, Conductance, Current, Damping, Density, Energy, Force, ForceVec,
-        Frequency, HeatCapacity, Irradiance, Length, LengthVec, Mass, Momentum, MomentumVec, Power,
-        Pressure, Resistance, SpecificHeat, Stiffness, Temperature, ThermalConductivity,
-        ThermalExpansion, Time, Velocity, VelocityVec, Voltage, Volume, G0,
+        AccelerationVec, Area, Conductance, Conductivity, Current, CurrentDensity, Damping,
+        Density, ElectricField, Energy, Force, ForceVec, Frequency, HeatCapacity, Irradiance,
+        Length, LengthVec, Mass, Momentum, MomentumVec, Power, Pressure, Resistance, Resistivity,
+        SpecificHeat, Stiffness, Temperature, ThermalConductivity, ThermalExpansion, Time,
+        Velocity, VelocityVec, Voltage, Volume, G0,
     };
 }

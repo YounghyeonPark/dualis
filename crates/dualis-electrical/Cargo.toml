@@ -11,6 +11,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+glam = { workspace = true }
 dualis-core = { workspace = true }
 dualis-units = { workspace = true }
 serde = { workspace = true }

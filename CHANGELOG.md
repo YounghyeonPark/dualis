@@ -28,6 +28,31 @@ messages carry the full account.
   continuum: that discrete rate approaches `α·π²/L²` at second order, checked as a *rate*, since
   a first-order scheme also converges.
 
+- **`Conductor`** in `dualis-electrical`: current as a field. `∇·(σ∇φ) = 0` solved by conjugate
+  gradients on a block with two electrodes, `J = −σ∇φ` read off it, and the dissipation as
+  `∫σ|∇φ|²dV`. **Nobody states a resistance** — it comes out of the shape.
+
+  For a uniform block it comes out as `ρL/A` to machine precision, which is what makes it
+  checkable; for a notched one it comes out as whatever the notch gives, which is the point.
+  Series adds resistances and parallel adds conductances, and neither is coded — both fall out of
+  the same solve, on materials four orders of magnitude apart so a face conductivity that used an
+  arithmetic mean instead of a harmonic one would show.
+
+  `V·I` equals `∫σ|∇φ|²dV` to machine precision — Tellegen's theorem, and the sharpest single
+  statement that the discretisation is self-consistent, since the two are different sums over
+  different things.
+
+  The first **elliptic** domain here, and the first whose failure mode is a solver rather than a
+  stability limit: a solve stopped at its cap returns a field that is smooth, bounded and shaped
+  exactly like an answer. `step` refuses one that did not converge, `residual` is a *reading*, and
+  `with_solver` exists so the refusal path can be provoked from a test.
+
+- **`Resistivity`, `Conductivity`, `ElectricField`, `CurrentDensity`** in `dualis-units`, with
+  `product!` declarations for `J = σE` and `E = ρJ` — those lines compiling is the check that
+  (S/m)·(V/m) is A/m².
+
+- **`DomainSpec::Conductor`** and scene 17 — a copper busbar with a notch. Seventeen scenes.
+
 - **`Hall`** in `dualis-acoustic`: the wave equation in three dimensions. A staggered grid with
   pressure on nodes and velocity on the faces between them, rigid surfaces, and `dx/(c√3)`.
 
@@ -70,6 +95,11 @@ messages carry the full account.
   mode nothing announces. It is a field, and only a field.
 
 ### Fixed
+
+- **A quasi-static domain reported an answer before it had one.** `Conductor::new` left the
+  potential at zeros, so the first captured frame reported a resistance 24× below the floor
+  `ρL/A` puts under it — beside a residual of `inf` that nothing was reading. A quasi-static
+  domain has no state before its solve, so it solves at construction now.
 
 - **A three-dimensional field was captured as its `z = 0` face**, silently. `Extent::samples` was
   a pair and the sampler built its position as `(u, v, 0)`. For six domains that was exactly

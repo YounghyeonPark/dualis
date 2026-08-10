@@ -1,0 +1,107 @@
+{
+  "title": "a busbar with a notch, and the resistance the shape actually has",
+  "schedule": "staggered",
+  "duration_s": 1.0,
+  "frames": 6,
+  "conservation_tolerance": 1e-09,
+  "domains": [
+    {
+      "kind": "conductor",
+      "name": "busbar",
+      "cells": [
+        12,
+        5,
+        5
+      ],
+      "cell_mm": 1.0,
+      "resistivity_ohm_m": 1.724e-08,
+      "volts": 0.001,
+      "blocked": [
+        [
+          6,
+          0,
+          0
+        ],
+        [
+          6,
+          0,
+          1
+        ],
+        [
+          6,
+          0,
+          2
+        ],
+        [
+          6,
+          0,
+          3
+        ],
+        [
+          6,
+          0,
+          4
+        ],
+        [
+          6,
+          1,
+          0
+        ],
+        [
+          6,
+          1,
+          1
+        ],
+        [
+          6,
+          1,
+          2
+        ],
+        [
+          6,
+          1,
+          3
+        ],
+        [
+          6,
+          1,
+          4
+        ],
+        [
+          6,
+          2,
+          0
+        ],
+        [
+          6,
+          2,
+          1
+        ],
+        [
+          6,
+          2,
+          2
+        ],
+        [
+          6,
+          2,
+          3
+        ],
+        [
+          6,
+          2,
+          4
+        ]
+      ]
+    },
+    {
+      "kind": "lump",
+      "name": "heatsink",
+      "volume_cm3": 2.0,
+      "thickness_mm": 6.0,
+      "initial_c": 20.0,
+      "ambient_c": 20.0,
+      "area_cm2": 12.0
+    }
+  ]
+}
