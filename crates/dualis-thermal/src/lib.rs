@@ -1,7 +1,7 @@
 //! dualis-thermal: heat, as a domain built on the `dualis-core` kernel.
 //!
-//! Three domains. The first two sit either side of the line that matters to a
-//! scheduler:
+//! Four domains, spanning three dimensionalities and one graph. The first two sit either side of
+//! the line that matters to a scheduler:
 //!
 //! - [`LumpedMass`] has one temperature and no internal structure. Its stability
 //!   limit is its own time constant, which is seconds for a piece of glass in still
@@ -21,6 +21,13 @@
 //!   resistance between different materials, which [`Bar1D`]'s uniform grid cannot.
 //!   A network of one node reduces to a [`LumpedMass`] bit for bit, so it inherits every
 //!   check that domain already passes.
+//!
+//! And the fourth resolves what a bar cannot:
+//!
+//! - [`Solid3D`] is conduction in three dimensions on a cubic grid, which is what a hot spot
+//!   needs: heat spreading *sideways* out of a spot is the whole job of a spreader plate and a
+//!   fin, and a one-dimensional model has nowhere for it to go but along. It pays `dx²/6α`,
+//!   a third of [`Bar1D`]'s limit, because the explicit limit tightens with every axis.
 //!
 //! # Where the heat comes from
 //!
@@ -45,6 +52,7 @@
 #![deny(missing_docs)]
 
 pub mod network;
+pub mod solid;
 
 use dualis_core::conserved::quantity;
 use dualis_core::{
@@ -56,6 +64,7 @@ use dualis_units::{
 };
 use glam::DVec3;
 pub use network::{Node, SteadyState, ThermalNetwork};
+pub use solid::{Solid3D, STABLE_FOURIER_3D};
 
 /// The bus channel heat arrives on, in joules.
 ///
