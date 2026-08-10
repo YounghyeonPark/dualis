@@ -14,6 +14,26 @@ messages carry the full account.
 
 ### Added
 
+- **`busbar_rating`**, an example shaped like an engineer's working day rather than a
+  demonstration. A bolted busbar joint, geometry to production yield:
+
+  ```text
+    contact resistance   3.440 uohm, of which 37% is the joint itself
+    thermal path         0.0140 W/K, from the network's solved balance
+    continuous rating    445.8 A  (2.23 A/mm2, 105 C limit, 40 C ambient)
+    thermal runaway      1018.8 A — 2.29x margin
+    yield at nominal     36.6% of 20 000 units
+    derate for 99.9%     384.6 A, 86% of nominal
+  ```
+
+  Every step has a closed form behind it: `rho L/A` for the bar, Maxwell's `rho/2a` for the
+  constriction as a limit the solve is shown converging on, `dT = I²R20/(g − I²R20·alpha)` for the
+  electro-thermal fixed point, and that expression's pole for the runaway current.
+
+  The finding it is built to make is the last two lines. **A rating computed from nominal values
+  is a coin toss in production** — 36.6% here — and the derating that fixes it is what the Monte
+  Carlo is for.
+
 - **Two 3D examples**, `heat_in_three_dimensions` and `room_in_three_dimensions`, run by CI like
   the rest.
 
