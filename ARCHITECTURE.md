@@ -119,26 +119,29 @@ hot spot, and its documentation says so.
 
 ---
 
-## The gap that blocks the scene layer
+## Placement: half built
 
-The kernel has `ScalarField` and `VectorField` — functions of position — and `Interface` and
-`Flux` for discretised boundaries. It has **no concept of pose.** `transform.rs` is the Fourier
-transform; the name is taken and the thing is not there.
+The kernel has `ScalarField` and `VectorField` — functions of position — `Interface` and `Flux`
+for discretised boundaries, and now `Pose`. Until `Pose` a domain's coordinates *were* world
+coordinates, implicitly, and two grids could not be placed against each other at all.
 
-So today a domain's coordinates *are* world coordinates, implicitly, and two grids cannot be
-placed relative to each other at all. That is the single missing primitive, and almost everything
-the goal asks for sits behind it.
+`Pose` is a rigid motion and deliberately nothing more: a rotation and a translation, no scale,
+no shear, no projection. An isometry preserves every distance and angle exactly, and that is the
+only class of placement a physics can be moved by without its physics changing — a conservation
+law stated over a sheared volume is a different law, and a scaled metre is not a metre.
 
-Placement must be typed so that its two uses cannot be confused:
+Placement has two uses, and they must not share a type:
 
-- **Physical placement** — a pose that changes what the physics computes. Two solids in contact,
-  a lens at a distance, a grid rotated against another. The scene layer owns this and the domain
-  reads its own coordinates only.
+- **Physical placement** — changes what the physics computes. Two solids in contact, a lens at a
+  distance, a grid rotated against another. This is `Pose`, and it is **built**. The scene layer
+  assigns it; a domain reads only its own coordinates.
 - **Presentational placement** — a position given to something that has none, purely so a viewer
-  can draw it. A thermal network node on a diagram. The physics must never be able to read it.
+  can draw it. A thermal network node on a diagram. This is **not built**, on purpose: it belongs
+  to the scene crate, above the kernel, where the physics cannot reach it.
 
-If those share a type, someone will eventually feed a drawing coordinate into a conductance, and
-nothing will fail loudly.
+Keeping them apart is structural rather than a naming convention. If they shared a type, someone
+would eventually feed a drawing coordinate into a conductance and nothing would fail loudly — so
+the second one lives in a crate the first cannot see.
 
 ---
 
