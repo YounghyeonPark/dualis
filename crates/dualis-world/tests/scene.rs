@@ -1153,3 +1153,88 @@ fn a_scene_can_set_a_tolerance_per_quantity() {
         1e-9
     );
 }
+
+/// **A scene from a newer build is refused, not half-run.**
+///
+/// `deny_unknown_fields` already catches a key that was *added*. It cannot catch a key whose
+/// **meaning changed** — same name, same type, different semantics — and that is the whole reason
+/// a format carries a version.
+///
+/// The failure being prevented is one this format has already had in a smaller form: a key that
+/// is not read leaves its field at a default, and the run proceeds quietly doing something other
+/// than what the file says. Refusing forward rather than attempting a best-effort downgrade is
+/// deliberate: a plausible run that is not the one written down is worse than no run.
+#[test]
+fn a_scene_from_the_future_is_refused() {
+    let text = r#"{
+      "format": 99, "title": "from a newer dualis", "duration_s": 0.01, "frames": 2,
+      "domains": [
+        { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1, "cells_across": 21 }
+      ]
+    }"#;
+    let scene: Scene = serde_json::from_str(text).expect("it is still valid JSON");
+    assert_eq!(scene.format, 99);
+    let Err(err) = World::build(scene) else {
+        panic!("a format this build cannot read must not run");
+    };
+    assert!(err.contains("99") && err.contains("upgrade"), "{err}");
+
+    // Zero is not a version this format ever had, and is what an uninitialised field looks like.
+    let zero = text.replace("\"format\": 99", "\"format\": 0");
+    let scene: Scene = serde_json::from_str(&zero).unwrap();
+    assert!(World::build(scene).is_err(), "0 is not a version");
+}
+
+/// **Every scene that ships loads, and absence of the key means version 1.**
+///
+/// The seventeen shipped files were written before the field existed and none of them has it.
+/// Defaulting to 1 is what makes that true rather than a special case — and it is why the default
+/// is *absence means the original format* rather than *absence means whatever is current*.
+#[test]
+fn the_shipped_scenes_are_format_one_by_omission() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("scenes");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(&dir).expect("the scenes are there") {
+        let path = entry.expect("readable").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("readable");
+        assert!(
+            !text.contains("\"format\""),
+            "{}: written before the field existed",
+            path.display()
+        );
+        let scene: Scene = serde_json::from_str(&text).expect("it parses");
+        assert_eq!(scene.format, 1, "{}", path.display());
+        scene.check_version().expect("format 1 is readable");
+        seen += 1;
+    }
+    assert!(seen >= 17, "only {seen} scenes were checked");
+}
+
+/// **What this build writes, it can read back — including the version.**
+///
+/// The narrow promise the number carries: within one version, a file that loads today loads
+/// tomorrow. A round trip is the cheapest test of it and the one that would catch a serialiser
+/// that emitted a version its own reader refuses.
+#[test]
+fn what_it_writes_it_reads() {
+    let text = r#"{
+      "title": "round trip", "duration_s": 0.25, "frames": 4,
+      "domains": [
+        { "kind": "room", "name": "room", "width_m": 4.4, "height_m": 3.1, "cells_across": 21 }
+      ]
+    }"#;
+    let scene: Scene = serde_json::from_str(text).expect("it parses");
+    let written = serde_json::to_string(&scene).expect("it serialises");
+
+    assert!(
+        written.contains(&format!("\"format\":{}", dualis_world::FORMAT)),
+        "a file this build writes states its version: {written}"
+    );
+    let back: Scene = serde_json::from_str(&written).expect("it reads its own output");
+    assert_eq!(back.format, dualis_world::FORMAT);
+    back.check_version().expect("its own output is readable");
+    World::build(back).expect("and runnable");
+}

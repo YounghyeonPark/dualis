@@ -14,6 +14,24 @@ messages carry the full account.
 
 ### Added
 
+- **The scene format carries a version**, and `--check` validates a file without running it.
+
+  `Scene::format`, where **absence means 1** — what every scene written before the field existed
+  is, so old files are readable by construction rather than as a special case. A version this
+  build cannot read is refused rather than half-run.
+
+  `deny_unknown_fields` already catches a key that was *added*. It cannot catch a key whose
+  **meaning changed** — same name, same type, different semantics — and that is the gap a version
+  number closes. The promise attached is narrow and stated: within one version, a file that loads
+  today loads tomorrow.
+
+  `dualis-world --check scene.json` parses and builds without running, and reports a parse failure
+  as `file:line:column` with the keys that were expected. CI runs it over every shipped scene, so
+  it is not the one entry point nothing exercises.
+
+  This was the editor's blocker: an editor writes files, and the format had changed under its own
+  users once already, silently, when `mode` became `release`.
+
 - **`runtime/gpu`**: `Solid3D`'s seven-point stencil as a WGSL compute shader, implementing
   `Domain` so it drops into a `Simulation`. Its own workspace, and the rule is that **the CPU
   domain is the reference and this is a cache of it**.

@@ -8,7 +8,18 @@ binary runs all of them.
 ```sh
 cargo run --release -p dualis-world -- scenes/03-room-pulse.json
 cargo run --release -p dualis-world -- scenes/03-room-pulse.json out.svg
+cargo run --release -p dualis-world -- --check scenes/03-room-pulse.json
 ```
+
+`--check` parses and builds without running: the format version, the domain names, a `tracks`
+pointing at a node the scene defines. It reports a parse failure as `file:line:column` with the
+keys that were expected, which is what an editor puts a squiggle under. CI runs it over every
+scene, because it would otherwise be the one entry point nothing exercises.
+
+Every file carries a `format` number, and **absence means 1** — which is what all seventeen here
+are, having been written before the field existed. A version this build cannot read is refused
+rather than half-run: `deny_unknown_fields` catches a key that was *added*, but not one whose
+meaning changed, and that is what the number is for.
 
 No second argument prints the numbers and checks them. A second argument writes an asset, and
 **the extension chooses which** — because a run has several shapes and only one is a picture:

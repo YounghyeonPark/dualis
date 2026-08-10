@@ -113,6 +113,9 @@ jobs:
           # binary on the real files, which is the thing a reader will type.
           for scene in crates/dualis-world/scenes/*.json; do
             echo "::group::$scene"
+            # `--check` first: it is the path an editor uses while somebody is typing, and it
+            # would otherwise be the only entry point CI never touches.
+            cargo run --locked --release -p dualis-world -- --check "$scene"
             cargo run --locked --release -p dualis-world -- "$scene"
             echo "::endgroup::"
           done

@@ -52,6 +52,21 @@ use light::Light;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scene {
+    /// Which revision of this format the file is written in.
+    ///
+    /// **Absent means 1**, which is what every scene written before this field existed is. That
+    /// default is the whole design: a reader can tell an old file from a new one, and does not
+    /// have to guess from which keys happen to be present.
+    ///
+    /// A version this build does not know is [refused](Scene::check_version) rather than read
+    /// hopefully. `serde`'s `deny_unknown_fields` already catches a key that was added; it cannot
+    /// catch a key whose *meaning* changed, and that is what a version number is for.
+    ///
+    /// The promise attached to it is narrow and worth stating exactly: **within one version, a
+    /// file that loads today loads tomorrow.** A change that would alter what an existing file
+    /// means bumps this. A change that only adds an optional key does not.
+    #[serde(default = "default_format")]
+    pub format: u32,
     /// Shown in the output; has no effect on the physics.
     pub title: String,
     /// How the domains interact. See [`ScheduleSpec`].
@@ -87,6 +102,46 @@ pub struct Scene {
 
 fn default_tolerance() -> f64 {
     1e-6
+}
+
+/// The revision this build writes, and the highest it can read.
+///
+/// One, still. It goes to two the first time a change would make an existing file mean something
+/// different — not when a key is added, which an old file simply does not have.
+pub const FORMAT: u32 = 1;
+
+fn default_format() -> u32 {
+    1
+}
+
+impl Scene {
+    /// Refuse a file from a future this build does not know.
+    ///
+    /// Called by [`World::build`], so nothing can run a scene it half-understands. The failure
+    /// being prevented is the one this format has already had once in a smaller form: a key that
+    /// is not read leaves a field at its default and the run proceeds, quietly doing something
+    /// other than what the file says.
+    ///
+    /// Refusing forward rather than attempting a downgrade is deliberate. A newer file may use a
+    /// key this build does not have, or the same key differently; reading it on a best-effort
+    /// basis produces a run that is plausible and not the one that was written down.
+    pub fn check_version(&self) -> Result<(), String> {
+        if self.format == 0 {
+            return Err(format!(
+                "format 0 is not a version this format ever had; scenes are {FORMAT} or, if the \
+                 key is absent, 1"
+            ));
+        }
+        if self.format > FORMAT {
+            return Err(format!(
+                "this scene is format {} and this build reads up to {FORMAT}. It was written by a \
+                 newer dualis; upgrade rather than run it, because a key this build does not know \
+                 would be left at a default and the run would not be the one in the file.",
+                self.format
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Which coupling scheme to run the domains under.
@@ -933,6 +988,9 @@ impl World {
     /// non-positive duration, no frames. Physical nonsense inside a domain is the domain's
     /// business and is reported by the audit at run time, which is where it belongs.
     pub fn build(scene: Scene) -> Result<World, String> {
+        // Before anything else, and before any field is read: a file from a newer build must not
+        // be half-run.
+        scene.check_version()?;
         if scene.domains.is_empty() {
             return Err("a scene needs at least one domain".into());
         }

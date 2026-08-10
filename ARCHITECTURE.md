@@ -324,6 +324,34 @@ checked against closed forms. So the move is to be *reachable from* them — `du
 does that in a few hundred lines and no dependency, and reaches Blender, three.js and every USD
 pipeline. A USD writer is the next rung, and only worth it if the readers really are Omniverse.
 
+### Where each of the four stands
+
+| | |
+| --- | --- |
+| a viewer | `runtime/viewer` — a wgpu window that reads the run **file** and does not link `dualis` |
+| export | `dualis_view::gltf` — no dependency, reaches Blender, three.js and USD tools |
+| GPU physics | `runtime/gpu` — 191× at 64³, single precision, CPU as the reference |
+| an editor | not built. Its blocker is cleared |
+
+**The editor was last for a reason that is now gone.** An editor writes files, and the scene
+format is `dualis-world`'s, which is `publish = false` precisely because a file format is a
+compatibility promise this one was not ready to make — it had already changed under its own users
+once, silently, when `mode` became `release`.
+
+It carries a `format` number now, with the narrow promise attached: **within one version, a file
+that loads today loads tomorrow.** Absence means 1, which is what every scene written before the
+field existed is, so old files are readable by construction rather than by special case. A version
+this build does not know is refused rather than half-run — `deny_unknown_fields` catches a key that
+was *added* but cannot catch one whose meaning changed, and that is exactly the gap a version
+number closes.
+
+`--check` is the other half: parse and build without running, reporting a parse failure as
+`file:line:column` with the keys that were expected. That is what an editor needs while somebody is
+typing, and CI runs it over every scene so it is not the one entry point nothing exercises.
+
+What is left for an editor is a GUI, and that is a product decision rather than an architectural
+one. The format is ready to be edited.
+
 ---
 
 ## How to judge a proposed change

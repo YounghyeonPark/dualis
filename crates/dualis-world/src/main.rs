@@ -9,6 +9,7 @@
 //! dualis-world scene.json out.svg     # a filmstrip: every frame, one page, still
 //! dualis-world scene.json out.csv     # every domain's scalars over time, one row per frame
 //! dualis-world scene.json out.json    # the frames themselves — fields, bodies and readings
+//! dualis-world --check s.json         # does it parse and build, without running it
 //! dualis-world --emit-default s.json  # write the built-in scene out to start from
 //! ```
 //!
@@ -29,6 +30,52 @@ use dualis_world::{Scene, World};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Validate without running. What an editor needs while somebody is typing: the same checks
+    // `World::build` makes — the format version, the domain names, a `tracks` that points at a
+    // node the scene defines — and none of the seconds a run costs.
+    //
+    // A separate path rather than a flag on the run, because "did this file parse" and "what did
+    // this file do" are different questions and an editor asks the first one constantly.
+    if args.first().map(String::as_str) == Some("--check") {
+        let path = args.get(1).ok_or("--check needs a path")?;
+        let text = std::fs::read_to_string(path)?;
+        let scene: Scene = match serde_json::from_str(&text) {
+            Ok(s) => s,
+            Err(e) => {
+                // Line and column, because that is what an editor puts a squiggle under.
+                eprintln!("{path}:{}:{}: {e}", e.line(), e.column());
+                std::process::exit(1);
+            }
+        };
+        match World::build(scene.clone()) {
+            Ok(world) => {
+                println!(
+                    "{path}: format {}, {} domain(s), {:.3} s in {} frames",
+                    scene.format,
+                    scene.domains.len(),
+                    scene.duration_s,
+                    scene.frames
+                );
+                for spec in &world.scene().domains {
+                    let placement = spec.placement();
+                    let shape = match placement.extent {
+                        Some(e) => {
+                            let (nx, ny, nz) = e.samples;
+                            format!("a field sampled {nx} x {ny} x {nz}")
+                        }
+                        None => "no field".to_string(),
+                    };
+                    println!("  {:<14} {shape}", spec.name());
+                }
+                return Ok(());
+            }
+            Err(why) => {
+                eprintln!("{path}: {why}");
+                std::process::exit(1);
+            }
+        }
+    }
 
     if args.first().map(String::as_str) == Some("--emit-default") {
         let path = args.get(1).ok_or("--emit-default needs a path")?;
