@@ -1088,8 +1088,10 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 };
                 let (even_g, bad_g) = (read("even", "delivered"), read("wall gap", "delivered"));
                 let (even_tds, bad_tds) = (read("even", "TDS"), read("wall gap", "TDS"));
-                let (even_ring, bad_ring) =
-                    (read("even", "ring over core"), read("wall gap", "ring over core"));
+                let (even_ring, bad_ring) = (
+                    read("even", "ring over core"),
+                    read("wall gap", "ring over core"),
+                );
 
                 let puck = world
                     .simulation()
@@ -1154,7 +1156,8 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 let ny = puck.counts().1;
                 let dx = puck.spacing().to_si();
                 let closed = k * (packed as f64 * dx * dx) * 9.0e5 / (mu * ny as f64 * dx);
-                let measured = puck.flow_rate().to_si() / dualis::porous::Liquid::water().density.to_si();
+                let measured =
+                    puck.flow_rate().to_si() / dualis::porous::Liquid::water().density.to_si();
                 assert!(
                     (measured / closed - 1.0).abs() < 1e-9,
                     "{name}: Q = kA dp / (mu L): {measured:.6e} against {closed:.6e}"
