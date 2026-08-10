@@ -21,7 +21,11 @@
 //! drew nothing at all.
 
 use dualis::prelude::ThermalNetwork;
-use dualis_world::{render, report, Frame, PanelData, Scene, World};
+// The views are a library now — `dualis-view`, above `dualis-scene`, above the kernel. They
+// were modules in this binary, which is `publish = false`, so a consumer who could state a
+// simulation and run it could not draw one.
+use dualis::view::{html, readings_csv, svg as filmstrip, to_json};
+use dualis_world::{Scene, World};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -140,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .to_ascii_lowercase();
             match ext.as_str() {
                 "svg" => {
-                    let svg = render::filmstrip(&world.scene().title, &frames, 6);
+                    let svg = filmstrip(&world.scene().title, &frames, 6);
                     // A zero-byte file used to be written and reported as "0 KiB" — which a
                     // legitimate 937-byte strip also reports, so the one number on the line
                     // could not tell them apart. Bytes now, and an empty picture is refused
@@ -167,7 +171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 "html" => {
-                    let page = report::html(world.scene().title.as_str(), &frames);
+                    let page = html(world.scene().title.as_str(), &frames);
                     std::fs::write(path, &page)?;
                     println!(
                         "  wrote {path} ({} bytes, a report that opens in a browser)",
@@ -175,7 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 "json" => {
-                    let json = frames_json(world.scene().title.as_str(), &frames);
+                    let json = to_json(world.scene().title.as_str(), &frames);
                     std::fs::write(path, &json)?;
                     println!(
                         "  wrote {path} ({} bytes, {} frames)",
@@ -195,123 +199,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => println!("  name an output file: .svg, .csv or .json"),
     }
     Ok(())
-}
-
-/// Every domain's scalars, one row per frame.
-///
-/// The asset for the domains that have no picture, and the one a plot or a spreadsheet wants.
-/// Columns are `domain.label` so two networks with a node called `winding` do not collide, and
-/// the unit is in the header rather than in a separate legend nobody reads.
-fn readings_csv(frames: &[Frame]) -> String {
-    let Some(first) = frames.first() else {
-        return String::from("t_s\n");
-    };
-    let mut out = String::from("t_s");
-    for r in &first.readings {
-        out.push_str(&format!(",{}.{} [{}]", r.domain, r.label, r.unit));
-    }
-    out.push('\n');
-    for frame in frames {
-        out.push_str(&format!("{:.9}", frame.time_s));
-        for r in &frame.readings {
-            out.push_str(&format!(",{:.9}", r.value));
-        }
-        out.push('\n');
-    }
-    out
-}
-
-/// The frames as JSON, for a viewer this crate does not contain.
-///
-/// Fields as grids, bodies as positions in space, and the readings beside them. Written by hand
-/// rather than derived, so the shape is chosen here and stays where a reader can see it — this
-/// is a wire format the moment anything consumes it, and it should look deliberate.
-fn frames_json(title: &str, frames: &[Frame]) -> String {
-    let mut out = format!("{{\n  \"title\": {},\n  \"frames\": [\n", quote(title));
-    for (fi, frame) in frames.iter().enumerate() {
-        out.push_str(&format!("    {{ \"t\": {:.6}, \"panels\": [", frame.time_s));
-        for (pi, panel) in frame.panels.iter().enumerate() {
-            out.push_str(&format!(
-                "\n      {{ \"name\": {}, \"unit\": {}, ",
-                quote(&panel.name),
-                quote(panel.unit)
-            ));
-            match &panel.data {
-                PanelData::Field { nx, ny, values } => out.push_str(&format!(
-                    "\"kind\": \"field\", \"nx\": {nx}, \"ny\": {ny}, \"values\": {}",
-                    numbers(values)
-                )),
-                PanelData::Points {
-                    positions,
-                    values,
-                    bounds,
-                    boxed,
-                } => {
-                    let flat: Vec<f64> = positions.iter().flatten().copied().collect();
-                    out.push_str(&format!(
-                        "\"kind\": \"points\", \"boxed\": {boxed}, \"bounds\": {}, \
-                         \"positions\": {}, \"values\": {}",
-                        numbers(bounds),
-                        numbers(&flat),
-                        numbers(values)
-                    ));
-                }
-            }
-            out.push_str(if pi + 1 == frame.panels.len() {
-                " }"
-            } else {
-                " },"
-            });
-        }
-        out.push_str("\n    ], \"readings\": [");
-        for (ri, r) in frame.readings.iter().enumerate() {
-            out.push_str(&format!(
-                "\n      {{ \"domain\": {}, \"label\": {}, \"unit\": {}, \"value\": {:.6e} }}{}",
-                quote(&r.domain),
-                quote(&r.label),
-                quote(r.unit),
-                r.value,
-                if ri + 1 == frame.readings.len() {
-                    ""
-                } else {
-                    ","
-                }
-            ));
-        }
-        out.push_str(if fi + 1 == frames.len() {
-            "\n    ] }\n"
-        } else {
-            "\n    ] },\n"
-        });
-    }
-    out.push_str("  ]\n}\n");
-    out
-}
-
-fn numbers(v: &[f64]) -> String {
-    let mut s = String::from("[");
-    for (i, x) in v.iter().enumerate() {
-        if i > 0 {
-            s.push(',');
-        }
-        s.push_str(&format!("{x:.6e}"));
-    }
-    s.push(']');
-    s
-}
-
-fn quote(s: &str) -> String {
-    let mut out = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if c.is_control() => out.push(' '),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
 }
 
 /// A room ringing in its (1,1) mode, which is the cheapest scene that is worth looking at.

@@ -15,6 +15,7 @@ dependencies = [
  "dualis-scene",
  "dualis-thermal",
  "dualis-units",
+ "dualis-view",
  "glam",
 ]
 
@@ -101,6 +102,15 @@ dependencies = [
  "glam",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dualis-view"
+version = "0.8.0"
+dependencies = [
+ "dualis-core",
+ "dualis-scene",
+ "dualis-units",
 ]
 
 [[package]]

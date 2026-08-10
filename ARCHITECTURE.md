@@ -175,21 +175,27 @@ tolerances, and that is a kernel change nobody has needed yet.
    no scale, no shear — so two things can be positioned relative to each other. The
    *presentational* half is still missing on purpose and waits for the scene crate, where the
    physics cannot reach it.
-2. **Scene and analysis as libraries.** Both exist and both live inside `dualis-world`, which is
-   `publish = false`. A consumer cannot reach `Scene`, `Frame` or the report generator at all.
-   This is the largest gap between what is built and what is usable.
+2. ~~**Scene and analysis as libraries.**~~ Done. Both were inside `dualis-world`, which is
+   `publish = false`, so a consumer who could state a simulation and run it could reach neither
+   the shape of the answer nor any view of it.
 
-   `dualis-scene` exists now: `Placement`, `Extent`, `Frame`, `Panel`, `capture`. It names no
-   domain, and a test defines a physics inside itself to prove it — if that is captured, adding a
-   physics costs one crate.
+   `dualis-scene` is layer 2: `Placement`, `Extent`, `Frame`, `Panel`, `capture`,
+   `settle_framing`. `dualis-view` is layer 3: a filmstrip, a self-contained HTML report, CSV and
+   JSON, with the view chosen by the shape of the data.
+
+   **Neither names a domain, and both prove it by construction.** `dualis-scene`'s test defines a
+   physics inside the test file and captures it whole; `dualis-view`'s tests are driven by frames
+   written out by hand, which is the only way to tell "a heatmap because the data is a 2D grid"
+   apart from "a heatmap because that domain was a room".
 
    Getting there needed **five** things the layer had been doing by matching on domain types:
    `Domain::readings`, `Domain::as_bodies`, `Simulation::domains`, `ScalarField::unit`, and
    `Placement::extent` for the region a field occupies. Each was invisible while one crate did
-   everything.
+   everything, and each is a thing the *kernel* was missing rather than an invention of the
+   layers above it.
 
-   What remains of the move: `dualis-world` still owns `Frame` and the views. Re-pointing it at
-   the new crate, and lifting `render`/`report` into a `dualis-view`, is mechanical.
+   What is left in `dualis-world` is what an application actually is: a file format, the domain
+   types that format names, and one place saying how far each field extends.
 3. **3D field domains.** Conduction through a solid, and the wave equation with a ceiling. Both
    are the existing 1D and 2D schemes with one more index, and both have strong closed forms.
 4. **A field formulation of electricity.** Current density and potential on a grid, so `I²R`

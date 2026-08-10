@@ -4,7 +4,13 @@
 //! file that opens in a browser and shows something correct — without the caller knowing that a
 //! bar wants a profile, a room wants a heatmap and a fluid wants a rotatable scene.
 
-use dualis_world::{report, Scene, World};
+//! Driven from the shipped scenes rather than from hand-built frames, and it lives here rather
+//! than in `dualis-view` for that reason: the scenes are this crate's, and a view crate that
+//! depended on an application to get something to draw would have the arrows pointing the wrong
+//! way. `dualis-view`'s own tests build their frames without any physics at all.
+
+use dualis::view::html;
+use dualis_world::{Scene, World};
 
 fn frames_of(scene_file: &str) -> (String, Vec<dualis_world::Frame>) {
     let text = std::fs::read_to_string(
@@ -26,7 +32,7 @@ fn frames_of(scene_file: &str) -> (String, Vec<dualis_world::Frame>) {
 #[test]
 fn every_shape_of_data_gets_the_view_that_suits_it() {
     let (title, frames) = frames_of("14-a-world.json");
-    let html = report::html(&title, &frames);
+    let html = html(&title, &frames);
 
     for kind in ["profile", "heatmap", "scene", "series"] {
         assert!(
@@ -59,7 +65,7 @@ fn every_shape_of_data_gets_the_view_that_suits_it() {
 #[test]
 fn the_undrawable_scene_still_reports() {
     let (title, frames) = frames_of("13-winding-that-heats-itself.json");
-    let html = report::html(&title, &frames);
+    let html = html(&title, &frames);
 
     assert!(frames[0].panels.is_empty(), "scene 13 should draw nothing");
     assert!(html.contains("data-kind=\"series\""), "no series view");

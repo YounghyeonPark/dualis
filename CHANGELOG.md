@@ -14,6 +14,18 @@ messages carry the full account.
 
 ### Added
 
+- **`dualis-view`**, the eleventh crate and the top of the three layers: a filmstrip as SVG, a
+  self-contained HTML report, a CSV of every domain's scalars, and the frames as JSON. No
+  dependencies — SVG and HTML are text, so a `format!` and a file write is the whole renderer.
+
+  **The view is chosen by the shape of the data**: scalars over time become a chart, a 1D field a
+  profile, a 2D field a heatmap, points in space a rotatable scene. Its tests are driven by frames
+  written out by hand rather than by a simulation, which is the only way to tell "a heatmap
+  because the data is a 2D grid" apart from "a heatmap because that domain was a room".
+
+  Every view holds one scale for the whole run. A picture that renormalises per frame makes a
+  decay look like a steady state, and it is what you get if you do not think about it.
+
 - **`dualis-scene`**, the tenth crate and the middle of the three layers `ARCHITECTURE.md`
   describes. `Placement`, `Extent`, `Frame`, `Panel`, `PanelData`, `capture`, `settle_framing`
   — where a domain sits, and what one instant of a run looks like.
@@ -23,8 +35,9 @@ messages carry the full account.
   `dualis-scene` cannot possibly know about — places it and captures all three shapes. If a
   physics invented in a test comes back whole, a real one costs one crate and nothing else moves.
 
-  Both were in `dualis-world`, which is `publish = false`. A consumer that wanted to draw a run
-  could not reach the shape of the answer at all.
+  Both crates were modules in `dualis-world`, which is `publish = false`. A consumer who could
+  state a simulation and run it could reach neither the shape of the answer nor any view of it —
+  the largest gap between what was built and what was usable.
 
 - **`Domain::readings`** and **`Reading`**: the named scalars a domain has when it has no picture.
   Eight of the fourteen shipped scenes contain a domain that draws nothing — a heater, a lamp, a

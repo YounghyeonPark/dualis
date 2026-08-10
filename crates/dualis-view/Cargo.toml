@@ -1,0 +1,18 @@
+[package]
+name = "dualis-view"
+description = "Drawing a dualis run: filmstrips, self-contained HTML reports, CSV and JSON"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords = ["visualization", "simulation", "svg", "physics"]
+categories = ["visualization", "science", "simulation"]
+
+[dependencies]
+dualis-scene = { workspace = true }
+
+[dev-dependencies]
+dualis-core = { workspace = true }
+dualis-units = { workspace = true }

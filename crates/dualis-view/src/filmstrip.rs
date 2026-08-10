@@ -1,14 +1,22 @@
-//! A filmstrip of heatmaps, as SVG, with no dependency.
+//! Every frame of a run, side by side, as one SVG.
 //!
-//! SVG because it is text: a `format!` and a file write, no encoder and no fonts. The same
-//! reasoning as the library's examples — and the same code, very nearly, which is
-//! `FRICTION.md` finding 4: the plotting the examples use lives under `examples/common/` and
-//! cannot be reached from another crate.
+//! The asset for looking at a whole run at once rather than scrubbing through it — a contact
+//! sheet. The [`report`](crate::report) is the other half: one frame at a time, animated, and
+//! rotatable where the data is three-dimensional.
+//!
+//! SVG because it is text, so there is no encoder and no font to depend on.
 
-use crate::Frame;
+use dualis_scene::{Frame, Panel, PanelData};
 
 /// Draw every frame side by side, one row per domain.
-pub fn filmstrip(title: &str, frames: &[Frame], columns: usize) -> String {
+///
+/// Returns an empty string for a run with nothing drawable, rather than an SVG of an empty
+/// canvas: a file that opens to a blank page is indistinguishable from a broken renderer, and a
+/// caller can check `is_empty()` and say something true instead.
+///
+/// One colour scale per panel *name*, held across every frame — see the crate docs for why that
+/// is the whole point rather than a nicety.
+pub fn svg(title: &str, frames: &[Frame], columns: usize) -> String {
     let panels = frames.first().map(|f| f.panels.len()).unwrap_or(0);
     if panels == 0 {
         return String::new();
@@ -81,12 +89,10 @@ const MAX_DRAWN: usize = 48;
 const LEVELS: i32 = 48;
 
 /// One panel, in whichever shape it came in.
-fn draw(p: &crate::Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String {
+fn draw(p: &Panel, x0: f64, y0: f64, size: f64, extent: f64) -> String {
     let body = match &p.data {
-        crate::PanelData::Field { nx, ny, values } => {
-            raster(*nx, *ny, values, x0, y0, size, extent)
-        }
-        crate::PanelData::Points {
+        PanelData::Field { nx, ny, values } => raster(*nx, *ny, values, x0, y0, size, extent),
+        PanelData::Points {
             positions,
             values,
             bounds,

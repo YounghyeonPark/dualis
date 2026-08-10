@@ -18,6 +18,7 @@ dualis-molecular = { workspace = true }
 dualis-electrical = { workspace = true }
 dualis-optics = { workspace = true }
 dualis-scene = { workspace = true }
+dualis-view = { workspace = true }
 dualis-thermal = { workspace = true }
 dualis-units = { workspace = true }
 

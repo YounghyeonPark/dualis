@@ -38,7 +38,7 @@ Stated in full in CONTRIBUTING.md. The compressed version:
    counts, and there is a pinned digest that says so.
 4. **The kernel must never depend on a domain**, and no domain may depend on another. That
    claim is the reason for the crate split and has now been held through six domains.
-5. **Every public item is documented.** `#![deny(missing_docs)]` in all ten crates.
+5. **Every public item is documented.** `#![deny(missing_docs)]` in all eleven crates.
 
 ## The subagent team
 
@@ -133,7 +133,7 @@ accumulates.
 The order matters: each crate must be live on the index before the next one resolves it.
 
 ```sh
-for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-scene dualis; do
+for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-scene dualis-view dualis; do
   cargo publish -p "$c" --locked || break
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel

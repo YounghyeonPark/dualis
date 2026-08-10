@@ -34,7 +34,7 @@
 //! library from a CDN means it does not open on a machine without a network. The whole promise
 //! is *open it and it works*.
 
-use crate::{Frame, PanelData};
+use dualis_scene::{Frame, PanelData};
 
 /// Build the report for a finished run.
 pub fn html(title: &str, frames: &[Frame]) -> String {

@@ -1,7 +1,7 @@
 //! dualis: physics for simulated worlds, in one dependency.
 //!
 //! A facade over the workspace. Nothing is implemented here — the point is that a
-//! consumer writes `dualis = "0.2"` rather than naming nine crates, and that the
+//! consumer writes `dualis = "0.2"` rather than naming ten crates, and that the
 //! integration tests which need two domains at once have somewhere to live.
 //!
 //! ```
@@ -65,6 +65,7 @@
 //! dualis-molecular   depends on core   │
 //! dualis-electrical  depends on core   ┘
 //! dualis-scene       depends on core           where things are, and what a run looks like
+//! dualis-view        depends on scene          how to draw that, chosen by the data's shape
 //! dualis             depends on all of them
 //! ```
 //!
@@ -72,10 +73,11 @@
 //! [`Exchange`](dualis_core::Exchange), and each one that arrived left the others
 //! untouched — which is the claim the split was made to test, now held six times.
 //!
-//! [`scene`] is one layer up rather than a seventh domain, and it is bound by the same rule
-//! from the other side: it depends on the kernel and names **no** domain at all, so a physics
-//! that arrives tomorrow is captured without it being edited. `ARCHITECTURE.md` is the long
-//! version.
+//! [`scene`] and [`view`] are layers up rather than domains, and they are bound by the same rule
+//! from the other side: neither names a domain. A physics that arrives tomorrow is captured
+//! without `scene` being edited, and drawn without `view` being edited, because the scene asks
+//! each domain what it *offers* and the view dispatches on the shape of what came back.
+//! `ARCHITECTURE.md` is the long version.
 
 // Every public item carries a doc comment. Denied rather than warned: a public physics API
 // whose `Length::mm` shows a blank summary in rustdoc is documented in the sense that a
@@ -90,6 +92,7 @@ pub use dualis_optics as optics;
 pub use dualis_scene as scene;
 pub use dualis_thermal as thermal;
 pub use dualis_units as units;
+pub use dualis_view as view;
 
 /// Everything most simulations need, in one `use`.
 pub mod prelude {
