@@ -1,0 +1,21 @@
+# A **separate cargo workspace**, excluded from the library's, for the same reason
+# `bindings/python` is: a GPU stack is a dependency tree the eleven published crates must not
+# carry. Measured precedent — pyo3 adds seven external crates and that was enough to justify the
+# split; wgpu and winit are far past it.
+#
+# Nothing here is published, and nothing in `crates/` depends on it. The arrow points one way:
+# this reads what a run wrote.
+[workspace]
+members = ["viewer-core", "viewer"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+viewer-core = { path = "viewer-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

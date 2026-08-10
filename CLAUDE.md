@@ -96,6 +96,21 @@ of the staggered leapfrog now travels half a step. Two tests in `dualis-acoustic
 first step, by design — `Room::startup_adjustment` reports the `O(h²)` difference, measured
 0.42% at 31 cells and quartering on refinement.
 
+## The native viewer
+
+`runtime/viewer` is a separate cargo workspace for the same reason `bindings/python` is, and the
+numbers are measured: the library resolves **12** external crates, the python bindings 15, and a
+wgpu stack **86**. `deny.toml` gates every one of the library's twelve, CI builds with `--locked`,
+and the same crates go to `wasm32` and Rust 1.78. None of that can carry a GPU stack.
+
+It has its own CI job — `native viewer` — which lints it, runs `viewer-core`'s tests against real
+run files, and builds the shell. The window and `--snapshot` are **not** run there: a runner has
+no display, and a software adapter would be checking a renderer nobody uses.
+
+**It does not depend on `dualis`, deliberately.** It reads the JSON a run wrote and nothing else,
+so "the wire format carries enough to draw a run" is demonstrated. If it ever needs to link the
+library for something the file lacks, the format is the thing to fix.
+
 ## The Python bindings
 
 `bindings/python` is a **separate cargo workspace**, excluded from the root one. That is the

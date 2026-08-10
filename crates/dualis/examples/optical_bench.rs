@@ -309,8 +309,16 @@ fn main() {
                 Reading::new("bench", "diffraction limit", airy * 1e6, "um"),
             ],
         };
-        let page = dualis::view::html("optical bench", std::slice::from_ref(&frame));
-        common::write(&path, &page);
+        // The extension chooses the asset, the way the application does: `.html` is a page you
+        // open, `.json` is the frames themselves for something else to draw — the native viewer
+        // in `runtime/viewer`, for instance, which reads this and nothing else.
+        let frames = std::slice::from_ref(&frame);
+        let asset = if path.ends_with(".json") {
+            dualis::view::to_json("optical bench", frames)
+        } else {
+            dualis::view::html("optical bench", frames)
+        };
+        common::write(&path, &asset);
         println!("\n  drag to rotate, scroll to zoom");
     } else {
         println!("\n  give a filename ending .html for the 3D layout");

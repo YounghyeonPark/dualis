@@ -126,6 +126,35 @@ jobs:
   # `maturin build` rather than `cargo build`, and then the wheel is *installed* — because the
   # claim is "pip install dualis then import dualis", and a cdylib that compiles proves neither
   # half of it. abi3, so one wheel serves 3.10 upward and the job does not need a matrix.
+  viewer:
+    name: native viewer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runtime/viewer
+      # Its own workspace, excluded from the root one, so `lint` and `test` above do not reach it
+      # — the same hole the python bindings had until this job existed.
+      - name: fmt and clippy
+        working-directory: runtime/viewer
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+      # `viewer-core` is where the arithmetic is and it needs no GPU, so it runs here. The window
+      # and `--snapshot` are built but not run: a runner has no display, and a software adapter
+      # would be checking a different renderer than anyone uses. That limit is stated rather than
+      # papered over with a test that passes for the wrong reason.
+      - name: the arithmetic, against real run files
+        working-directory: runtime/viewer
+        run: cargo test -p viewer-core
+      - name: the shell still compiles
+        working-directory: runtime/viewer
+        run: cargo build --workspace
+
   python:
     name: python bindings
     runs-on: ubuntu-latest

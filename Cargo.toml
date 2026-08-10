@@ -20,6 +20,10 @@ exclude = [
     # lockfile, `deny.toml` allow-list and wasm jobs are promises that should not have to
     # accommodate a Python extension. See its Cargo.toml.
     "bindings/python",
+    # And its own for the same reason, measured rather than assumed: pyo3 adds seven external
+    # crates and that was enough to split it out. A GPU stack is far past that, and none of the
+    # eleven published crates may carry it. See runtime/viewer/Cargo.toml.
+    "runtime/viewer",
 ]
 resolver = "2"
 

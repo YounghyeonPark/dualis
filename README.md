@@ -87,6 +87,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV and JSON. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
 | `dualis` | A facade over the other ten, and where the cross-domain integration tests live |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
+| `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `dualis`, so the wire format being sufficient is demonstrated rather than claimed |
 | `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with seventeen scenes across all six domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a

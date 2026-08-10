@@ -1,0 +1,11 @@
+[package]
+name = "viewer-core"
+description = "Reads a dualis run and turns it into something a renderer can draw. No GPU, no window."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
