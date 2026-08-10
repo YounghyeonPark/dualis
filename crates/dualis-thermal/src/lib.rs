@@ -552,6 +552,10 @@ impl Bar1D {
 }
 
 impl Domain for Bar1D {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

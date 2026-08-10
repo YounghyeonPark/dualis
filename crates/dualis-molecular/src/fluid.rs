@@ -403,6 +403,10 @@ impl Bodies for Fluid {
 }
 
 impl Domain for Fluid {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

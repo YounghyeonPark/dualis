@@ -737,6 +737,10 @@ fn solve(a: &mut [f64], b: &mut [f64], n: usize) -> Option<Vec<f64>> {
 }
 
 impl Domain for ThermalNetwork {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

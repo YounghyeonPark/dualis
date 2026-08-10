@@ -126,6 +126,33 @@ pub trait Domain {
     /// Restore the last [`Domain::checkpoint`].
     fn restore(&mut self) {}
 
+    /// Whether this domain's books are **exact**: its ledger changes by precisely what it takes
+    /// from the bus minus what it publishes, every step.
+    ///
+    /// # Why this is opt-in, and what it buys
+    ///
+    /// The whole-simulation audit sums every domain's ledger before comparing, so it can only see
+    /// a leak that moves the *total*. A molecular fluid holding a kilojoule and an acoustic room
+    /// holding a microjoule are checked together, and the room could lose everything it has
+    /// without the sum noticing. That is the limit `ARCHITECTURE.md` records against rule 4, and
+    /// it is not a tolerance problem — no tolerance separates them, because the scale is wrong.
+    ///
+    /// A domain that says `true` here is checked **on its own**, against its own holdings, every
+    /// step. The scheduler visits domains one at a time, so the traffic on the bus between the
+    /// call before and the call after is attributable to exactly that domain.
+    ///
+    /// # Why it is not the default
+    ///
+    /// Not every honest ledger is an exact one. A domain that loses heat to an environment which
+    /// is not on the bus is not leaking — it is modelling a boundary — but its books do not
+    /// balance against bus traffic alone, and saying `true` would make a correct domain fail.
+    /// `LumpedMass` with a convective loss is exactly that case.
+    ///
+    /// So it is a claim a domain makes about itself, and the ones that make it are held to it.
+    fn books_balance(&self) -> bool {
+        false
+    }
+
     /// Whether [`Domain::checkpoint`] and [`Domain::restore`] actually do something.
     ///
     /// [`Schedule::Iterative`] refuses to run a domain that says no, rather than iterating
@@ -264,6 +291,9 @@ impl Domain for Box<dyn Domain> {
     fn readings(&self) -> Vec<Reading> {
         (**self).readings()
     }
+    fn books_balance(&self) -> bool {
+        (**self).books_balance()
+    }
     fn as_bodies(&self) -> Option<&dyn Bodies> {
         (**self).as_bodies()
     }
@@ -304,6 +334,13 @@ pub struct Exchange {
     /// Every scene and every integration test in this workspace had at most one consumer per
     /// channel, which is why this went unnoticed until a world with six domains was attempted.
     takers: BTreeMap<&'static str, u32>,
+    /// Everything ever published on each channel, spatial and plain together.
+    ///
+    /// `published` is the *current offer* and is emptied every sweep; this is the running total
+    /// and is not. It exists so [`Simulation`] can attribute a step's traffic to the domain that
+    /// made it — snapshot before, snapshot after, and the difference is that domain's, because
+    /// only that domain ran in between.
+    published_total: BTreeMap<&'static str, f64>,
 }
 
 impl Exchange {
@@ -316,6 +353,7 @@ impl Exchange {
     /// surfaces can each contribute to one heat load.
     pub fn publish(&mut self, channel: &'static str, si_amount: f64) {
         *self.published.entry(channel).or_insert(0.0) += si_amount;
+        *self.published_total.entry(channel).or_insert(0.0) += si_amount;
     }
 
     /// Take everything on a channel, recording that it was taken. The channel is
@@ -406,6 +444,9 @@ impl Exchange {
             ));
         }
         let key = (interface.name().to_string(), channel);
+        // Counted on the same running total as a plain publish. A spatial amount is still an
+        // amount; where it landed is the interface's business and not the ledger's.
+        *self.published_total.entry(channel).or_insert(0.0) += flux.total();
         match self.spatial.get_mut(&key) {
             Some(existing) => existing.add(flux),
             None => {
@@ -445,6 +486,10 @@ impl Exchange {
             ));
         }
         *self.spatial_consumed.entry(key).or_insert(0.0) += offered.total();
+        // And on the plain running total, so a domain that takes spatially is attributed the
+        // same way as one that takes a lump. `spatial_consumed` keeps the per-interface detail
+        // the face-by-face audit needs; this is the per-channel sum attribution wants.
+        *self.consumed.entry(channel).or_insert(0.0) += offered.total();
         Ok(offered)
     }
 
@@ -513,6 +558,30 @@ impl Exchange {
             }
         }
         Ok(())
+    }
+
+    /// Total published on a channel over the run, plain and spatial together.
+    ///
+    /// Cumulative, unlike [`Exchange::peek`], which reports what is on offer right now.
+    pub fn total_published(&self, channel: &str) -> f64 {
+        self.published_total.get(channel).copied().unwrap_or(0.0)
+    }
+
+    /// Everything each channel has carried over the run, as `(channel, published, taken)`.
+    ///
+    /// In name order, so a caller comparing two snapshots gets a stable sequence.
+    pub fn traffic(&self) -> Vec<(&'static str, f64, f64)> {
+        let mut names: Vec<&'static str> = self.published_total.keys().copied().collect();
+        for name in self.consumed.keys() {
+            if !self.published_total.contains_key(name) {
+                names.push(name);
+            }
+        }
+        names.sort_unstable();
+        names
+            .into_iter()
+            .map(|n| (n, self.total_published(n), self.total_consumed(n)))
+            .collect()
     }
 
     /// Total taken from a channel over the run, for reporting.
@@ -854,9 +923,25 @@ impl Simulation {
             let mut t = now;
             // Which channels had already been drawn on before this domain's turn.
             let before: Vec<(&'static str, u32)> = self.bus.takes_per_channel().collect();
+            // And, for a domain that claims exact books, what it was holding and what the bus
+            // had carried — snapshotted here because only this domain runs before the
+            // corresponding snapshot below, which is what makes the difference attributable.
+            let audited = domain.books_balance();
+            let books_before = audited.then(|| domain.ledger());
+            let traffic_before = audited.then(|| self.bus.traffic());
             for _ in 0..n {
                 domain.step(t, h, &mut self.bus)?;
                 t += h;
+            }
+            if let (Some(before), Some(traffic)) = (books_before, traffic_before) {
+                attribute(
+                    domain.name(),
+                    &before,
+                    &domain.ledger(),
+                    &traffic,
+                    &self.bus.traffic(),
+                    &self.conservation_tol,
+                )?;
             }
 
             // A channel this domain took from that an *earlier* domain had already emptied.
@@ -947,6 +1032,80 @@ impl Simulation {
             tolerance: tol,
         })
     }
+}
+
+/// Check one domain's books against its own traffic on the bus.
+///
+/// **What the whole-simulation audit structurally cannot see.** That audit sums every ledger
+/// before comparing, so the scale it measures against is the total — and a domain holding a
+/// microjoule beside one holding a kilojoule can lose everything it has without moving the sum.
+/// No tolerance fixes that, because the problem is the scale rather than the number.
+///
+/// Here the scale is the domain's own: what it held, what it holds, and what it moved. A leak of
+/// a per cent of a small domain is a per cent here, whatever else is in the simulation.
+///
+/// Only for domains that opt in through [`Domain::books_balance`], because an exact book is a
+/// claim not every honest domain can make — one losing heat to an environment that is not on the
+/// bus is modelling a boundary, not leaking.
+fn attribute(
+    name: &str,
+    before: &Ledger,
+    after: &Ledger,
+    traffic_before: &[(&'static str, f64, f64)],
+    traffic_after: &[(&'static str, f64, f64)],
+    tolerances: &Tolerances,
+) -> Result<(), Violation> {
+    let moved = |channel: &str| -> f64 {
+        let find = |t: &[(&'static str, f64, f64)]| {
+            t.iter()
+                .find(|(c, _, _)| *c == channel)
+                .map(|(_, p, k)| (*p, *k))
+                .unwrap_or((0.0, 0.0))
+        };
+        let (pub_before, took_before) = find(traffic_before);
+        let (pub_after, took_after) = find(traffic_after);
+        // Taken minus published: what the domain gained from the bus.
+        (took_after - took_before) - (pub_after - pub_before)
+    };
+
+    let mut names: Vec<&'static str> = before.quantities().map(|(n, _)| n).collect();
+    for (n, _) in after.quantities() {
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    names.sort_unstable();
+
+    for quantity in names {
+        let held_before = before.get(quantity).unwrap_or(0.0);
+        let held_after = after.get(quantity).unwrap_or(0.0);
+        let expected = moved(quantity);
+        let discrepancy = (held_after - held_before) - expected;
+
+        // The domain's own scale, which is the whole point: its holdings, its declared scale, and
+        // the amount it moved. Not the simulation's total.
+        let scale = held_before
+            .abs()
+            .max(held_after.abs())
+            .max(before.scale_of(quantity).unwrap_or(0.0))
+            .max(after.scale_of(quantity).unwrap_or(0.0))
+            .max(expected.abs());
+        if scale < 1e-300 {
+            continue;
+        }
+        let tol = tolerances.for_quantity(quantity);
+        if discrepancy.abs() / scale > tol {
+            return Err(Violation {
+                quantity: quantity.to_string(),
+                site: format!("{name} (its own books, against what it moved on the bus)"),
+                before: held_before + expected,
+                after: held_after,
+                scale,
+                tolerance: tol,
+            });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

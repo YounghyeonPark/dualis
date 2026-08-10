@@ -188,12 +188,11 @@ These are not style. Each one is what makes some part of the goal reachable.
 6. **A number in prose is a number under test.** This repository has shipped stale figures
    repeatedly; the ones that stopped recurring are the ones a test now checks.
 
-Rule 4 has a known limit worth stating here, now half closed. The tolerance used to be one
-number for the whole simulation; it is now **one per quantity**, so momentum at `1e-6` and energy
-at `1e-9` can coexist. What is still one number is the comparison *across domains*: a molecular
-fluid at 5e-2 and a room at 1e-9 both hold `energy`, their ledgers are summed before the check,
-and the small one's leak hides inside the large one's total. See gap 5 below for why the fix is
-per-domain attribution and why that is harder than it looks.
+Rule 4 had a known limit and it is closed. The tolerance used to be one number for the whole
+simulation; it is now **one per quantity**, and a domain can additionally claim
+`books_balance` and be checked **on its own scale** rather than against the sum of every ledger.
+Both halves matter and neither substitutes for the other: the first separates schemes carrying
+different quantities, the second separates domains carrying the same one.
 
 ---
 
@@ -258,18 +257,23 @@ per-domain attribution and why that is harder than it looks.
    being able to see anything. Both failures are demonstrated in
    `per_quantity_tolerances.rs` rather than asserted.
 
-   **The other half is not done, and it is the harder one.** Two domains holding the *same*
-   quantity to different accuracies — a molecular fluid under a thermostat and an acoustic room,
-   both `energy` — are still checked together, because the audit sums their ledgers before
-   comparing. A small domain's leak is invisible against a large domain's total whatever
-   tolerance is set.
+   **The other half is done too**, and it turned out easier than this document predicted.
+   `Domain::books_balance` is an opt-in claim that a domain's ledger changes by exactly what it
+   took from the bus minus what it published, and a domain that makes it is checked **on its own
+   scale** every step. A domain holding a microjoule beside one holding a kilojoule can lose a
+   fifth of itself without moving the sum by more than `2e-10`; on its own scale a fifth is a
+   fifth.
 
-   That needs **per-domain attribution**: knowing that this domain's ledger changed by exactly
-   what it took from the bus minus what it published. The scheduler already visits domains one at
-   a time and could measure it. What makes it hard is that several existing ledgers are honest
-   approximations rather than exact books — `Room::startup_adjustment` is an `O(h²)` correction
-   the domain reports about itself — so the check would refuse correct domains until each one's
-   books were made exact. Worth doing, and worth doing deliberately.
+   This document predicted the blocker would be ledgers that are honest approximations, and named
+   `Room::startup_adjustment` as the example. **That was wrong.** `Room::energy` reports the
+   released state's datum plus an offset chosen so the two agree, so its books balance exactly
+   from the first step — the `O(h²)` correction is *inside* the number it reports and does not
+   move it. Every domain in the workspace except `LumpedMass` takes the claim and passes.
+
+   `LumpedMass` correctly declines, and it is the reason the check is opt-in rather than
+   automatic: it loses heat to an environment that is not on the bus, so its ledger does not
+   balance against bus traffic alone. That is a boundary being modelled, not a leak, and a check
+   that accused it would be the wrong check.
 6. **A renderer with depth.** The analysis layer draws with painter's algorithm on a 2D canvas.
    Real 3D content deserves real depth buffering — but content first: a better renderer of four
    points is still four points.

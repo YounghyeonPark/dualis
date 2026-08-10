@@ -134,6 +134,8 @@ of them commentary.
 | --- | --- |
 | `dualis-units` | `Length`, `Time`, `Mass`, `Energy`, `Power`, … and the vector forms. Dimensions in the type |
 | `dualis-core` | The kernel: `Domain`, `Exchange`, `Simulation`, `Schedule`, `Ledger`, `Tolerances` (one per conserved quantity), `Violation`, `Interface`, `Flux`, `Rng`, `Ensemble`, `Pose`, `Bodies` and `Reading` for what a domain offers a viewer, integrators, fields |
+
+A domain that overrides `books_balance` to `true` claims its ledger changes by exactly what it takes from the bus minus what it publishes, and is then checked **on its own scale** every step rather than inside the sum of every ledger. Take the claim if it is true — a small domain's leak is otherwise invisible beside a large one. Decline it if the domain models a boundary the bus does not carry, as `LumpedMass` does with convective loss.
 | `dualis-optics` | Radiometry, Fresnel and coatings, dispersion, rays, Airy diffraction, MTF, Zernike, PSFs, detector noise |
 | `dualis-thermal` | `LumpedMass`, `Bar1D` conduction, `Solid3D` conduction in three dimensions on a cubic grid, `ThermalNetwork` of n bodies joined by conductances, radiative and convective loss |
 | `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |

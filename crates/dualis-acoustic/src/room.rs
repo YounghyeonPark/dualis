@@ -337,6 +337,10 @@ impl Room {
 }
 
 impl Domain for Room {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

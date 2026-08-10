@@ -28,6 +28,23 @@ messages carry the full account.
   continuum: that discrete rate approaches `α·π²/L²` at second order, checked as a *rate*, since
   a first-order scheme also converges.
 
+- **`Domain::books_balance`** in `dualis-core`: an opt-in claim that a domain's ledger changes by
+  exactly what it took from the bus minus what it published. A domain that makes it is checked
+  **on its own scale** every step, rather than inside the sum of every ledger.
+
+  The failure that closes, demonstrated in `per_domain_books.rs`: a domain holding a microjoule
+  beside one holding a kilojoule loses a fifth of itself, and the total moves by `2e-10`. No
+  tolerance catches that — tightening to `1e-12` refuses the run for floating-point noise long
+  before it can see a leak of that shape, because the problem is the scale and not the number.
+
+  Opt-in because not every honest ledger is an exact one. `LumpedMass` loses heat to an
+  environment that is not on the bus; that is a boundary being modelled, and a check that accused
+  it would be the wrong check. Every other domain in the workspace takes the claim and passes.
+
+  `Exchange::traffic` and `Exchange::total_published` are what make it attributable: the scheduler
+  visits domains one at a time, so the bus traffic between the snapshot before and the snapshot
+  after belongs to exactly one domain.
+
 - **`Tolerances`** in `dualis-core`, and `Simulation::conservation_tolerance_for`: a relative
   tolerance **per conserved quantity** rather than one for the whole simulation.
 

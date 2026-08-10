@@ -552,6 +552,10 @@ fn i_index(i: usize, j: usize, k: usize, nx: usize, ny: usize) -> usize {
 }
 
 impl Domain for Conductor {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

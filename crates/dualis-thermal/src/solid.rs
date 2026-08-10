@@ -360,6 +360,10 @@ impl Solid3D {
 }
 
 impl Domain for Solid3D {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

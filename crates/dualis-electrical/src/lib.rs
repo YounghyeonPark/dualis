@@ -315,6 +315,10 @@ impl Winding {
 }
 
 impl Domain for Winding {
+    fn books_balance(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         &self.name
     }
