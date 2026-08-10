@@ -168,8 +168,10 @@ tolerances, and that is a kernel change nobody has needed yet.
 
 ## What is missing, in the order it blocks things
 
-1. **Placement in the kernel.** Nothing spatial composes until two things can be positioned
-   relative to each other.
+1. ~~**Placement in the kernel.**~~ Done: `Pose` is a rigid motion — rotation and translation,
+   no scale, no shear — so two things can be positioned relative to each other. The
+   *presentational* half is still missing on purpose and waits for the scene crate, where the
+   physics cannot reach it.
 2. **Scene and analysis as libraries.** Both exist and both live inside `dualis-world`, which is
    `publish = false`. A consumer cannot reach `Scene`, `Frame` or the report generator at all.
    This is the largest gap between what is built and what is usable.
