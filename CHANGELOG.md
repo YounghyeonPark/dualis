@@ -12,6 +12,49 @@ messages carry the full account.
 
 ## [Unreleased]
 
+### Added
+
+- **A solid has two wave speeds, and the catalogue's one field means both of them.**
+  `Elastic::p_wave_speed`, `s_wave_speed` and `speed_ratio` in `dualis-elastic`, and
+  `crates/dualis/tests/two_wave_speeds.rs` — the fourth cross-domain test of that shape, after
+  `fields_and_rays`, `loss_and_lumps` and `a_slit`.
+
+  `Elastic::density` was documented as "unused by the static solve and carried so a mass can be
+  stated once". It sets the wave speeds, which is the only place a mass enters a problem with no
+  inertia in it.
+
+  The sharp statement is `c_p/c_s = √(2(1−ν)/(1−2ν))`: both `E` and `ρ` cancel, so it holds at
+  **2.2e-16** for all six catalogue entries and a scheme with the wrong stiffness or the wrong mass
+  still has to land on it.
+
+  The finding is what `AcousticProps::sound_speed` turns out to mean. A fluid has one speed; a solid
+  has two longitudinal ones — bulk `√((λ+2μ)/ρ)` and rod `√(E/ρ)` — and the six entries do not all
+  mean the same one:
+
+  ```text
+                      rod   stated    bulk    vs bulk   vs rod
+    ice              3150     3840    3834      +0.1%   +21.9%     bulk
+    Al 6061          5052     6320    6149      +2.8%   +25.1%     bulk
+    304 stainless    4912     5790    5623      +3.0%   +17.9%     bulk
+    Cu ETP           3614     4760    4483      +6.2%   +31.7%     bulk
+    N-BK7            5716     5680    6048      −6.1%    −0.6%     rod
+    elec. steel      5113     5100    5853     −12.9%    −0.3%     rod
+  ```
+
+  Four bulk, two rod, every one within 6.2% of whichever it is. And read as a bulk wave the stated
+  speed implies a modulus: 9.1 against 9.1 GPa for ice, but 72.8 against 68.9 for aluminium and 131.9
+  against 117.0 for copper — because **a tensile test and an ultrasonic measurement are not the same
+  measurement**, and the dynamic modulus of an annealed metal comes out higher. Ice agrees exactly
+  because its elastic constants were back-calculated from velocity, so the one entry that agrees is
+  the one where agreement was never independent.
+
+  Two earlier drafts asserted `rod ≤ stated ≤ bulk` with 0.1% and then 2% of slack. Both were false —
+  three entries sit above the bulk speed and two below the rod speed — and the second failed on
+  aluminium, which is not an edge case. The assertion is now a classification: each entry is within 7%
+  of one of the two, and that the split is *mixed* is itself asserted, so a future edit cannot make
+  the point disappear by making them uniform.
+
+
 ## [0.12.0] — 2026-08-12
 
 **Two of `ARCHITECTURE.md`'s three depth entries, and both the same shape.** Single-material and

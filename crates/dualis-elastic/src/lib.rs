@@ -57,7 +57,7 @@
 //! plasticity, no large rotation, no contact, no fracture, no dynamics — this is
 //! [`Kind::QuasiStatic`](dualis_core::Kind), a solve rather than a march.
 
-use dualis_units::{Density, Pressure};
+use dualis_units::{Density, Pressure, Velocity};
 
 mod block;
 mod element;
@@ -71,7 +71,8 @@ pub struct Elastic {
     pub youngs_modulus: Pressure,
     /// Poisson's ratio. Between −1 and ½ for a stable isotropic solid.
     pub poisson_ratio: f64,
-    /// Density. Unused by the static solve and carried so a mass can be stated once.
+    /// Density. Unused by the static solve — it sets the **wave speeds**, which is the only place
+    /// a mass enters a problem that has no inertia in it.
     pub density: Density,
 }
 
@@ -129,6 +130,37 @@ impl Elastic {
     pub fn constrained_modulus(&self) -> Pressure {
         let (lambda, mu) = element::lame(self.youngs_modulus.to_si(), self.poisson_ratio);
         Pressure::from_si(lambda + 2.0 * mu)
+    }
+
+    /// The **pressure** wave speed, `√((λ+2μ)/ρ)` — the fast one, and the first arrival.
+    ///
+    /// The constrained modulus over the density, so it is the speed of a compression that cannot
+    /// bulge sideways: a wave in the bulk, where the material a wavelength away is holding the sides
+    /// still. It is **not** `√(E/ρ)`, which is the speed along a thin rod free to bulge, and for
+    /// aluminium those are 6149 and 5051 m/s — a 22% difference from the same two constants.
+    pub fn p_wave_speed(&self) -> Velocity {
+        Velocity::from_si((self.constrained_modulus().to_si() / self.density.to_si()).sqrt())
+    }
+
+    /// The **shear** wave speed, `√(μ/ρ)` — the slow one, and the one a fluid does not have.
+    ///
+    /// A shear wave needs something to resist a change of shape at constant volume, which is what
+    /// `μ` is. A fluid has none, so it carries no shear wave at all — which is why
+    /// [`AcousticProps`](dualis_core::substance::AcousticProps) has room for one speed and a solid
+    /// has two.
+    pub fn s_wave_speed(&self) -> Velocity {
+        Velocity::from_si((self.shear_modulus().to_si() / self.density.to_si()).sqrt())
+    }
+
+    /// `c_p / c_s = √(2(1−ν)/(1−2ν))` — a function of Poisson's ratio and **nothing else**.
+    ///
+    /// Both `E` and `ρ` cancel, which makes this the sharpest check a wave solver can be given: a
+    /// scheme with the wrong stiffness or the wrong mass still has to land on it, and only a scheme
+    /// with the wrong *operator* fails. It runs from `√2` at `ν = 0` to infinity as `ν → ½`, where
+    /// the material becomes incompressible and the compression wave has nothing left to compress.
+    pub fn speed_ratio(&self) -> f64 {
+        let v = self.poisson_ratio;
+        (2.0 * (1.0 - v) / (1.0 - 2.0 * v)).sqrt()
     }
 
     pub(crate) fn lame(&self) -> (f64, f64) {
