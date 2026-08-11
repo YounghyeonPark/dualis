@@ -444,3 +444,105 @@ fn a_lossy_medium_moves_energy_onto_the_books_rather_than_losing_it() {
         "vacuum dissipates nothing at all, not nearly nothing"
     );
 }
+
+/// **An open box lets a pulse out, and a conducting one does not — measured, not claimed.**
+///
+/// Mur's first-order condition is the discrete one-way wave equation. A wave arriving along the
+/// normal satisfies it exactly and leaves with no reflection at all in the continuum; one arriving
+/// at an angle does not, with a reflection going as `(1−cos θ)/(1+cos θ)`.
+///
+/// A line source radiates over a whole range of angles at once, so this measures a distribution
+/// rather than the best case. Measured: **0.149%** of the energy is left after two and a half
+/// crossings, against a conducting box's 101%. The conducting box is the control — without it,
+/// "the energy fell" is not a statement about the boundary.
+///
+/// It also checks that opening the box does not cost the divergence identity. `∇·B` is preserved by
+/// `∂(∇·B)/∂t = −∇·(∇×E)`, which holds for *any* `E` — so changing `E` at a boundary cannot touch
+/// it, and a measurement that said otherwise would mean the boundary was writing to `H`.
+#[test]
+fn an_open_box_lets_a_pulse_out() {
+    let counts = (24, 24, 24);
+    let mut kept = Vec::new();
+    for open in [false, true] {
+        let mut c = box_of(counts);
+        if open {
+            c.open();
+        }
+        let dt = Time::from_si(c.courant_limit().to_si() * 0.5);
+        c.pulse((12, 12), 1.0, 2.0);
+        let start = c.energy().to_si();
+        let divergence = c.peak_magnetic_divergence();
+
+        // Long enough for a wave to cross the box twice at the speed of light.
+        let crossing = counts.0 as f64 * DX / 299_792_458.0;
+        let mut bus = Exchange::new();
+        let mut t = 0.0;
+        while t < 2.5 * crossing {
+            c.step(Time::from_si(t), dt, &mut bus).expect("stable");
+            t += dt.to_si();
+        }
+        let left = c.energy().to_si() / start;
+        println!(
+            "  {:<11} {:.4}% of the energy is still in the box after {:.1} crossings",
+            if open { "open:" } else { "conducting:" },
+            left * 100.0,
+            2.5
+        );
+        assert!(
+            c.peak_magnetic_divergence() <= divergence.max(1e-12) * 1e3,
+            "a boundary condition writes to E and must not touch div B"
+        );
+        kept.push(left);
+    }
+
+    assert!(
+        kept[0] > 0.97,
+        "a conducting box keeps what it was given: {:.4}",
+        kept[0]
+    );
+    assert!(
+        kept[1] < 0.01,
+        "and an open one lets it out: {:.4} left",
+        kept[1]
+    );
+    // Reported as the two figures rather than as their ratio: the conducting box's departure from
+    // exactly 1.0 is the leapfrog's own energy swing, which is near zero at this instant, and
+    // dividing by it produces a number with nine digits and no meaning.
+    println!(
+        "  a conductor keeps {:.1}% and Mur keeps {:.3}%",
+        kept[0] * 100.0,
+        kept[1] * 100.0
+    );
+}
+
+/// **Mur's coefficient is `(cΔt − Δ)/(cΔt + Δ)` and nothing else.**
+///
+/// A function of the Courant number alone, which is worth stating because it is the one number in
+/// the absorbing boundary and a reader will otherwise assume it depends on the medium or the mesh
+/// separately. It does not: both enter only through `cΔt/Δ`.
+#[test]
+fn the_mur_coefficient_is_a_function_of_the_courant_number_alone() {
+    let a = box_of((8, 8, 8));
+    let mut b = Cavity::new(
+        "other",
+        (8, 8, 8),
+        Length::from_si(DX * 3.0),
+        Medium::dielectric(4.0),
+    );
+    b.open();
+    // The same Courant number in two quite different boxes.
+    let s = 0.4;
+    let ka = a.mur_coefficient(Time::from_si(a.courant_limit().to_si() * s));
+    let kb = b.mur_coefficient(Time::from_si(b.courant_limit().to_si() * s));
+    println!("  vacuum at 2 mm: {ka:.9}   glass at 6 mm: {kb:.9}");
+    assert!(
+        (ka - kb).abs() < 1e-12,
+        "the coefficient depends on c dt / dx and nothing else: {ka} against {kb}"
+    );
+    // And it is the closed form.
+    let closed = (COURANT_3D * s - 1.0) / (COURANT_3D * s + 1.0);
+    assert!(
+        (ka - closed).abs() < 1e-12,
+        "(c dt - dx)/(c dt + dx): {ka:.9} against {closed:.9}"
+    );
+}

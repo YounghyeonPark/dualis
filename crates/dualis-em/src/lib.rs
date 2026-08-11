@@ -48,16 +48,20 @@
 //!
 //! # What is deliberately not here
 //!
-//! No absorbing boundary, so a wave reaches a wall and comes back — this is a **cavity**, and
-//! saying so is more honest than a perfectly matched layer that is right to three digits and looks
-//! like open space. No dispersive or anisotropic media, no nonlinearity, no moving charges. A
-//! current density can be driven, and that is the only source.
+//! No dispersive or anisotropic media, no nonlinearity, no moving charges.
+//!
+//! The boundary is either a perfect conductor or [`Boundary::Open`], which is Mur's first-order
+//! condition — exact for a wave arriving along the normal and progressively worse away from it. It
+//! is **not** a perfectly matched layer. A PML would be right to four digits at every angle and is
+//! a larger piece of machinery than this crate has earned; what is here is measured instead of
+//! claimed: a line source in an open 24³ box is down to **0.149%** of its energy after two and a
+//! half crossings, where a conducting box still has all of it.
 
 use dualis_units::{Frequency, Velocity};
 
 mod cavity;
 
-pub use cavity::{Cavity, COURANT_3D};
+pub use cavity::{Boundary, Cavity, Wall, COURANT_3D};
 
 /// Permittivity of free space, F/m.
 pub const EPSILON_0: f64 = 8.854_187_812_8e-12;

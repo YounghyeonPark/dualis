@@ -14,6 +14,31 @@ messages carry the full account.
 
 ### Added
 
+- **An open boundary for `dualis-em`, and the source that showed why the first measurement of it
+  was meaningless.**
+
+  Mur's first-order condition: exact for a wave arriving along the normal, worse away from it as
+  `(1−cos θ)/(1+cos θ)`. Not a perfectly matched layer, which would be right to four digits and is
+  more machinery than this crate has earned — so the figure is **measured** rather than claimed. A
+  line source in an open 24³ box is down to **0.149%** of its energy after two and a half crossings,
+  against a conducting box's 101%.
+
+  It unblocks the field formulation of optics: diffraction cannot be computed in a box whose walls
+  send everything back.
+
+  **The first source left 34% behind, and the boundary was not at fault.** It was a Gaussian blob
+  of `Ey`, which has `∂Ey/∂y ≠ 0` and therefore `∇·D ≠ 0` — a *charge distribution*, whose near
+  field does not propagate. No absorbing boundary can remove what was never going anywhere, and a
+  measurement using such a source measures the electrostatics instead of the boundary. The source
+  is a blob of `Hz` uniform along `z` now, which is divergence-free on the discrete grid exactly.
+
+  Opening a face does not cost the divergence identity, and the test says so: `∂(∇·B)/∂t = −∇·(∇×E)`
+  holds for *any* `E`, so changing `E` at a boundary cannot touch it. A measurement that said
+  otherwise would mean the boundary was writing to `H`.
+
+  `Cavity::mur_coefficient` is `(cΔt − Δ)/(cΔt + Δ)` — a function of the Courant number alone, which
+  a test checks by getting the same number out of vacuum at 2 mm and glass at 6 mm.
+
 - **A tenth domain: `dualis-fluid`, and the list `ARCHITECTURE.md` opened with is closed.**
   Incompressible Navier–Stokes by projection on a staggered grid — velocities on cell faces,
   pressure at centres, which is the arrangement Yee uses for electromagnetism and for the same

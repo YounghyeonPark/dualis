@@ -25,7 +25,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 534 tests, all against closed forms
+cargo test --workspace                       # 536 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are twelve of those; three more
@@ -85,7 +85,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
 | `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature, and a **field** formulation where `I²R` is solved out of a shape rather than stated |
 | `dualis-fluid` | Incompressible Navier–Stokes by projection on a staggered grid. Poiseuille and Couette come out exact against the *discrete* profile, whose gap to the continuum is a closed form and not a tolerance; Taylor–Green checks the nonlinear term against `e^{−2νk²t}`; and momentum in a periodic box drifts by `1e-15` |
-| `dualis-em` | Maxwell's equations on a Yee grid, where `∇·B = 0` is an **identity of the update** rather than a tolerance: inject a divergence and 500 steps later it is unchanged to nine digits. Cavity resonances at second order, and the leapfrog's energy swing against its own closed form |
+| `dualis-em` | Maxwell's equations on a Yee grid, where `∇·B = 0` is an **identity of the update** rather than a tolerance: inject a divergence and 500 steps later it is unchanged to nine digits. Cavity resonances at second order, the leapfrog's energy swing against its own closed form, and an absorbing boundary that leaves 0.149% of a pulse behind where a conductor leaves all of it |
 | `dualis-elastic` | What a shape does under load: `∇·σ = 0` solved on trilinear elements, so a stiffness is a property of a geometry. Four moduli come out exactly — `E`, the constrained `M`, the bulk `K` and the shear `G` — and Clapeyron's `2U = Σf·u` says the discretisation is self-consistent |
 | `dualis-porous` | Flow through a packed bed: Darcy's law solved as a field, the heat the liquid carries, and the dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed and an aquifer |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |

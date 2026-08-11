@@ -14,6 +14,68 @@ use crate::{cavity_frequency, Medium};
 /// worst case is the mode that is sharpest along all three at once.
 pub const COURANT_3D: f64 = 0.577_350_269_189_625_8;
 
+/// One of the six faces of the box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wall {
+    /// `x = 0`.
+    XLow,
+    /// `x = L`.
+    XHigh,
+    /// `y = 0`.
+    YLow,
+    /// `y = L`.
+    YHigh,
+    /// `z = 0`.
+    ZLow,
+    /// `z = L`.
+    ZHigh,
+}
+
+impl Wall {
+    /// All six, in index order.
+    pub const ALL: [Wall; 6] = [
+        Wall::XLow,
+        Wall::XHigh,
+        Wall::YLow,
+        Wall::YHigh,
+        Wall::ZLow,
+        Wall::ZHigh,
+    ];
+
+    fn index(self) -> usize {
+        match self {
+            Wall::XLow => 0,
+            Wall::XHigh => 1,
+            Wall::YLow => 2,
+            Wall::YHigh => 3,
+            Wall::ZLow => 4,
+            Wall::ZHigh => 5,
+        }
+    }
+}
+
+/// What a face does to a wave that reaches it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Boundary {
+    /// A perfect conductor: the tangential electric field is zero, and everything comes back.
+    Conducting,
+    /// Mur's first-order absorbing condition: the wave leaves, mostly.
+    ///
+    /// # How open "open" is, and why the number is not zero
+    ///
+    /// Mur's condition is the discrete form of the one-way wave equation `∂E/∂t = −c ∂E/∂n`, which
+    /// a wave arriving **along the normal** satisfies exactly. Such a wave leaves with no
+    /// reflection at all in the continuum, and with `O((kΔ)²)` of one on a grid.
+    ///
+    /// A wave arriving at an angle does not satisfy it. The reflection coefficient goes as
+    /// `(1−cos θ)/(1+cos θ)`, so grazing incidence reflects almost everything — which is why a
+    /// point source in a box, radiating at every angle at once, leaves a few percent of its energy
+    /// behind rather than none. That figure is measured rather than claimed, and it is the honest
+    /// alternative to a perfectly matched layer, which would be right to four digits and is a
+    /// larger piece of machinery than this crate has earned.
+    Open,
+}
+
 /// A rectangular cavity with perfectly conducting walls.
 ///
 /// # The grid
@@ -45,10 +107,25 @@ pub struct Cavity {
     hy: Vec<f64>,
     /// `Hz`: `nx · ny · (nz+1)`.
     hz: Vec<f64>,
+    /// What each face does, in [`Wall::ALL`] order.
+    boundary: [Boundary; 6],
+    /// The tangential electric field one step ago, for the faces that need it.
+    ///
+    /// Mur's condition relates the boundary at `n+1` to the boundary and its neighbour at `n`, so
+    /// one step of history is the whole of what an absorbing face costs.
+    previous: Option<Box<Tangential>>,
     /// Whether `H` has been advanced the half step the leapfrog opens with.
     started: bool,
     dissipated: f64,
     saved: Option<Box<Saved>>,
+}
+
+/// The three electric components one step ago, which is all Mur's condition needs of the past.
+#[derive(Clone, Debug)]
+struct Tangential {
+    ex: Vec<f64>,
+    ey: Vec<f64>,
+    ez: Vec<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -84,10 +161,75 @@ impl Cavity {
             hx: vec![0.0; (nx + 1) * ny * nz],
             hy: vec![0.0; nx * (ny + 1) * nz],
             hz: vec![0.0; nx * ny * (nz + 1)],
+            boundary: [Boundary::Conducting; 6],
+            previous: None,
             started: false,
             dissipated: 0.0,
             saved: None,
         }
+    }
+
+    /// Make a face absorb rather than reflect, or the other way round.
+    pub fn set_boundary(&mut self, wall: Wall, boundary: Boundary) -> &mut Cavity {
+        self.boundary[wall.index()] = boundary;
+        self
+    }
+
+    /// Make every face absorb. What a piece of open space is, as near as Mur gets.
+    pub fn open(&mut self) -> &mut Cavity {
+        for wall in Wall::ALL {
+            self.set_boundary(wall, Boundary::Open);
+        }
+        self
+    }
+
+    /// What a face currently does.
+    pub fn boundary(&self, wall: Wall) -> Boundary {
+        self.boundary[wall.index()]
+    }
+
+    /// Mur's coefficient, `(cΔt − Δ)/(cΔt + Δ)`.
+    ///
+    /// A function of the Courant number and nothing else. At the 3D stability limit it is −0.268;
+    /// at half of it, −0.552.
+    pub fn mur_coefficient(&self, dt: Time) -> f64 {
+        let c_dt = self.medium.wave_speed().to_si() * dt.to_si();
+        (c_dt - self.dx) / (c_dt + self.dx)
+    }
+
+    /// Release a compact, **divergence-free** pulse to watch leave.
+    ///
+    /// A blob of `Hz`, uniform along `z` and Gaussian in `x` and `y`. That combination has
+    /// `∇·H = 0` exactly on the discrete grid — the only non-zero term would be `∂Hz/∂z`, and there
+    /// is none — so it is a real radiating field and not a charge.
+    ///
+    /// # Why it cannot be a blob of `E`
+    ///
+    /// That was the first version, and it left **34%** of its energy in an open box where the
+    /// radiating part leaves in one crossing. A localised `Ey` has `∂Ey/∂y ≠ 0`, so `∇·D ≠ 0`, so
+    /// it *is* a charge distribution — and the near field of a charge does not propagate. No
+    /// absorbing boundary can remove what was never going anywhere, and a measurement of one that
+    /// used such a source would be measuring the electrostatics instead.
+    ///
+    /// Uniform along `z` makes it a line source, radiating cylindrically. A genuinely compact
+    /// three-dimensional source needs a current loop, which is more machinery than a boundary test
+    /// needs.
+    pub fn pulse(&mut self, at: (usize, usize), amplitude: f64, width_cells: f64) -> &mut Cavity {
+        let (nx, ny, nz) = self.counts;
+        let w = width_cells.max(0.5);
+        for k in 0..=nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let r2 = ((i as f64 + 0.5 - at.0 as f64).powi(2)
+                        + (j as f64 + 0.5 - at.1 as f64).powi(2))
+                        / (w * w);
+                    let idx = self.ihz(i, j, k);
+                    self.hz[idx] += amplitude * (-r2).exp();
+                }
+            }
+        }
+        self.started = true;
+        self
     }
 
     /// Cells along each axis.
@@ -396,6 +538,158 @@ impl Cavity {
         i + nx * (j + ny * k)
     }
 
+    /// Apply each face's condition to the tangential electric field.
+    ///
+    /// A conducting face is held at zero. An absorbing one takes Mur's update, which needs the
+    /// previous step's values at the face and one cell in — so this runs after the interior update
+    /// and before anything reads the field.
+    fn apply_boundaries(&mut self, dt: f64) {
+        let k = {
+            let c_dt = self.medium.wave_speed().to_si() * dt;
+            (c_dt - self.dx) / (c_dt + self.dx)
+        };
+        let previous = self.previous.take();
+        let (nx, ny, nz) = self.counts;
+
+        // Every face that is conducting keeps the old behaviour, and doing that first means an
+        // edge shared by a conducting face and an open one is held — which is the right answer,
+        // because a perfect conductor's condition is not negotiable and Mur's is an approximation.
+        self.enforce_walls_where(|w, b| {
+            b == Boundary::Conducting || previous.is_none() || w.index() > 5
+        });
+
+        if let Some(prev) = previous.as_deref() {
+            let (pex, pey, pez) = (&prev.ex, &prev.ey, &prev.ez);
+            // For each open face, the two tangential components, from the value one cell in.
+            for wall in Wall::ALL {
+                if self.boundary[wall.index()] != Boundary::Open {
+                    continue;
+                }
+                match wall {
+                    Wall::XLow | Wall::XHigh => {
+                        let (edge, inner) = if wall == Wall::XLow {
+                            (0, 1)
+                        } else {
+                            (nx, nx - 1)
+                        };
+                        for kk in 0..=nz {
+                            for j in 0..ny {
+                                let (a, b) = (self.iey(edge, j, kk), self.iey(inner, j, kk));
+                                self.ey[a] = pey[b] + k * (self.ey[b] - pey[a]);
+                            }
+                        }
+                        for kk in 0..nz {
+                            for j in 0..=ny {
+                                let (a, b) = (self.iez(edge, j, kk), self.iez(inner, j, kk));
+                                self.ez[a] = pez[b] + k * (self.ez[b] - pez[a]);
+                            }
+                        }
+                    }
+                    Wall::YLow | Wall::YHigh => {
+                        let (edge, inner) = if wall == Wall::YLow {
+                            (0, 1)
+                        } else {
+                            (ny, ny - 1)
+                        };
+                        for kk in 0..=nz {
+                            for i in 0..nx {
+                                let (a, b) = (self.iex(i, edge, kk), self.iex(i, inner, kk));
+                                self.ex[a] = pex[b] + k * (self.ex[b] - pex[a]);
+                            }
+                        }
+                        for kk in 0..nz {
+                            for i in 0..=nx {
+                                let (a, b) = (self.iez(i, edge, kk), self.iez(i, inner, kk));
+                                self.ez[a] = pez[b] + k * (self.ez[b] - pez[a]);
+                            }
+                        }
+                    }
+                    Wall::ZLow | Wall::ZHigh => {
+                        let (edge, inner) = if wall == Wall::ZLow {
+                            (0, 1)
+                        } else {
+                            (nz, nz - 1)
+                        };
+                        for j in 0..=ny {
+                            for i in 0..nx {
+                                let (a, b) = (self.iex(i, j, edge), self.iex(i, j, inner));
+                                self.ex[a] = pex[b] + k * (self.ex[b] - pex[a]);
+                            }
+                        }
+                        for j in 0..ny {
+                            for i in 0..=nx {
+                                let (a, b) = (self.iey(i, j, edge), self.iey(i, j, inner));
+                                self.ey[a] = pey[b] + k * (self.ey[b] - pey[a]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        self.previous = Some(Box::new(Tangential {
+            ex: self.ex.clone(),
+            ey: self.ey.clone(),
+            ez: self.ez.clone(),
+        }));
+    }
+
+    /// Zero the tangential electric field on the faces a predicate selects.
+    fn enforce_walls_where(&mut self, which: impl Fn(Wall, Boundary) -> bool) {
+        let (nx, ny, nz) = self.counts;
+        for wall in Wall::ALL {
+            if !which(wall, self.boundary[wall.index()]) {
+                continue;
+            }
+            match wall {
+                Wall::XLow | Wall::XHigh => {
+                    let edge = if wall == Wall::XLow { 0 } else { nx };
+                    for k in 0..=nz {
+                        for j in 0..ny {
+                            let a = self.iey(edge, j, k);
+                            self.ey[a] = 0.0;
+                        }
+                    }
+                    for k in 0..nz {
+                        for j in 0..=ny {
+                            let a = self.iez(edge, j, k);
+                            self.ez[a] = 0.0;
+                        }
+                    }
+                }
+                Wall::YLow | Wall::YHigh => {
+                    let edge = if wall == Wall::YLow { 0 } else { ny };
+                    for k in 0..=nz {
+                        for i in 0..nx {
+                            let a = self.iex(i, edge, k);
+                            self.ex[a] = 0.0;
+                        }
+                    }
+                    for k in 0..nz {
+                        for i in 0..=nx {
+                            let a = self.iez(i, edge, k);
+                            self.ez[a] = 0.0;
+                        }
+                    }
+                }
+                Wall::ZLow | Wall::ZHigh => {
+                    let edge = if wall == Wall::ZLow { 0 } else { nz };
+                    for j in 0..=ny {
+                        for i in 0..nx {
+                            let a = self.iex(i, j, edge);
+                            self.ex[a] = 0.0;
+                        }
+                    }
+                    for j in 0..ny {
+                        for i in 0..=nx {
+                            let a = self.iey(i, j, edge);
+                            self.ey[a] = 0.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Zero the tangential electric field on every wall.
     fn enforce_walls(&mut self) {
         let (nx, ny, nz) = self.counts;
@@ -585,7 +879,11 @@ impl Domain for Cavity {
         }
         self.advance_magnetic(h);
         self.dissipated += self.advance_electric(h);
-        self.enforce_walls();
+        if self.boundary.iter().all(|b| *b == Boundary::Conducting) {
+            self.enforce_walls();
+        } else {
+            self.apply_boundaries(h);
+        }
         Ok(())
     }
 
