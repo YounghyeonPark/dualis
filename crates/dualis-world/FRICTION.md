@@ -578,7 +578,7 @@ None of this was visible from inside.
 
 ## What this report does not cover
 
-Seven of the eight domains have scenes; `dualis-elastic` is the one without. What is left
+Seven of the nine domains have scenes; `dualis-elastic` and `dualis-em` are the two without. What is left
 is smaller and more specific.
 
 **`TreeNBody`, `RigidBody` and the rest of mechanics.** Four types took `as_any` in this pass

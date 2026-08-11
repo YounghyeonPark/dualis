@@ -14,6 +14,53 @@ messages carry the full account.
 
 ### Added
 
+- **A ninth domain: `dualis-em`.** Maxwell's equations in three dimensions, on the grid Yee built
+  for them, and the reason that grid is the grid.
+
+  `E` on cell edges and `H` on cell faces, each half a cell from the others, so every curl is a
+  difference of quantities that already sit where the curl belongs. The consequence is the point:
+  the **discrete** divergence of the **discrete** curl is identically zero — every term appears
+  twice with opposite signs — so `∇·B = 0` is a property of the update rather than something the
+  scheme approximately respects.
+
+  Demonstrated directly, from both sides. A released mode has `8.6e-17`; two thousand steps later
+  it is `1.1e-12`, which is `f64` rounding accumulating linearly and twelve orders below the field.
+  And injecting `1.000e-3` A/m of divergence by hand, then running 500 steps of live
+  electromagnetism, leaves `1.000e-3` A/m — **1.000000000×**. The update cannot touch it in either
+  direction.
+
+  Beside that: cavity resonances against `(c/2)√((m/a)²+(n/b)²+(p/d)²)`, converging at 0.536% →
+  0.134% → 0.033% for refinement ratios of **4.002 and 4.001**; the Courant limit `dx/(c√3)`,
+  refused above and stable at; and equipartition to 0.998.
+
+- **Four things the electromagnetic tests found, three of them in the tests.**
+
+  **`H` has to be the discrete curl of `E`, not a sampling of the continuum one.** The identity is
+  a property of the operators, and a continuum field that happens to be divergence-free does not
+  inherit it: setting `H` analytically measured `3.3e-4` where the identity says zero. Applying the
+  scheme's own half-step update to a zero field gives both the right initialisation *and* exact
+  divergence-freedom, and deletes the hand-derived curl.
+
+  **Joule heating is `∫σE²dt`, not the change in field energy.** The latter is the loss plus
+  whatever flowed in from the magnetic field on the same step, and it reported dissipating
+  thirty-six times the energy the cavity ever held.
+
+  **Eight half-cycles cannot see second order.** A peak located to the nearest step carries an
+  error of `dt`, and eight of them divides it by eight — leaving 0.6% of measurement noise on a
+  0.55% signal. The first version reported the *same* frequency at 8, 16 and 32 cells, to seven
+  digits, and it took a probe to establish that the scheme was fine and the ruler was not. Two
+  hundred half-cycles with the peak interpolated through a parabola resolves it.
+
+  **A 12.8% energy swing is not a defect.** `½εE² + ½μH²` is not what leapfrog conserves — `E` and
+  `H` are half a step apart — and the naive sum oscillates by exactly `2 sin(ωΔt/2)`. The first
+  version asserted "under 5%", measured 12.779%, and called it a failure where the formula says
+  12.8167%. The test checks the closed form now, and that halving the step halves the swing:
+  ratio 2.000. An arbitrary bound cannot tell a correct oscillation from an incorrect one.
+
+  A fifth, smaller: a *normalised* divergence divides by `max |H|`, which oscillates through the
+  cycle, so comparing it at two instants compares two denominators. The injection test read 1.099
+  and then 0.5387 for a quantity that had not moved.
+
 - **An eighth domain: `dualis-elastic`.** What a shape does under load — `∇·σ = 0` with
   `σ = λ tr(ε)I + 2μ ε` — solved rather than stated, so a stiffness is a property of a geometry the
   way `Conductor` made a resistance one.

@@ -69,7 +69,7 @@
 //! dualis             depends on all of them
 //! ```
 //!
-//! None of the eight domains knows about any of the others. They meet on the kernel's
+//! None of the nine domains knows about any of the others. They meet on the kernel's
 //! [`Exchange`](dualis_core::Exchange), and each one that arrived left the others
 //! untouched — which is the claim the split was made to test, now held six times.
 //!
@@ -87,6 +87,7 @@ pub use dualis_acoustic as acoustic;
 pub use dualis_core as core;
 pub use dualis_elastic as elastic;
 pub use dualis_electrical as electrical;
+pub use dualis_em as em;
 pub use dualis_mechanics as mechanics;
 pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
@@ -122,6 +123,7 @@ pub mod prelude {
     // it only because both are exported here.
     pub use dualis_elastic::{Block, Elastic, Face};
     pub use dualis_electrical::{Conductor, Winding};
+    pub use dualis_em::{cavity_frequency, Cavity, Medium};
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,
     };

@@ -10,6 +10,7 @@ dependencies = [
  "dualis-core",
  "dualis-elastic",
  "dualis-electrical",
+ "dualis-em",
  "dualis-mechanics",
  "dualis-molecular",
  "dualis-optics",
@@ -57,6 +58,15 @@ dependencies = [
  "dualis-units",
  "glam",
  "serde",
+]
+
+[[package]]
+name = "dualis-em"
+version = "0.10.0"
+dependencies = [
+ "dualis-core",
+ "dualis-units",
+ "glam",
 ]
 
 [[package]]
