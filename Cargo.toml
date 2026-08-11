@@ -11,6 +11,7 @@ members = [
     "crates/dualis-porous",
     "crates/dualis-elastic",
     "crates/dualis-em",
+    "crates/dualis-fluid",
     "crates/dualis-scene",
     "crates/dualis-view",
     "crates/dualis",
@@ -57,6 +58,7 @@ dualis-electrical = { path = "crates/dualis-electrical", version = "0.10.0" }
 dualis-porous = { path = "crates/dualis-porous", version = "0.10.0" }
 dualis-elastic = { path = "crates/dualis-elastic", version = "0.10.0" }
 dualis-em = { path = "crates/dualis-em", version = "0.10.0" }
+dualis-fluid = { path = "crates/dualis-fluid", version = "0.10.0" }
 dualis-scene = { path = "crates/dualis-scene", version = "0.10.0" }
 dualis-view = { path = "crates/dualis-view", version = "0.10.0" }
 glam = { version = "0.29", features = ["serde"] }

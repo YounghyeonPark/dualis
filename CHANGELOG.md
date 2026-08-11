@@ -14,6 +14,59 @@ messages carry the full account.
 
 ### Added
 
+- **A tenth domain: `dualis-fluid`, and the list `ARCHITECTURE.md` opened with is closed.**
+  Incompressible Navier–Stokes by projection on a staggered grid — velocities on cell faces,
+  pressure at centres, which is the arrangement Yee uses for electromagnetism and for the same
+  reason.
+
+  It was the hardest of the three to make checkable, and the crate is built around admitting why:
+  fluids has few exact solutions, its schemes trade stability against numerical diffusion, and
+  **"it looks like a fluid" is the easiest wrong answer in computational physics to accept.** So
+  each test is chosen to be blind to a different mistake, and the docs say which.
+
+  ```text
+    Poiseuille      exact to 6e-15 — against the *discrete* parabola
+    Couette         exact to 1.2e-14 — and blind to advection entirely
+    Taylor–Green    0.272% → 0.065%, ratio 4.17 — the only one that sees the nonlinear term
+    uniform flow    unchanged to 0.000e0 after 500 steps
+    momentum        drifts 1.1e-15 in a periodic box, because the advection is in flux form
+  ```
+
+  Two limits on the step — viscous `dx²/6ν` and Courant `dx/|u|` — and one on the **mesh**: the
+  cell Reynolds number `|u|dx/ν ≤ 2`, which no amount of shortening the step fixes. Refused rather
+  than run, because past it central differences produce a sawtooth that reads as turbulence.
+
+- **The discrete Poiseuille profile is not the continuum one, and the difference is a closed form.**
+
+  The first test compared to `gh²/12ν` and measured `19/18` of it at six cells. That is
+  `1 + 2/36` to the digit — and the scheme was right.
+
+  Any quadratic satisfies the interior equation exactly, so the discretisation contributes nothing
+  there. The **wall** does: a no-slip condition imposed by reflecting the first cell makes the
+  *linear interpolation* between them vanish at the wall, and a parabola is not its own linear
+  interpolation. The discrete answer is `u_j = (g/2ν)[(h²+Δ²)/4 − (y_j−h/2)²]`, whose mean is
+  `(gh²/12ν)(1 + 2/n²)`.
+
+  The test now makes two statements instead of one: the discrete form holds to machine precision at
+  any mesh, and the gap to the continuum shrinks by exactly `(16/6)² = 7.111×` from six cells to
+  sixteen. Comparing to the continuum alone and calling the difference a tolerance would have hidden
+  both.
+
+- **A periodic seam that was averaged instead of copied cost 4.7% of a decay rate.**
+
+  With `Walls::None` the `y = 0` and `y = h` velocity faces **are** the same face. `apply_walls`
+  set both to their mean — but the update writes the low one and leaves the high one stale, so the
+  mean moved it only half as far as the physics did. A half-step lag dressed as a boundary
+  condition.
+
+  It showed up as a Taylor–Green decay 4.68% below the discrete Laplacian's own eigenvalue.
+  Diagnosed by running the same vortex at an amplitude eight orders smaller: the rate was identical
+  to six digits, which cleared the advection and left diffusion holding the bag. After the fix the
+  measurement sits **1.02% and 0.26% above** that eigenvalue at the two meshes — which is forward
+  Euler's `σΔt/2` to the digit — and 0.27% and 0.07% below the continuum, because the spatial error
+  is larger and has the other sign. Two errors, each with a formula, which is what makes the
+  comparison mean anything.
+
 - **A ninth domain: `dualis-em`.** Maxwell's equations in three dimensions, on the grid Yee built
   for them, and the reason that grid is the grid.
 

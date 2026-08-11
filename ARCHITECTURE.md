@@ -31,7 +31,7 @@ promise dates.
     ┌───────────────────────────┴─────────────────────────────────┐
     │  PHYSICS       what evolves, and what it conserves           │
     │                the kernel, and one crate per physics         │
-    │                           `dualis-core` + nine domain crates │
+    │                            `dualis-core` + ten domain crates │
     └─────────────────────────────────────────────────────────────┘
 
 As of 0.9.0 all three are crates on crates.io. Before that the upper two lived inside an
@@ -92,7 +92,7 @@ per-frame normalisation is what you get if you do not think about it.
 
 ## Where the work is: 3D is not the default yet
 
-The physics layer is nine crates deep and dimensionally uneven. This is the honest state.
+The physics layer is ten crates deep and dimensionally uneven. This is the honest state.
 
 | crate | space it lives in | for the goal |
 | --- | --- | --- |
@@ -105,6 +105,7 @@ The physics layer is nine crates deep and dimensionally uneven. This is the hone
 | `dualis-porous` | **3D** — Darcy flow, advected heat and dissolution in a packed bed | done |
 | `dualis-elastic` | **3D** — linear elasticity on trilinear elements | done |
 | `dualis-em` | **3D** — Maxwell on a Yee grid, conducting walls | done |
+| `dualis-fluid` | **3D** — incompressible Navier–Stokes by projection | done |
 
 Two observations follow, and they point in opposite directions.
 
@@ -232,7 +233,7 @@ different quantities, the second separates domains carrying the same one.
    `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
    rate measured across three doublings.
 
-   Seven of the nine domains are three-dimensional now. What is left is `dualis-electrical`, which
+   Eight of the ten domains are three-dimensional now. What is left is `dualis-electrical`, which
    is gap 4 below, and `dualis-optics`, whose rays are already 3D and whose *fields* are not.
 
    Building the first one **found a gap in the layer above it**, which is what a first
@@ -295,10 +296,21 @@ domain and the first to carry a constraint — `∇·B = 0` — that the update 
 rather than to a tolerance. Neither needed the kernel or either layer to change at all, which is
 the claim rule 4 makes and the ninth time it has held.
 
-What is left of that list is **fluid dynamics**. It is the hardest of the three to make checkable:
-its exact solutions are few, its schemes trade stability against diffusion, and "it looks like a
-fluid" is the easiest wrong answer in computational physics to accept. Poiseuille flow and the
-Taylor–Green decay rate are the two closed forms worth building around.
+**Fluid dynamics** is `dualis-fluid`, and it was the hardest of the three to make checkable for
+the reason predicted: few exact solutions, schemes that trade stability against diffusion, and "it
+looks like a fluid" as the easiest wrong answer in computational physics to accept. It is built
+around the three that exist — Poiseuille, Couette and Taylor–Green — each chosen to be blind to a
+different mistake, with two machine-precision statements beside them that a decay rate is too
+coarse to see.
+
+That closes the list this section opened with. **The physics layer is where it was aimed**: ten
+crates, each one added without the kernel or either layer above it changing, which is rule 4 held
+ten times.
+
+What is open now is not a list of missing physics but a list of missing *depth* in what is here:
+`dualis-optics` has rays and no fields, `dualis-electrical`'s `Winding` is lumped beside a `3D`
+`Conductor`, and every domain is single-phase, single-material and small-strain. None of those is
+a new crate. They are the second half of crates that exist.
 
 ---
 

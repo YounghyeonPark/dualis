@@ -1,0 +1,19 @@
+[package]
+name = "dualis-fluid"
+description = "Incompressible flow in three dimensions: Navier-Stokes by projection on a staggered grid, checked against Poiseuille, Couette and Taylor-Green"
+keywords = ["fluid", "navier-stokes", "cfd", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+dualis-core = { workspace = true }
+dualis-units = { workspace = true }
+
+[dev-dependencies]
+glam = { workspace = true }

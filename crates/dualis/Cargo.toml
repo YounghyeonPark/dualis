@@ -1,6 +1,6 @@
 [package]
 name = "dualis"
-description = "Physics for simulated worlds: units, kernel, nine domains and a scene layer in one dependency"
+description = "Physics for simulated worlds: units, kernel, ten domains and a scene layer in one dependency"
 keywords = ["physics", "simulation", "optics", "thermal", "multiphysics"]
 categories = ["science", "simulation"]
 readme = "../../README.md"
@@ -15,6 +15,7 @@ dualis-acoustic = { workspace = true }
 dualis-core = { workspace = true }
 dualis-elastic = { workspace = true }
 dualis-em = { workspace = true }
+dualis-fluid = { workspace = true }
 dualis-mechanics = { workspace = true }
 dualis-molecular = { workspace = true }
 dualis-electrical = { workspace = true }
