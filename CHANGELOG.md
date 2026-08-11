@@ -12,6 +12,19 @@ messages carry the full account.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-12
+
+**Two of `ARCHITECTURE.md`'s three depth entries, and both the same shape.** Single-material and
+single-phase are answered; small-strain is the one left. Neither cost a new crate, neither touched the
+kernel or either layer above it, and each turned on a **closed form** rather than on a feature — the
+harmonic mean making a layered wall's resistance exact, and Neumann's solution putting a freezing
+front in a place rather than at a rate.
+
+Also diffraction, which measures where scalar optics stops being true rather than assuming it is.
+
+Twenty-two new public items across four crates. `Solid3D::max_stable_dt` reports a different number
+for a thin or filled block than 0.11.0 did — read the entry below before pinning a step by hand.
+
 ### Added
 
 - **Latent heat, against Neumann's exact solution of Stefan's problem.** `LatentHeat` in
