@@ -1,0 +1,491 @@
+//! Elastic waves: the same body, given inertia.
+//!
+//! [`Block`](crate::Block) solves `∇·σ = 0` — an equilibrium, in zero time, with the density it was
+//! given going unused. This is the other half of the same operator:
+//!
+//! ```text
+//!   ρ ∂²u/∂t² = ∇·σ,   σ = λ tr(ε) I + 2μ ε
+//! ```
+//!
+//! A separate type rather than a mode on `Block`, and that is not squeamishness: `Block` is
+//! [`Kind::QuasiStatic`] and its own documentation says there is no state to roll forward. That is
+//! true about it. A body with velocity in it has a different lifecycle, a different stability limit
+//! and a different thing to conserve, and pretending one type is both would make every one of those
+//! depend on which method was called last.
+//!
+//! What they share is the element, which is the part worth sharing: the same 24×24 trilinear
+//! stiffness assembled the same way. The static tests check that operator against four exact moduli;
+//! this one checks the same operator against two exact speeds.
+//!
+//! # What it is checked against
+//!
+//! Two speeds, and their ratio:
+//!
+//! ```text
+//!   c_p = √((λ+2μ)/ρ)      compression, sides held
+//!   c_s = √(μ/ρ)           shear
+//!   c_p/c_s = √(2(1−ν)/(1−2ν))
+//! ```
+//!
+//! The ratio is the sharp one, because `E` and `ρ` cancel out of it: a scheme with the wrong
+//! stiffness *and* the wrong mass can still get one speed right by accident and cannot get the ratio
+//! right. [`hold`](Waves::hold) is what makes each speed separately measurable — freezing two
+//! displacement components leaves the one-dimensional problem the closed form is about.
+//!
+//! # The time stepping, and why its dispersion is removed rather than tolerated
+//!
+//! Central differences, which is the same leapfrog `Room` and `Cavity` use:
+//!
+//! ```text
+//!   u^{n+1} = 2u^n − u^{n−1} − dt² M⁻¹ K u^n
+//! ```
+//!
+//! `M` is **lumped** — each element gives an eighth of its mass to each of its eight nodes — so
+//! `M⁻¹` is a division and there is no solve anywhere in a step.
+//!
+//! On a single eigenmode this recurrence oscillates at exactly `Ω = 2·arcsin(ω dt/2)` per step rather
+//! than at `ω dt`, which is the leapfrog's own dispersion and is a property of the time scheme and not
+//! of the elasticity. So the tests measure `Ω`, invert that relation to recover `ω`, and compare
+//! *that* — leaving only the spatial discretisation, which is second order. A test that compared the
+//! raw period would be measuring the two errors added together and calling the sum an accuracy.
+
+use dualis_core::conserved::quantity;
+use dualis_core::{
+    units::{Energy, Length, Time, Velocity},
+    Domain, Exchange, Kind, Ledger, Reading, Violation,
+};
+use dualis_units::Frequency;
+
+use crate::element::{lame, stiffness, CORNERS, DOF};
+use crate::Elastic;
+
+/// A rectangular body of elastic material, carrying waves.
+///
+/// Cells are **cubes**, for the reason every grid in this workspace is: an anisotropic element makes
+/// the stability limit and the truncation error different along each axis, which would resolve one
+/// direction better than another for no physical reason.
+///
+/// Nothing is held and nothing is moving until something releases a mode or holds a face, so a fresh
+/// body sits still forever — which is the correct answer to `ρü = ∇·σ` with `u = 0`.
+#[derive(Clone, Debug)]
+pub struct Waves {
+    name: String,
+    /// Elements along each axis.
+    counts: (usize, usize, usize),
+    /// Nodes along each axis, one more than the elements.
+    nodes: (usize, usize, usize),
+    dx: f64,
+    material: Elastic,
+    /// The 24×24 element stiffness, once.
+    ke: Vec<f64>,
+    /// Displacement now and one step ago, three per node.
+    u: Vec<f64>,
+    prev: Vec<f64>,
+    /// Lumped nodal mass, one per node: `(elements touching it) × ρ dx³ / 8`.
+    mass: Vec<f64>,
+    /// Whether each degree of freedom is held at zero.
+    held: Vec<bool>,
+    /// `2/√λ` where `λ` bounds the eigenvalues of `M⁻¹K`, so leapfrog is stable at or under it.
+    limit: f64,
+    saved: Option<Box<(Vec<f64>, Vec<f64>)>>,
+}
+
+impl Waves {
+    /// A body of `counts` cubic elements of side `cell`.
+    pub fn new(
+        name: impl Into<String>,
+        material: Elastic,
+        counts: (usize, usize, usize),
+        cell: Length,
+    ) -> Waves {
+        let counts = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
+        let nodes = (counts.0 + 1, counts.1 + 1, counts.2 + 1);
+        let n = nodes.0 * nodes.1 * nodes.2;
+        let dx = cell.to_si();
+        let (lambda, mu) = lame(material.youngs_modulus.to_si(), material.poisson_ratio);
+        let mut w = Waves {
+            name: name.into(),
+            counts,
+            nodes,
+            dx,
+            material,
+            ke: stiffness(dx, lambda, mu),
+            u: vec![0.0; 3 * n],
+            prev: vec![0.0; 3 * n],
+            mass: vec![0.0; n],
+            held: vec![false; 3 * n],
+            limit: 0.0,
+            saved: None,
+        };
+        w.resolve();
+        w
+    }
+
+    /// Elements along each axis.
+    pub fn elements(&self) -> (usize, usize, usize) {
+        self.counts
+    }
+
+    /// Nodes along each axis, one more than the elements.
+    pub fn node_counts(&self) -> (usize, usize, usize) {
+        self.nodes
+    }
+
+    /// The element side.
+    pub fn cell(&self) -> Length {
+        Length::from_si(self.dx)
+    }
+
+    /// The material.
+    pub fn material(&self) -> Elastic {
+        self.material
+    }
+
+    /// Hold one displacement component at zero on **every** node.
+    ///
+    /// What makes each wave speed separately measurable, and therefore what the closed forms are
+    /// about. Freezing two of the three components leaves a one-dimensional problem:
+    ///
+    /// ```text
+    ///   hold x and y, let z move, vary along z    →   ρü = (λ+2μ)u''   →   c_p
+    ///   hold y and z, let x move, vary along z    →   ρü = μu''        →   c_s
+    /// ```
+    ///
+    /// The first is the *constrained* compression — the sides cannot bulge because they are held —
+    /// which is why it is `λ+2μ` and not `E`. That distinction is the commonest way to get a wave
+    /// speed wrong by 20%.
+    ///
+    /// `axis` is 0, 1 or 2; anything else is ignored.
+    pub fn hold(&mut self, axis: usize) -> &mut Waves {
+        if axis > 2 {
+            return self;
+        }
+        let n = self.nodes.0 * self.nodes.1 * self.nodes.2;
+        for node in 0..n {
+            self.held[3 * node + axis] = true;
+            self.u[3 * node + axis] = 0.0;
+            self.prev[3 * node + axis] = 0.0;
+        }
+        self.resolve();
+        self
+    }
+
+    /// Clamp both ends of an axis: every displacement component zero on those two faces.
+    ///
+    /// What makes a standing mode standing. A free end is a different boundary with a different
+    /// closed form — quarter-wave rather than half-wave — and this type offers the one the tests use.
+    pub fn clamp_ends(&mut self, axis: usize) -> &mut Waves {
+        if axis > 2 {
+            return self;
+        }
+        let (nx, ny, nz) = self.nodes;
+        let last = [nx - 1, ny - 1, nz - 1][axis];
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let at = [i, j, k][axis];
+                    if at == 0 || at == last {
+                        let node = i + nx * (j + ny * k);
+                        for c in 0..3 {
+                            self.held[3 * node + c] = true;
+                            self.u[3 * node + c] = 0.0;
+                            self.prev[3 * node + c] = 0.0;
+                        }
+                    }
+                }
+            }
+        }
+        self.resolve();
+        self
+    }
+
+    /// Release a standing half-wave: `amplitude · sin(nπ x_axis / L)` in the `along` component.
+    ///
+    /// Set as **both** the current and the previous displacement, so the body starts at rest at the
+    /// mode's extreme. That is the initial condition the closed form is about: a cosine in time, so
+    /// the first quarter period is the whole of the information and no start-up transient is
+    /// introduced.
+    ///
+    /// `mode` counts half-waves, so `1` is the fundamental of a clamped-clamped span.
+    pub fn release_mode(&mut self, mode: usize, vary: usize, along: usize, amplitude: Length) {
+        if vary > 2 || along > 2 {
+            return;
+        }
+        let (nx, ny, nz) = self.nodes;
+        let span = self.counts_of(vary) as f64 * self.dx;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let x = [i, j, k][vary] as f64 * self.dx;
+                    let v =
+                        amplitude.to_si() * (mode as f64 * std::f64::consts::PI * x / span).sin();
+                    let dof = 3 * (i + nx * (j + ny * k)) + along;
+                    if !self.held[dof] {
+                        self.u[dof] = v;
+                        self.prev[dof] = v;
+                    }
+                }
+            }
+        }
+    }
+
+    /// The amplitude of one mode currently present, by projection onto its shape.
+    ///
+    /// The counterpart to [`release_mode`](Waves::release_mode), and what makes a frequency
+    /// measurable rather than merely visible: a sine is orthogonal to the others on this grid, so for
+    /// a body holding one mode this is exact and for one holding several it is the right coefficient.
+    pub fn mode_amplitude(&self, mode: usize, vary: usize, along: usize) -> f64 {
+        if vary > 2 || along > 2 {
+            return 0.0;
+        }
+        let (nx, ny, nz) = self.nodes;
+        let span = self.counts_of(vary) as f64 * self.dx;
+        let (mut num, mut den) = (0.0, 0.0);
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let x = [i, j, k][vary] as f64 * self.dx;
+                    let shape = (mode as f64 * std::f64::consts::PI * x / span).sin();
+                    num += self.u[3 * (i + nx * (j + ny * k)) + along] * shape;
+                    den += shape * shape;
+                }
+            }
+        }
+        if den > 0.0 {
+            num / den
+        } else {
+            0.0
+        }
+    }
+
+    /// The displacement of one node.
+    pub fn displacement_at(&self, i: usize, j: usize, k: usize) -> [f64; 3] {
+        let (nx, ny, nz) = self.nodes;
+        let node = i.min(nx - 1) + nx * (j.min(ny - 1) + ny * k.min(nz - 1));
+        [self.u[3 * node], self.u[3 * node + 1], self.u[3 * node + 2]]
+    }
+
+    /// The closed-form frequency of a clamped-clamped standing mode, `n·c/(2L)`.
+    ///
+    /// Public because it is what a caller sizing a grid needs before there is anything to measure,
+    /// and because stating it here means the tests can compare against something written once.
+    /// `speed` is the caller's choice of [`Elastic::p_wave_speed`] or
+    /// [`Elastic::s_wave_speed`](Elastic::s_wave_speed) — the type cannot know which wave a given
+    /// [`hold`](Waves::hold) has left free.
+    pub fn mode_frequency(&self, mode: usize, vary: usize, speed: Velocity) -> Frequency {
+        let span = self.counts_of(vary.min(2)) as f64 * self.dx;
+        Frequency::from_si(mode as f64 * speed.to_si() / (2.0 * span))
+    }
+
+    /// The kinetic energy, from the central-difference velocity.
+    ///
+    /// `(u^n − u^{n−1})/dt` is a **backward** difference and so is the velocity half a step ago, not
+    /// now. That half-step offset is why the total energy of a leapfrog swings instead of sitting
+    /// still, and the swing is `2 sin(ωΔt/2)` rather than a defect — `Room` records the same thing.
+    pub fn kinetic_energy(&self, dt: Time) -> Energy {
+        let h = dt.to_si();
+        if h <= 0.0 {
+            return Energy::from_si(0.0);
+        }
+        let mut total = 0.0;
+        for node in 0..self.mass.len() {
+            let mut v2 = 0.0;
+            for c in 0..3 {
+                let d = (self.u[3 * node + c] - self.prev[3 * node + c]) / h;
+                v2 += d * d;
+            }
+            total += 0.5 * self.mass[node] * v2;
+        }
+        Energy::from_si(total)
+    }
+
+    /// The strain energy, `½ uᵀKu`.
+    pub fn strain_energy(&self) -> Energy {
+        let ku = self.apply(&self.u);
+        Energy::from_si(0.5 * self.u.iter().zip(&ku).map(|(a, b)| a * b).sum::<f64>())
+    }
+
+    /// Kinetic plus strain — what a body with no boundary doing work on it holds constant.
+    pub fn total_energy(&self, dt: Time) -> Energy {
+        Energy::from_si(self.kinetic_energy(dt).to_si() + self.strain_energy().to_si())
+    }
+
+    fn counts_of(&self, axis: usize) -> usize {
+        [self.counts.0, self.counts.1, self.counts.2][axis]
+    }
+
+    /// Rebuild the lumped mass and the stability limit.
+    ///
+    /// Called by the constructor and by every mutator, on the rule this workspace learned from
+    /// `Puck::repack`: a mutator that leaves a cached number stale reports something that was true
+    /// about the previous object, and it looks exactly like a number.
+    fn resolve(&mut self) {
+        let (nx, ny, nz) = self.nodes;
+        let (ex, ey, ez) = self.counts;
+        let per = self.material.density.to_si() * self.dx.powi(3) / 8.0;
+        self.mass = vec![0.0; nx * ny * nz];
+        // Row sums of |K|, accumulated the same way the mass is, so the two are about the same
+        // assembly and the ratio below is a genuine bound rather than two guesses divided.
+        let mut rows = vec![0.0; 3 * nx * ny * nz];
+        let mut map = [0usize; 8];
+        for e_z in 0..ez {
+            for e_y in 0..ey {
+                for e_x in 0..ex {
+                    for (c, corner) in CORNERS.iter().enumerate() {
+                        map[c] =
+                            (e_x + corner[0]) + nx * ((e_y + corner[1]) + ny * (e_z + corner[2]));
+                        self.mass[map[c]] += per;
+                    }
+                    for a in 0..DOF {
+                        let row = 3 * map[a / 3] + a % 3;
+                        for b in 0..DOF {
+                            rows[row] += self.ke[a * DOF + b].abs();
+                        }
+                    }
+                }
+            }
+        }
+        // Gershgorin on `M⁻¹K`: every eigenvalue is inside a disc of radius the row sum over the
+        // mass, so `λ_max ≤ max_i rows_i / m_i`, and leapfrog needs `dt² λ_max ≤ 4`.
+        let mut worst = 0.0f64;
+        for node in 0..self.mass.len() {
+            for c in 0..3 {
+                let dof = 3 * node + c;
+                if !self.held[dof] && self.mass[node] > 0.0 {
+                    worst = worst.max(rows[dof] / self.mass[node]);
+                }
+            }
+        }
+        self.limit = if worst > 0.0 {
+            2.0 / worst.sqrt()
+        } else {
+            f64::INFINITY
+        };
+    }
+
+    /// `K·x`, assembled element by element — the same assembly [`Block`](crate::Block) uses.
+    fn apply(&self, x: &[f64]) -> Vec<f64> {
+        let (nx, ny, _) = self.nodes;
+        let (ex, ey, ez) = self.counts;
+        let mut y = vec![0.0; x.len()];
+        let mut map = [0usize; 8];
+        for e_z in 0..ez {
+            for e_y in 0..ey {
+                for e_x in 0..ex {
+                    for (c, corner) in CORNERS.iter().enumerate() {
+                        map[c] =
+                            (e_x + corner[0]) + nx * ((e_y + corner[1]) + ny * (e_z + corner[2]));
+                    }
+                    for a in 0..DOF {
+                        let row = 3 * map[a / 3] + a % 3;
+                        let mut acc = 0.0;
+                        for b in 0..DOF {
+                            acc += self.ke[a * DOF + b] * x[3 * map[b / 3] + b % 3];
+                        }
+                        y[row] += acc;
+                    }
+                }
+            }
+        }
+        y
+    }
+}
+
+impl Domain for Waves {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn kind(&self) -> Kind {
+        Kind::Evolving
+    }
+
+    /// `2/√λ_max(M⁻¹K)`, bounded by Gershgorin and computed from the assembled rows.
+    ///
+    /// Not `dx/(c_p√3)`. That form is the right answer for a three-point stencil per axis and this is
+    /// a trilinear element with a lumped mass, whose off-diagonal reach is the whole 24-node
+    /// neighbourhood — so the bound is computed from the operator rather than assumed from a
+    /// stencil it is not.
+    ///
+    /// Measured on a 4×4×4 cube of aluminium at a millimetre it comes out **1.229×** the Courant form,
+    /// so borrowing `dx/(c_p√3)` would have been safe and 23% wasteful. That is the direction worth
+    /// knowing and it is not the direction that was assumed before measuring it.
+    fn max_stable_dt(&self, _now: Time) -> Time {
+        Time::from_si(self.limit)
+    }
+
+    fn step(&mut self, _t: Time, dt: Time, _bus: &mut Exchange) -> Result<(), Violation> {
+        let h = dt.to_si();
+        if h > self.limit * (1.0 + 1e-12) {
+            return Err(Violation {
+                quantity: "leapfrog stability".to_string(),
+                site: format!("{} (explicit elastodynamics)", self.name),
+                before: self.limit,
+                after: h,
+                scale: self.limit,
+                tolerance: 1e-12,
+            });
+        }
+        let ku = self.apply(&self.u);
+        let mut next = vec![0.0; self.u.len()];
+        for node in 0..self.mass.len() {
+            for c in 0..3 {
+                let dof = 3 * node + c;
+                if self.held[dof] {
+                    continue;
+                }
+                next[dof] = 2.0 * self.u[dof] - self.prev[dof] - h * h * ku[dof] / self.mass[node];
+            }
+        }
+        self.prev = std::mem::replace(&mut self.u, next);
+        Ok(())
+    }
+
+    /// The strain energy alone.
+    ///
+    /// **Not the total**, and the reason is the half-step: the kinetic term needs a `dt` to exist at
+    /// all, and `ledger` is not given one. A ledger that guessed a step would report an energy that
+    /// depended on a number nobody passed. The audit therefore sees a quantity that legitimately
+    /// oscillates, so a scene using this domain has to say so with
+    /// `conservation_tolerance_for(ENERGY, ..)` — which is the same bargain `runtime/gpu` asks for and
+    /// is better than a total that is quietly wrong by a half step.
+    fn ledger(&self) -> Ledger {
+        Ledger::new().with(quantity::ENERGY, self.strain_energy().to_si())
+    }
+
+    fn books_balance(&self) -> bool {
+        false
+    }
+
+    fn readings(&self) -> Vec<Reading> {
+        let peak = self.u.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        vec![
+            Reading::new(
+                &self.name,
+                "strain energy",
+                self.strain_energy().to_si(),
+                "J",
+            ),
+            Reading::new(&self.name, "peak displacement", peak * 1e9, "nm"),
+        ]
+    }
+
+    fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    fn checkpoint(&mut self) {
+        self.saved = Some(Box::new((self.u.clone(), self.prev.clone())));
+    }
+
+    fn restore(&mut self) {
+        if let Some(s) = self.saved.take() {
+            self.u = s.0;
+            self.prev = s.1;
+        }
+    }
+
+    fn supports_restore(&self) -> bool {
+        true
+    }
+}

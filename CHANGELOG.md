@@ -14,6 +14,43 @@ messages carry the full account.
 
 ### Added
 
+- **Elastic waves: `dualis_elastic::Waves`, and `ARCHITECTURE.md`'s depth list is closed.**
+  `ρü = ∇·σ` on the same trilinear element `Block` solves statics with, marched with central
+  differences and a lumped mass. `Waves::hold`, `clamp_ends`, `release_mode`, `mode_amplitude`,
+  `mode_frequency`, `kinetic_energy`, `strain_energy`, `total_energy`, `displacement_at`.
+  `crates/dualis-elastic/tests/two_speeds_marched.rs`.
+
+  A sibling type rather than a mode on `Block`, because `Block` is `Kind::QuasiStatic` and is right
+  about itself — a body with velocity has a different lifecycle, a different stability limit and a
+  different thing to conserve. What they share is the element, which is the part worth sharing: the
+  static tests check that operator against four exact moduli and these check it against two exact
+  speeds.
+
+  ```text
+    elements   c_p error   c_s error
+          16     0.161%      0.161%
+          32     0.040%      0.040%
+          64     0.010%      0.010%
+  ```
+
+  Second order in both, a factor of four per halving to two figures. And the **ratio holds to about
+  `1e-8`** at `ν` = 0.2, 0.33 and 0.45 — four orders tighter than either speed alone, because `E` and
+  `ρ` cancel out of it algebraically *and* the two modes share a shape so the mesh error cancels out
+  of it numerically. What is left being checked is the operator.
+
+  The **leapfrog's own dispersion is removed rather than tolerated**: central differences on one
+  eigenmode turn at `Ω = 2·arcsin(ω dt/2)` per step, so the measured `Ω` is inverted through
+  `ω = 2·sin(Ω/2)/dt` before anything is compared. Comparing raw periods would add the time error to
+  the space error and call the sum an accuracy.
+
+  Energy swings by `2 sin(ωΔt/2)` — measured 0.0348 against 0.0348 predicted — and does **not** drift:
+  the mean over the last eighth of a forty-period run matches the first to `2.5e-7`.
+
+  The stability limit is `2/√λ_max(M⁻¹K)` by Gershgorin on the assembled rows, not a borrowed Courant
+  number. Measured it is **1.229×** `dx/(c_p√3)`, so the Courant form would have been safe and 23%
+  wasteful — the opposite direction from the one assumed before measuring it, which is why it is
+  computed.
+
 - **A solid has two wave speeds, and the catalogue's one field means both of them.**
   `Elastic::p_wave_speed`, `s_wave_speed` and `speed_ratio` in `dualis-elastic`, and
   `crates/dualis/tests/two_wave_speeds.rs` — the fourth cross-domain test of that shape, after

@@ -54,15 +54,23 @@
 //! # What is deliberately not here
 //!
 //! Small strain and linear material, which is the regime the closed forms above live in. No
-//! plasticity, no large rotation, no contact, no fracture, no dynamics — this is
-//! [`Kind::QuasiStatic`](dualis_core::Kind), a solve rather than a march.
+//! plasticity, no large rotation, no contact, no fracture.
+//!
+//! **Dynamics is here now**, as [`Waves`] rather than as a mode on [`Block`]: `ρü = ∇·σ` on the same
+//! element, marched with central differences. `Block` stays [`Kind::QuasiStatic`](dualis_core::Kind)
+//! and is right about itself — a body with velocity in it has a different lifecycle, a different
+//! stability limit and a different thing to conserve. What the two share is the element, which is the
+//! part worth sharing: the static tests check that operator against four exact moduli and the
+//! dynamic ones check it against two exact speeds.
 
 use dualis_units::{Density, Pressure, Velocity};
 
 mod block;
 mod element;
+mod waves;
 
 pub use block::{Block, Face};
+pub use waves::Waves;
 
 /// A linear elastic material.
 #[derive(Clone, Copy, Debug)]

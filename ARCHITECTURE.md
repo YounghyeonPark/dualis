@@ -103,7 +103,7 @@ The physics layer is ten crates deep and dimensionally uneven. This is the hones
 | `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
 | `dualis-electrical` | **3D** `Conductor`; `Winding` is a lumped `I²R` | done |
 | `dualis-porous` | **3D** — Darcy flow, advected heat and dissolution in a packed bed | done |
-| `dualis-elastic` | **3D** — linear elasticity on trilinear elements | done |
+| `dualis-elastic` | **3D** — linear elasticity on trilinear elements, statics and waves | done |
 | `dualis-em` | **3D** — Maxwell on a Yee grid, conducting walls | done |
 | `dualis-fluid` | **3D** — incompressible Navier–Stokes by projection | done |
 
@@ -307,9 +307,25 @@ That closes the list this section opened with. **The physics layer is where it w
 crates, each one added without the kernel or either layer above it changing, which is rule 4 held
 ten times.
 
-What is open now is not a list of missing physics but a list of missing *depth* in what is here.
-**One entry is left — small-strain** — and it is not a new crate either. It is the second half of a
-crate that exists.
+What was open was not a list of missing physics but a list of missing *depth* in what is here, and
+that list is closed too. All three entries were the second half of a crate that already existed, and
+none of them cost a new one.
+
+**Small-strain** was the last, and the answer turned out not to be finite strain. `dualis-elastic` was
+static — `∇·σ = 0`, with a `density` field its own documentation called unused — so the missing half
+was **inertia**, not large deformation. `Waves` is `ρü = ∇·σ` on the same trilinear element, marched
+with central differences and a lumped mass, and it is checked against two exact speeds where the
+static solver is checked against four exact moduli.
+
+The sharp statement is `c_p/c_s = √(2(1−ν)/(1−2ν))`, which holds to about `1e-8` — four orders tighter
+than either speed alone, because `E` and `ρ` cancel out of it algebraically *and* the two modes share
+a shape so the mesh error cancels out of it numerically. Each speed on its own is second order:
+0.161%, 0.040%, 0.010% over 16, 32 and 64 elements.
+
+Finite strain remains absent and is now a genuine *new* thing rather than a missing half. It needs
+Newton iteration, and more importantly its closed forms are weak — a neo-Hookean bar's uniaxial
+extension is an answer that depends on which material model was chosen, which is the closest this
+workspace gets to the thing it wrote down as verifying nothing.
 
 **Single-phase** was the second of the three, and `Solid3D` accounts for latent heat now. `Substance`
 carries `FusionProps`, `Substance::ice` is the catalogue's only entry that melts, and the check is
