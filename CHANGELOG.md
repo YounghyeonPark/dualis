@@ -14,6 +14,29 @@ messages carry the full account.
 
 ### Added
 
+- **What a lumped resistance cannot say, measured.** `Winding` states a resistance; `Conductor`
+  solves for one from a shape but is quasi-static, so neither has a frequency in it. A field does.
+
+  `crates/dualis/tests/loss_and_lumps.rs` measures the amplitude decay inside a conducting
+  half-space against the closed form that holds for **any** conductivity, not just a good one:
+
+  ```text
+    p = σ/(ωε)                          the loss tangent
+    α = ω√(εμ/2)·√(√(1+p²) − 1)        exactly
+  ```
+
+  A pulse carries a band, so one march gives the decay at every frequency in it: a discrete
+  transform at each depth separates them, and three frequencies come out 0.04%, 0.89% and 1.15%
+  from their own `α`. Measuring the *dependence* rather than one number is the point — a single
+  driven sinusoid would hide whether the frequency enters correctly.
+
+  Then the handbook `δ = √(2/(ωμσ))` as what it actually is: the `p ≫ 1` limit, off by **55.4%** at
+  `p = 1`, 5.1% at 10, 0.50% at 100 and 0.050% at 1000. The 55% is the part worth knowing — a lossy
+  dielectric is not a conductor, and using the skin depth on one is not a small error.
+
+  Beside it, copper: 9.22 mm at 50 Hz, exactly a tenfold thinner per hundredfold in frequency, and
+  a `Winding` reporting 0.1724 Ω at every one of them.
+
 - **`dualis-em` carries structures now, and a Yee grid and Fresnel's algebra agree on a
   reflectance.**
 

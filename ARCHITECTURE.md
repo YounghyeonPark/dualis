@@ -308,9 +308,15 @@ crates, each one added without the kernel or either layer above it changing, whi
 ten times.
 
 What is open now is not a list of missing physics but a list of missing *depth* in what is here:
-`dualis-electrical`'s `Winding` is lumped beside a `3D` `Conductor`, and every domain is
-single-phase, single-material and small-strain. None of those is a new crate. They are the second
-half of crates that exist.
+every domain is single-phase, single-material and small-strain. None of those is a new crate. They
+are the second half of crates that exist.
+
+Two entries that used to be on this list are answered, and both the same way — not by a domain
+absorbing another's job, but by a test that fails if two of them ever stop being limits of one
+physics. `crates/dualis/tests/fields_and_rays.rs` puts a Yee grid against Fresnel's algebra;
+`loss_and_lumps.rs` puts a field's decay in a conductor against the exact `α(ω)` and then against
+its own famous `√(2/ωμσ)` limit, beside a `Winding` that answers `0.1724 Ω` at every frequency in
+the comparison.
 
 **`dualis-optics` having rays and no fields is the one already answered**, and not by adding fields
 to it. `dualis-em` *is* the field formulation, and `crates/dualis/tests/fields_and_rays.rs` is where
