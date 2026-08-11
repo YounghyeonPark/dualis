@@ -68,10 +68,14 @@ fn chain(w: &Solid3D) -> f64 {
 
 /// **A filled block that was filled with what it already held is the same block.**
 ///
-/// The compatibility statement, and it has to be an equality: `fill` replaced the sweep, not just
-/// extended it, so a uniform block now goes through the conductance form rather than through
-/// `f·(ΣT − 6T)`. If that reformulation moved a uniform answer, every closed form the domain was
-/// already checked against would have been quietly reinterpreted.
+/// The compatibility statement, and it is **bit-for-bit** rather than close. `fill` replaced the
+/// sweep, not just extended it, so a uniform block now goes through the conductance form rather
+/// than through `f·(ΣT − 6T)`. If that reformulation moved a uniform answer, every closed form the
+/// domain was already checked against would have been quietly reinterpreted.
+///
+/// It can be an exact equality because filling with a substance already in the palette leaves every
+/// field of the block identical — the same reason `substances()` stays at one. A tolerance here would
+/// be hiding the possibility that it does not, which is the thing being asserted.
 #[test]
 fn filling_a_block_with_its_own_substance_changes_nothing() {
     let build = || {
@@ -105,11 +109,19 @@ fn filling_a_block_with_its_own_substance_changes_nothing() {
         plain.peak_temperature().to_si(),
         filled.peak_temperature().to_si(),
     );
+    println!("  peak {a:.17e} against {b:.17e}, difference {:.3e}", a - b);
     assert!(
-        (a - b).abs() < 1e-13,
-        "a uniform fill is a no-op: {a:.15e} against {b:.15e}"
+        a - b == 0.0,
+        "a uniform fill is a no-op: {a:.17e} against {b:.17e}"
     );
-    assert!((plain.mean_temperature().to_si() - filled.mean_temperature().to_si()).abs() < 1e-13);
+    let (a, b) = (
+        plain.mean_temperature().to_si(),
+        filled.mean_temperature().to_si(),
+    );
+    assert!(
+        a - b == 0.0,
+        "and so is the mean: {a:.17e} against {b:.17e}"
+    );
 }
 
 /// **A layered wall's resistance is exactly what its layers add up to, at every resolution.**
@@ -135,6 +147,9 @@ fn a_layered_wall_has_exactly_the_series_resistance_of_its_layers() {
         let got = chain(&w);
         let off = (got / closed - 1.0).abs();
         println!("  {cells:3} cells: {got:.6e} K/W against Σ L/kA {closed:.6e} — off {off:.2e}");
+        // `1e-14` rather than one epsilon: the chain is a sum of up to ninety-six reciprocals and
+        // rounding accumulates over them. Measured `2.2e-16` at every resolution, so the headroom
+        // is a margin and not a hope.
         assert!(
             off < 1e-14,
             "series resistance is exact, not approximate: {cells} cells off by {off:.3e}"
@@ -179,13 +194,35 @@ fn arithmetic_averaging_is_first_order_where_harmonic_averaging_is_exact() {
         "at twelve cells it should be badly wrong: {:.3}%",
         errors[0] * 100.0
     );
-    for pair in errors.windows(2) {
-        let rate = pair[0] / pair[1];
+    // **The rate is an equality, not a tolerance, and asserting `≈2` was the weaker test.**
+    //
+    // The wrong resistance is one face's worth, and the total is `(n/2 − ½)` cells' worth of the two
+    // layers, so the relative error is exactly `2A/(n−1)` for a constant `A` that does not depend on
+    // `n`. The consecutive ratios are therefore `23/11`, `47/23`, `95/47` — 2.091, 2.043, 2.021 —
+    // and not 2. A first draft asserted `|rate − 2| < 0.1` and passed at 0.091, which is a tolerance
+    // absorbing a systematic offset it could have predicted.
+    //
+    // So the claim is that `err·(n−1)` is one number. That fails for a second-order scheme, for a
+    // third-order one, and for a first-order one with the wrong constant — where `≈2` would pass for
+    // any of the last two.
+    let invariant: Vec<f64> = [12.0, 24.0, 48.0, 96.0]
+        .iter()
+        .zip(&errors)
+        .map(|(n, e)| e * (n - 1.0))
+        .collect();
+    // And that one number is itself a closed form, which pins the *coefficient* and not only the
+    // order: the wrong face costs `1/H − 1/A` and the whole wall is `(n−1)/2` cells of `1/k_a + 1/k_g`.
+    let harmonic = 2.0 * ALU * GLASS / (ALU + GLASS);
+    let want = 2.0 * (1.0 / harmonic - 2.0 / (ALU + GLASS)) / (1.0 / ALU + 1.0 / GLASS);
+    println!("  and err x (n-1) is {:.6} at every resolution, against 2(1/H - 1/A)/(1/k_a + 1/k_g) = {want:.6}", invariant[0]);
+    for v in &invariant {
         assert!(
-            (rate - 2.0).abs() < 0.1,
-            "first order halves with each refinement: {rate:.3}"
+            (v / want - 1.0).abs() < 1e-12,
+            "first order in exactly one face, with the coefficient that face has: {invariant:?} \
+             against {want:.9}"
         );
     }
+
     // And the cell count it would take to reach what harmonic already has.
     let needed = 96.0 * errors[3] / 0.001;
     println!("  0.1% would take about {needed:.0} cells; harmonic is there at twelve");
@@ -244,11 +281,15 @@ fn the_swept_steady_state_lands_on_the_layers_resistance() {
     let flux = face * (w.temperature_at(0, 0, 5).to_si() - w.temperature_at(0, 0, 6).to_si());
     let want = drop / closed;
     println!(
-        "  flux {flux:.6} W against ΔT/R {want:.6} W — off {:.3}%",
-        (flux / want - 1.0).abs() * 100.0
+        "  flux {flux:.6} W against ΔT/R {want:.6} W — off {:.2e}",
+        (flux / want - 1.0).abs()
     );
+    // `1e-4`, which is what fifteen time constants leaves: `e⁻¹⁵` is `3e-7` of the initial 70 K, so
+    // about `2e-5` K on a wall whose end-to-end drop is 70. A first draft at `1e-2` passed at
+    // `1.6e-2` after five time constants — a tolerance sized to how long the march was rather than
+    // to an effect, with the number that said the march was too short absorbed into it.
     assert!(
-        (flux / want - 1.0).abs() < 0.01,
+        (flux / want - 1.0).abs() < 1e-4,
         "the swept wall carries ΔT/R: {flux:.6} against {want:.6}"
     );
 
@@ -268,7 +309,7 @@ fn the_swept_steady_state_lands_on_the_layers_resistance() {
     }
     println!("  and every cell centre sits on ΔT/R to within {worst:.3e} K of 70");
     assert!(
-        worst < 1e-3,
+        worst < 1e-4,
         "the whole profile is the chain of resistances: worst {worst:.3e} K"
     );
 
@@ -311,6 +352,13 @@ fn the_swept_steady_state_lands_on_the_layers_resistance() {
 /// flux and takes it off one side and adds it to the other, so `Σ CᵢTᵢ` is invariant — but only if
 /// the ledger weights each cell by *its own* capacity. A ledger using one capacity for the block
 /// would report a leak that was not there, or hide one that was.
+///
+/// # The capacity assertion at the end is not redundant, and removing it would blind the rest
+///
+/// `deposit` divides joules by `capacity[i]` and the ledger multiplies by `capacity[i]`, so both
+/// checks above pass for *any* value of that capacity, right or wrong — they see the sweep, not the
+/// number. The hand-computed total is the only thing here that pins the capacity itself, and it is
+/// written from `ρc` and a cell count rather than from anything the domain returns.
 #[test]
 fn a_two_material_block_conserves_exactly_and_its_capacity_is_a_sum() {
     let mut w = wall(24);
@@ -338,9 +386,16 @@ fn a_two_material_block_conserves_exactly_and_its_capacity_is_a_sum() {
         .ledger()
         .get(quantity::ENERGY)
         .expect("energy is on the books");
-    println!("  {joules} J in, {closing:.12} J held after 4000 steps");
+    // The bound is `steps × ε`, which is what the accumulation of a conservative sweep can cost and
+    // nothing more: `4000 × 2.2e-16` is `8.8e-13`. Measured `2.0e-14`, a factor of forty-four inside
+    // a bound that traces to an effect rather than to a round number of zeros.
+    let bound = 4_000.0 * f64::EPSILON;
+    println!(
+        "  {joules} J in, {closing:.12} J held after 4000 steps — off {:.2e} of a bound of          {bound:.2e}",
+        (closing / joules - 1.0).abs()
+    );
     assert!(
-        (closing - joules).abs() < 1e-9 * joules,
+        (closing - joules).abs() < bound * joules,
         "an insulated filled block loses nothing: {closing:.12} against {joules}"
     );
     // The heat that spread out of the aluminium and into the glass is the point of the run — a

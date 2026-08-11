@@ -26,14 +26,22 @@ messages carry the full account.
   `2k_Lk_R/(k_L+k_R)` and not the arithmetic one. For aluminium against borosilicate those are
   2.21 and 84.1 W/m/K, a factor of **38**, and the arithmetic mean short-circuits the interface.
   The harmonic mean earns an *equality*: with the material interface on a cell face the discrete
-  chain of face resistances is exactly `Σ Lᵢ/(kᵢA)` at every resolution, measured to `2.2e-16` at
-  twelve, twenty-four, forty-eight and ninety-six cells. A layered wall's resistance has no
-  discretisation error at all.
+  chain of face resistances is exactly `Σ Lᵢ/(kᵢA)` at every resolution — measured at exactly zero
+  for twelve cells and `2.2e-16` for twenty-four, forty-eight and ninety-six. A layered wall's
+  resistance has no discretisation error at all.
 
   The arithmetic mean's is **first order**, which is the dangerous kind — 8.852%, 4.233%, 2.072%,
-  1.025% over those four, halving each time. It vanishes on refinement, so a single-resolution check
-  would have read it as a discretisation error and given it a tolerance. Reaching 0.1% would take
-  about **984** cells; harmonic is there at twelve.
+  1.025% over those four. It vanishes on refinement, so a single-resolution check would have read it
+  as a discretisation error and given it a tolerance. Reaching 0.1% would take about **984** cells;
+  harmonic is there at twelve.
+
+  And that rate is itself an equality, which asserting `≈2` had obscured. The wrong resistance is one
+  face's worth against `(n−1)/2` cells of the two layers, so the relative error is exactly
+  `2(1/H − 1/A)/(1/k_a + 1/k_g) / (n−1)`. Multiplying it by `n−1` gives **0.973670** at all four
+  resolutions and matches that closed form to `1e-12` — so the coefficient is pinned, not just the
+  order. The first draft asserted the consecutive ratios were 2 within 0.1 and passed at 0.091,
+  because the exact ratios are `23/11`, `47/23` and `95/47`: a tolerance absorbing a systematic
+  offset it could have predicted.
 
 - **Diffraction, and where scalar theory stops being true.** `single_slit_intensity` and `slit_zero`
   in `dualis-optics`, and `Cavity::obstruct` in `dualis-em` for a perfect conductor with a hole in
