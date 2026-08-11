@@ -14,6 +14,49 @@ messages carry the full account.
 
 ### Added
 
+- **A waveguide, and its whole dispersion relation from one march.** A box with conducting side
+  walls and open ends *is* a rectangular guide, so this needed nothing but a launcher that takes a
+  transverse profile and a driven source.
+
+  ```text
+    f_c = c/2a                    exact, and a property of the cross-section alone
+    β = √(k² − k_c²)              0.06% to 2.2% from 1.4 f_c to 3.1 f_c
+    α = √(k_c² − k²)              0.4% to 5.5% below cutoff
+    v_p v_g = c²                  1.0015, with v_p = 1.14c and v_g = 0.88c
+  ```
+
+  A pulse carries a band and the mode's `sin(πx/a)` profile is orthogonal to every other, so one
+  march gives `β` at every frequency in it. `λ_g/λ` runs from **1.43** near cutoff to 1.05 at the
+  top — a check at one high frequency would pass for a solver with no cutoff at all.
+
+- **Five things about measuring a guided wave, four of them mistakes.**
+
+  **A driven source is not a convenience below cutoff, it is the only way to ask.** An evanescent
+  field is a near field: it does not travel, and with nothing driving it it decays to zero, so there
+  is no steady state and no spatial profile to fit. The first attempt used an initial-value pulse and
+  returned decay constants of 0.285, −0.891 and −0.102 against a closed form of 2.7 — a *negative*
+  decay being the measurement saying it was fitting noise. `Cavity::impress` adds to `Ey` on a plane;
+  it must be called **after** the step, because the electric update rewrites every interior face and
+  erases a source added before it.
+
+  **Mur's boundary is tuned to `c` and a guided mode is not.** Its phase velocity is
+  `c/√(1−(f_c/f)²)` — 2c at `1.25 f_c` — so the absorbing faces are worst matched exactly where the
+  measurement is most interesting. `β` came out 15% low there against 2.3% at `1.4 f_c`. Truncating
+  the march before each reflection returns recovers the band above `1.4 f_c`; below it the near end's
+  reflection and the direct pulse overlap and no window separates them. That is a limitation of the
+  boundary rather than of the scheme, and which one it is is now written down.
+
+  **A band that does not cover the frequency asked about returns a transform of rounding.** The first
+  version read `β` correctly at its carrier, to 0.84%, and 87% wrong two octaves away.
+
+  **A transform window that is not a whole number of cycles leaks between bins**, and with the
+  amplitude falling by `e⁻²` across the stations that leakage was the difference between 13% off and
+  0.4%.
+
+  **A longer lever on a noisier point is not a better fit.** Widening the stations to hold a fixed
+  number of decay lengths made the evanescent measurement worse — 12.4% where the tight span gives
+  5.5% — because the far stations sit among the boundary's leakage.
+
 - **What a lumped resistance cannot say, measured.** `Winding` states a resistance; `Conductor`
   solves for one from a shape but is quasi-static, so neither has a frequency in it. A field does.
 

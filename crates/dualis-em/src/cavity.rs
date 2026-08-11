@@ -357,8 +357,27 @@ impl Cavity {
     /// Getting either offset wrong leaves a backward-travelling remainder that a reflectance
     /// measurement counts as a reflection.
     ///
-    /// Wants [`Boundary::Magnetic`] on the `x` faces — see that variant for why.
-    pub fn launch_along_z(&mut self, dt: Time, envelope: impl Fn(f64) -> f64) -> &mut Cavity {
+    /// The envelope is a function of **position**, not only of `z`, so a guided mode's transverse
+    /// profile can be given with it: `|x, _, z| (PI * x / a).sin() * pulse(z)` launches TE₁₀ down a
+    /// waveguide, and `|_, _, z| pulse(z)` launches a plane wave.
+    ///
+    /// A plane wave wants [`Boundary::Magnetic`] on the `x` faces — see that variant for why. A
+    /// guided mode does not: its profile already vanishes on the conducting walls, which is what
+    /// makes it a mode.
+    ///
+    /// # `H` is the plane wave's, even for a mode
+    ///
+    /// A mode's wave impedance is `η/√(1−(f_c/f)²)` and it carries a longitudinal `H` besides, so
+    /// this launches a superposition rather than a pure mode. That is fine and is *why* the
+    /// measurements downstream are of the field far from the source: everything that is not a
+    /// propagating mode is either below its own cutoff and gone within a few wavelengths, or
+    /// orthogonal to the profile and never excited. What survives is the mode, whatever was
+    /// launched.
+    pub fn launch_along_z(
+        &mut self,
+        dt: Time,
+        envelope: impl Fn(f64, f64, f64) -> f64,
+    ) -> &mut Cavity {
         let (nx, ny, nz) = self.counts;
         let c = self.medium.wave_speed().to_si();
         let eta = (self.medium.permeability() / self.medium.permittivity()).sqrt();
@@ -366,7 +385,11 @@ impl Cavity {
             for j in 0..ny {
                 for i in 0..=nx {
                     let idx = self.iey(i, j, k);
-                    self.ey[idx] = envelope(k as f64 * self.dx);
+                    self.ey[idx] = envelope(
+                        i as f64 * self.dx,
+                        (j as f64 + 0.5) * self.dx,
+                        k as f64 * self.dx,
+                    );
                 }
             }
         }
@@ -375,12 +398,56 @@ impl Cavity {
                 for i in 0..=nx {
                     let z = (k as f64 + 0.5) * self.dx + c * dt.to_si() / 2.0;
                     let idx = self.ihx(i, j, k);
-                    self.hx[idx] = -envelope(z) / eta;
+                    self.hx[idx] =
+                        -envelope(i as f64 * self.dx, (j as f64 + 0.5) * self.dx, z) / eta;
                 }
             }
         }
+        self.enforce_walls_where(|b| b == Boundary::Conducting);
         self.started = true;
         self
+    }
+
+    /// Add to `Ey` on one plane of constant `z`, as a driven source.
+    ///
+    /// A **soft** source: it adds rather than assigns, so a wave arriving at the plane passes
+    /// through instead of being erased. It radiates in both directions, which an absorbing face
+    /// behind it takes care of.
+    ///
+    /// # What an initial condition cannot do
+    ///
+    /// [`Cavity::launch_along_z`] sets a field and lets it go, which is everything for a
+    /// propagating wave and nothing for an **evanescent** one: a field below a waveguide's cutoff
+    /// is a near field, it does not travel, and with no source it simply decays to zero. There is no
+    /// steady state for it to settle into and therefore no spatial profile to measure.
+    ///
+    /// So a driven source is not a convenience here; it is the only way to ask the question.
+    pub fn impress(&mut self, plane: usize, add: impl Fn(f64, f64) -> f64) -> &mut Cavity {
+        let (nx, ny, nz) = self.counts;
+        let k = plane.min(nz);
+        for j in 0..ny {
+            for i in 0..=nx {
+                let idx = self.iey(i, j, k);
+                self.ey[idx] += add(i as f64 * self.dx, (j as f64 + 0.5) * self.dx);
+            }
+        }
+        self.enforce_walls_where(|b| b == Boundary::Conducting);
+        self
+    }
+
+    /// The cutoff frequency of a rectangular guide's `(m, n)` mode.
+    ///
+    /// ```text
+    ///   f_c = (c/2) √((m/a)² + (n/b)²)
+    /// ```
+    ///
+    /// The cavity resonance with the propagating index removed, which is not a coincidence: a
+    /// cavity is a guide with two more walls, and a mode of one is a mode of the other standing
+    /// still.
+    pub fn cutoff_frequency(&self, mode: (u32, u32)) -> Frequency {
+        let s = self.size().to_si();
+        let sum = (mode.0 as f64 / s.x).powi(2) + (mode.1 as f64 / s.y).powi(2);
+        Frequency::from_si(0.5 * self.medium.wave_speed().to_si() * sum.sqrt())
     }
 
     /// Make a face absorb rather than reflect, or the other way round.

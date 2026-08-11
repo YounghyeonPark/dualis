@@ -54,9 +54,9 @@ fn testbed(cells_along_z: usize, dx: f64) -> Cavity {
 
 /// A Gaussian-modulated pulse: narrow enough in time to separate the incident and reflected
 /// passes at the monitor, wide enough in frequency to be centred on a wavelength the grid carries.
-fn pulse(centre: f64, width: f64, wavelength: f64) -> impl Fn(f64) -> f64 {
+fn pulse(centre: f64, width: f64, wavelength: f64) -> impl Fn(f64, f64, f64) -> f64 {
     let k = 2.0 * std::f64::consts::PI / wavelength;
-    move |z: f64| {
+    move |_x: f64, _y: f64, z: f64| {
         let u = (z - centre) / width;
         (-u * u).exp() * (k * (z - centre)).cos()
     }

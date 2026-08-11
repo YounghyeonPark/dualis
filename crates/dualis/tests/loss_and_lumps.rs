@@ -102,7 +102,7 @@ fn a_field_decays_in_a_conductor_at_the_exact_rate() {
     let dt = Time::from_si(c.courant_limit().to_si() * 0.5);
     let k0 = 2.0 * std::f64::consts::PI / wavelength;
     let (centre, width) = (3.0 * wavelength, 2.0 * wavelength);
-    c.launch_along_z(dt, move |z| {
+    c.launch_along_z(dt, move |_x, _y, z| {
         let u = (z - centre) / width;
         (-u * u).exp() * (k0 * (z - centre)).cos()
     });
