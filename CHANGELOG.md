@@ -14,6 +14,52 @@ messages carry the full account.
 
 ### Added
 
+- **`dualis-em` carries structures now, and a Yee grid and Fresnel's algebra agree on a
+  reflectance.**
+
+  Per-cell media, so a slab or a coating goes into the box, and a *magnetic* boundary so a plane
+  wave can exist in one at all: a wave along `z` polarised along `y` has `Ey` tangential to the `x`
+  faces, and a conductor there turns it into a waveguide mode with a cutoff and the wrong phase
+  velocity.
+
+  `crates/dualis/tests/fields_and_rays.rs` is the check the two crates existed to make possible.
+  `dualis-optics` gets a reflectance from algebra on two indices; `dualis-em` marches Maxwell and
+  knows nothing about either. They share no code and do not depend on each other:
+
+  ```text
+    20 cells per wavelength    −10.543%
+    40                          −2.556%     ratio 4.13
+    80                          −0.634%     ratio 4.03
+
+    n = 1.5   3.981% against 4.000%
+    n = 2     11.041% against 11.111%
+    n = 3.5   30.519% against 30.864%
+  ```
+
+  The claim is the **rate**, not a tolerance: a single resolution with a loose bound passes for a
+  scheme converging at first order, and first order is what an interface placed half a cell wrong
+  would give.
+
+  Beside it, two things the algebra alone cannot say. A **quarter-wave coating** of the geometric
+  mean index takes a 14.4% reflection to 0.23% — a factor of **61**, and it is interference between
+  two surfaces rather than a property of either. And a slab **delays** a pulse by `(n−1)d/c` to
+  2.2%, measured on the energy centroid.
+
+- **Three things the cross-domain test found about how to measure.**
+
+  **A monitor plane inside the pulse measures nothing.** The first geometry put a pulse of
+  half-width 1.6λ at 4λ and the monitor at 5λ, so the "incident" window opened with the pulse
+  already on it: the reflectance came out 34.7% where Fresnel says 14.8%.
+
+  **The peak of an oscillating pulse is a peak of its carrier.** It moves in steps of half a period
+  — 0.83 fs here, against delays of a few femtoseconds — so the slab delay read 9% high for that
+  reason and no other. The energy centroid is immune to it.
+
+  **A one-dimensional problem does not want a two-dimensional cross-section.** The testbed was
+  4 × 4 cells across, every one holding the same field by construction, and the file took **486 s**
+  in a debug build — the mode CI's OS matrix runs. Two by one is the smallest grid with an interior,
+  gives the same numbers to the last digit, and takes 36 s.
+
 - **An open boundary for `dualis-em`, and the source that showed why the first measurement of it
   was meaningless.**
 

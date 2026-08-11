@@ -59,6 +59,20 @@ impl Wall {
 pub enum Boundary {
     /// A perfect conductor: the tangential electric field is zero, and everything comes back.
     Conducting,
+    /// A perfect *magnetic* conductor: the tangential magnetic field is zero, so the tangential
+    /// electric field has no normal gradient and is mirrored across the face.
+    ///
+    /// # What it is for
+    ///
+    /// Not a material. It is the boundary a **symmetry plane** has, and it is the only way to put
+    /// a plane wave in a box without periodicity: a wave travelling along `z` with `E ∥ ŷ` has `Ey`
+    /// tangential to the `x` faces, so a conductor there would force it to zero and turn the plane
+    /// wave into a waveguide mode with a cutoff and the wrong phase velocity.
+    ///
+    /// A conductor on the `y` faces and a magnetic conductor on the `x` ones leaves that wave
+    /// exactly uniform across the box, which is what makes a one-dimensional problem statable in a
+    /// three-dimensional grid.
+    Magnetic,
     /// Mur's first-order absorbing condition: the wave leaves, mostly.
     ///
     /// # How open "open" is, and why the number is not zero
@@ -109,6 +123,13 @@ pub struct Cavity {
     hz: Vec<f64>,
     /// What each face does, in [`Wall::ALL`] order.
     boundary: [Boundary; 6],
+    /// What fills each cell. Uniform unless [`Cavity::fill`] says otherwise.
+    cells: Vec<Medium>,
+    /// Permittivity, conductivity and permeability **at each field component's own place**, which
+    /// is not a cell centre — see [`Cavity::refresh_media`].
+    eps: [Vec<f64>; 3],
+    sigma: [Vec<f64>; 3],
+    mu: [Vec<f64>; 3],
     /// The tangential electric field one step ago, for the faces that need it.
     ///
     /// Mur's condition relates the boundary at `n+1` to the boundary and its neighbour at `n`, so
@@ -150,7 +171,7 @@ impl Cavity {
     ) -> Cavity {
         let counts = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
         let (nx, ny, nz) = counts;
-        Cavity {
+        let mut built = Cavity {
             name: name.into(),
             counts,
             dx: cell.to_si(),
@@ -162,11 +183,204 @@ impl Cavity {
             hy: vec![0.0; nx * (ny + 1) * nz],
             hz: vec![0.0; nx * ny * (nz + 1)],
             boundary: [Boundary::Conducting; 6],
+            cells: vec![medium; nx * ny * nz],
+            eps: [Vec::new(), Vec::new(), Vec::new()],
+            sigma: [Vec::new(), Vec::new(), Vec::new()],
+            mu: [Vec::new(), Vec::new(), Vec::new()],
             previous: None,
             started: false,
             dissipated: 0.0,
             saved: None,
+        };
+        built.refresh_media();
+        built
+    }
+
+    /// Fill the cells a predicate selects with a different medium.
+    ///
+    /// How a slab, a coating or a lens goes into the box. The predicate is handed cell indices.
+    pub fn fill(
+        &mut self,
+        medium: Medium,
+        which: impl Fn(usize, usize, usize) -> bool,
+    ) -> &mut Cavity {
+        let (nx, ny, nz) = self.counts;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    if which(i, j, k) {
+                        self.cells[i + nx * (j + ny * k)] = medium;
+                    }
+                }
+            }
         }
+        self.refresh_media();
+        self
+    }
+
+    /// What fills one cell.
+    pub fn medium_at(&self, i: usize, j: usize, k: usize) -> Medium {
+        let (nx, ny, nz) = self.counts;
+        self.cells[i.min(nx - 1) + nx * (j.min(ny - 1) + ny * k.min(nz - 1))]
+    }
+
+    /// Recompute each field component's material from the cells around it.
+    ///
+    /// # A field component does not sit in a cell
+    ///
+    /// `Ey` lives on an edge shared by four cells and `Hx` on a face shared by two, so neither has
+    /// *a* permittivity — it has the average of the ones it borders. That averaging is what puts a
+    /// sharp interface exactly on a grid plane and keeps it second order; taking the material of
+    /// the nearest cell instead moves the interface half a cell and is first order, which shows up
+    /// as a reflectance that is right to one digit and converges at the wrong rate.
+    fn refresh_media(&mut self) {
+        let (nx, ny, nz) = self.counts;
+        let at = |i: isize, j: isize, k: isize| -> usize {
+            let c = |v: isize, n: usize| v.clamp(0, n as isize - 1) as usize;
+            c(i, nx) + nx * (c(j, ny) + ny * c(k, nz))
+        };
+        let mean = |cells: &[Medium], of: &[usize], f: fn(&Medium) -> f64| -> f64 {
+            of.iter().map(|c| f(&cells[*c])).sum::<f64>() / of.len() as f64
+        };
+        let permittivity = |m: &Medium| m.permittivity();
+        let conductivity = |m: &Medium| m.conductivity.max(0.0);
+        let permeability = |m: &Medium| m.permeability();
+
+        let mut eps = [
+            vec![0.0; self.ex.len()],
+            vec![0.0; self.ey.len()],
+            vec![0.0; self.ez.len()],
+        ];
+        let mut sigma = eps.clone();
+        for k in 0..=nz {
+            for j in 0..=ny {
+                for i in 0..=nx {
+                    if i < nx {
+                        let of = [
+                            at(i as isize, j as isize - 1, k as isize - 1),
+                            at(i as isize, j as isize, k as isize - 1),
+                            at(i as isize, j as isize - 1, k as isize),
+                            at(i as isize, j as isize, k as isize),
+                        ];
+                        let idx = self.iex(i, j, k);
+                        eps[0][idx] = mean(&self.cells, &of, permittivity);
+                        sigma[0][idx] = mean(&self.cells, &of, conductivity);
+                    }
+                    if j < ny {
+                        let of = [
+                            at(i as isize - 1, j as isize, k as isize - 1),
+                            at(i as isize, j as isize, k as isize - 1),
+                            at(i as isize - 1, j as isize, k as isize),
+                            at(i as isize, j as isize, k as isize),
+                        ];
+                        let idx = self.iey(i, j, k);
+                        eps[1][idx] = mean(&self.cells, &of, permittivity);
+                        sigma[1][idx] = mean(&self.cells, &of, conductivity);
+                    }
+                    if k < nz {
+                        let of = [
+                            at(i as isize - 1, j as isize - 1, k as isize),
+                            at(i as isize, j as isize - 1, k as isize),
+                            at(i as isize - 1, j as isize, k as isize),
+                            at(i as isize, j as isize, k as isize),
+                        ];
+                        let idx = self.iez(i, j, k);
+                        eps[2][idx] = mean(&self.cells, &of, permittivity);
+                        sigma[2][idx] = mean(&self.cells, &of, conductivity);
+                    }
+                }
+            }
+        }
+
+        let mut mu = [
+            vec![0.0; self.hx.len()],
+            vec![0.0; self.hy.len()],
+            vec![0.0; self.hz.len()],
+        ];
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let idx = self.ihx(i, j, k);
+                    mu[0][idx] = mean(
+                        &self.cells,
+                        &[
+                            at(i as isize - 1, j as isize, k as isize),
+                            at(i as isize, j as isize, k as isize),
+                        ],
+                        permeability,
+                    );
+                    let idx = self.ihy(i, j, k);
+                    mu[1][idx] = mean(
+                        &self.cells,
+                        &[
+                            at(i as isize, j as isize - 1, k as isize),
+                            at(i as isize, j as isize, k as isize),
+                        ],
+                        permeability,
+                    );
+                    let idx = self.ihz(i, j, k);
+                    mu[2][idx] = mean(
+                        &self.cells,
+                        &[
+                            at(i as isize, j as isize, k as isize - 1),
+                            at(i as isize, j as isize, k as isize),
+                        ],
+                        permeability,
+                    );
+                }
+            }
+        }
+        // The `H` faces the loop above does not reach lie outside the box in one index. Nothing
+        // reads them, but a zero permeability would divide by zero if anything ever did.
+        let fallback = self.medium.permeability();
+        for component in mu.iter_mut() {
+            for v in component.iter_mut() {
+                if *v <= 0.0 {
+                    *v = fallback;
+                }
+            }
+        }
+        self.eps = eps;
+        self.sigma = sigma;
+        self.mu = mu;
+    }
+
+    /// Launch a plane wave travelling along `+z`, polarised along `y`.
+    ///
+    /// The envelope is given as a function of `z` in metres. `H` is set from it exactly:
+    ///
+    /// ```text
+    ///   E = f(z − ct) ŷ,      H = (1/η) ẑ × E = −f(z − ct)/η · x̂
+    /// ```
+    ///
+    /// evaluated half a cell along and half a step back, which is where the staggering puts it.
+    /// Getting either offset wrong leaves a backward-travelling remainder that a reflectance
+    /// measurement counts as a reflection.
+    ///
+    /// Wants [`Boundary::Magnetic`] on the `x` faces — see that variant for why.
+    pub fn launch_along_z(&mut self, dt: Time, envelope: impl Fn(f64) -> f64) -> &mut Cavity {
+        let (nx, ny, nz) = self.counts;
+        let c = self.medium.wave_speed().to_si();
+        let eta = (self.medium.permeability() / self.medium.permittivity()).sqrt();
+        for k in 0..=nz {
+            for j in 0..ny {
+                for i in 0..=nx {
+                    let idx = self.iey(i, j, k);
+                    self.ey[idx] = envelope(k as f64 * self.dx);
+                }
+            }
+        }
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..=nx {
+                    let z = (k as f64 + 0.5) * self.dx + c * dt.to_si() / 2.0;
+                    let idx = self.ihx(i, j, k);
+                    self.hx[idx] = -envelope(z) / eta;
+                }
+            }
+        }
+        self.started = true;
+        self
     }
 
     /// Make a face absorb rather than reflect, or the other way round.
@@ -365,7 +579,33 @@ impl Cavity {
         }
     }
 
+    /// Sum `material · f²` over one component array, with the boundary half-cells weighted as
+    /// such.
+    fn weighted_square_with(
+        &self,
+        field: &[f64],
+        material: &[f64],
+        extent: (usize, usize, usize),
+        node: (bool, bool, bool),
+    ) -> f64 {
+        let (ex, ey, ez) = extent;
+        let mut total = 0.0;
+        for k in 0..ez {
+            for j in 0..ey {
+                for i in 0..ex {
+                    let w = Cavity::weight(i, ex - 1, node.0)
+                        * Cavity::weight(j, ey - 1, node.1)
+                        * Cavity::weight(k, ez - 1, node.2);
+                    let idx = i + ex * (j + ey * k);
+                    total += w * material[idx] * field[idx] * field[idx];
+                }
+            }
+        }
+        total
+    }
+
     /// Sum `f²` over one component array, with the boundary half-cells weighted as such.
+    #[allow(dead_code)]
     fn weighted_square(
         &self,
         field: &[f64],
@@ -392,23 +632,49 @@ impl Cavity {
     pub fn electric_energy(&self) -> Energy {
         let (nx, ny, nz) = self.counts;
         let v = self.dx.powi(3);
-        let e = self.medium.permittivity();
-        // Ex is cell-centred in x and node-centred in y and z; the others rotate that.
-        let sum = self.weighted_square(&self.ex, (nx, ny + 1, nz + 1), (false, true, true))
-            + self.weighted_square(&self.ey, (nx + 1, ny, nz + 1), (true, false, true))
-            + self.weighted_square(&self.ez, (nx + 1, ny + 1, nz), (true, true, false));
-        Energy::from_si(0.5 * e * sum * v)
+        // Ex is cell-centred in x and node-centred in y and z; the others rotate that. The
+        // permittivity is per component, so a box with a slab in it reports the energy the slab
+        // actually holds rather than the box's nominal one.
+        let sum = self.weighted_square_with(
+            &self.ex,
+            &self.eps[0],
+            (nx, ny + 1, nz + 1),
+            (false, true, true),
+        ) + self.weighted_square_with(
+            &self.ey,
+            &self.eps[1],
+            (nx + 1, ny, nz + 1),
+            (true, false, true),
+        ) + self.weighted_square_with(
+            &self.ez,
+            &self.eps[2],
+            (nx + 1, ny + 1, nz),
+            (true, true, false),
+        );
+        Energy::from_si(0.5 * sum * v)
     }
 
     /// Magnetic energy, `½∫μH² dV`.
     pub fn magnetic_energy(&self) -> Energy {
         let (nx, ny, nz) = self.counts;
         let v = self.dx.powi(3);
-        let mu = self.medium.permeability();
-        let sum = self.weighted_square(&self.hx, (nx + 1, ny, nz), (true, false, false))
-            + self.weighted_square(&self.hy, (nx, ny + 1, nz), (false, true, false))
-            + self.weighted_square(&self.hz, (nx, ny, nz + 1), (false, false, true));
-        Energy::from_si(0.5 * mu * sum * v)
+        let sum = self.weighted_square_with(
+            &self.hx,
+            &self.mu[0],
+            (nx + 1, ny, nz),
+            (true, false, false),
+        ) + self.weighted_square_with(
+            &self.hy,
+            &self.mu[1],
+            (nx, ny + 1, nz),
+            (false, true, false),
+        ) + self.weighted_square_with(
+            &self.hz,
+            &self.mu[2],
+            (nx, ny, nz + 1),
+            (false, false, true),
+        );
+        Energy::from_si(0.5 * sum * v)
     }
 
     /// The field energy in the box.
@@ -554,9 +820,11 @@ impl Cavity {
         // Every face that is conducting keeps the old behaviour, and doing that first means an
         // edge shared by a conducting face and an open one is held — which is the right answer,
         // because a perfect conductor's condition is not negotiable and Mur's is an approximation.
-        self.enforce_walls_where(|w, b| {
-            b == Boundary::Conducting || previous.is_none() || w.index() > 5
-        });
+        self.enforce_walls_where(|b| b == Boundary::Conducting);
+        self.mirror_magnetic_walls();
+        if previous.is_none() {
+            self.enforce_walls_where(|b| b == Boundary::Open);
+        }
 
         if let Some(prev) = previous.as_deref() {
             let (pex, pey, pez) = (&prev.ex, &prev.ey, &prev.ez);
@@ -633,11 +901,83 @@ impl Cavity {
         }));
     }
 
-    /// Zero the tangential electric field on the faces a predicate selects.
-    fn enforce_walls_where(&mut self, which: impl Fn(Wall, Boundary) -> bool) {
+    /// Mirror the tangential electric field across every magnetic-conductor face.
+    ///
+    /// `∂E_t/∂n = 0`, which is what "no tangential H" means for the electric field. A plane wave
+    /// uniform across such a face stays uniform, which is the whole point of having one.
+    fn mirror_magnetic_walls(&mut self) {
         let (nx, ny, nz) = self.counts;
         for wall in Wall::ALL {
-            if !which(wall, self.boundary[wall.index()]) {
+            if self.boundary[wall.index()] != Boundary::Magnetic {
+                continue;
+            }
+            match wall {
+                Wall::XLow | Wall::XHigh => {
+                    let (edge, inner) = if wall == Wall::XLow {
+                        (0, 1)
+                    } else {
+                        (nx, nx - 1)
+                    };
+                    for k in 0..=nz {
+                        for j in 0..ny {
+                            let (a, b) = (self.iey(edge, j, k), self.iey(inner, j, k));
+                            self.ey[a] = self.ey[b];
+                        }
+                    }
+                    for k in 0..nz {
+                        for j in 0..=ny {
+                            let (a, b) = (self.iez(edge, j, k), self.iez(inner, j, k));
+                            self.ez[a] = self.ez[b];
+                        }
+                    }
+                }
+                Wall::YLow | Wall::YHigh => {
+                    let (edge, inner) = if wall == Wall::YLow {
+                        (0, 1)
+                    } else {
+                        (ny, ny - 1)
+                    };
+                    for k in 0..=nz {
+                        for i in 0..nx {
+                            let (a, b) = (self.iex(i, edge, k), self.iex(i, inner, k));
+                            self.ex[a] = self.ex[b];
+                        }
+                    }
+                    for k in 0..nz {
+                        for i in 0..=nx {
+                            let (a, b) = (self.iez(i, edge, k), self.iez(i, inner, k));
+                            self.ez[a] = self.ez[b];
+                        }
+                    }
+                }
+                Wall::ZLow | Wall::ZHigh => {
+                    let (edge, inner) = if wall == Wall::ZLow {
+                        (0, 1)
+                    } else {
+                        (nz, nz - 1)
+                    };
+                    for j in 0..=ny {
+                        for i in 0..nx {
+                            let (a, b) = (self.iex(i, j, edge), self.iex(i, j, inner));
+                            self.ex[a] = self.ex[b];
+                        }
+                    }
+                    for j in 0..ny {
+                        for i in 0..=nx {
+                            let (a, b) = (self.iey(i, j, edge), self.iey(i, j, inner));
+                            self.ey[a] = self.ey[b];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Zero the tangential electric field on the faces a predicate selects.
+    fn enforce_walls_where(&mut self, which: impl Fn(Boundary) -> bool) {
+        let (nx, ny, nz) = self.counts;
+        for wall in Wall::ALL {
+            if !which(self.boundary[wall.index()]) {
                 continue;
             }
             match wall {
@@ -743,14 +1083,14 @@ impl Cavity {
     /// Advance `H` by `dt`, from `E`.
     fn advance_magnetic(&mut self, dt: f64) {
         let (nx, ny, nz) = self.counts;
-        let f = dt / (self.medium.permeability() * self.dx);
+        let g = dt / self.dx;
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..=nx {
                     let curl = (self.ez[self.iez(i, j + 1, k)] - self.ez[self.iez(i, j, k)])
                         - (self.ey[self.iey(i, j, k + 1)] - self.ey[self.iey(i, j, k)]);
                     let idx = self.ihx(i, j, k);
-                    self.hx[idx] -= f * curl;
+                    self.hx[idx] -= g / self.mu[0][idx] * curl;
                 }
             }
         }
@@ -760,7 +1100,7 @@ impl Cavity {
                     let curl = (self.ex[self.iex(i, j, k + 1)] - self.ex[self.iex(i, j, k)])
                         - (self.ez[self.iez(i + 1, j, k)] - self.ez[self.iez(i, j, k)]);
                     let idx = self.ihy(i, j, k);
-                    self.hy[idx] -= f * curl;
+                    self.hy[idx] -= g / self.mu[1][idx] * curl;
                 }
             }
         }
@@ -770,7 +1110,7 @@ impl Cavity {
                     let curl = (self.ey[self.iey(i + 1, j, k)] - self.ey[self.iey(i, j, k)])
                         - (self.ex[self.iex(i, j + 1, k)] - self.ex[self.iex(i, j, k)]);
                     let idx = self.ihz(i, j, k);
-                    self.hz[idx] -= f * curl;
+                    self.hz[idx] -= g / self.mu[2][idx] * curl;
                 }
             }
         }
@@ -780,13 +1120,19 @@ impl Cavity {
     /// [`Cavity::enforce_walls`].
     fn advance_electric(&mut self, dt: f64) -> f64 {
         let (nx, ny, nz) = self.counts;
-        let eps = self.medium.permittivity();
-        let sigma = self.medium.conductivity.max(0.0);
         // The semi-implicit form, which is stable for any conductivity rather than only for
         // `dt < 2ε/σ`. An explicit `E -= (σ/ε)E dt` is the obvious version and it explodes in a
         // good conductor at any step this grid would use.
-        let decay = (1.0 - sigma * dt / (2.0 * eps)) / (1.0 + sigma * dt / (2.0 * eps));
-        let gain = (dt / (eps * self.dx)) / (1.0 + sigma * dt / (2.0 * eps));
+        //
+        // Per component rather than per cavity, because a field on the edge between two materials
+        // has the average of both and not the box's own.
+        let coefficients = |eps: f64, sigma: f64| -> (f64, f64) {
+            let half = sigma * dt / (2.0 * eps);
+            (
+                (1.0 - half) / (1.0 + half),
+                (dt / (eps * self.dx)) / (1.0 + half),
+            )
+        };
         // **Joule heating, `∫σE²dt`, and not the change in the field's own energy.** The first
         // version took `½ε(E² − E'²)`, which is the loss *plus* whatever flowed in from the
         // magnetic field on the same step — and reported dissipating thirty-six times the energy
@@ -801,6 +1147,8 @@ impl Cavity {
                     let curl = (self.hz[self.ihz(i, j, k)] - self.hz[self.ihz(i, j - 1, k)])
                         - (self.hy[self.ihy(i, j, k)] - self.hy[self.ihy(i, j, k - 1)]);
                     let idx = self.iex(i, j, k);
+                    let (eps, sigma) = (self.eps[0][idx], self.sigma[0][idx]);
+                    let (decay, gain) = coefficients(eps, sigma);
                     let before = self.ex[idx];
                     self.ex[idx] = decay * before + gain * curl;
                     let mid = 0.5 * (before + self.ex[idx]);
@@ -814,6 +1162,8 @@ impl Cavity {
                     let curl = (self.hx[self.ihx(i, j, k)] - self.hx[self.ihx(i, j, k - 1)])
                         - (self.hz[self.ihz(i, j, k)] - self.hz[self.ihz(i - 1, j, k)]);
                     let idx = self.iey(i, j, k);
+                    let (eps, sigma) = (self.eps[1][idx], self.sigma[1][idx]);
+                    let (decay, gain) = coefficients(eps, sigma);
                     let before = self.ey[idx];
                     self.ey[idx] = decay * before + gain * curl;
                     let mid = 0.5 * (before + self.ey[idx]);
@@ -827,6 +1177,8 @@ impl Cavity {
                     let curl = (self.hy[self.ihy(i, j, k)] - self.hy[self.ihy(i - 1, j, k)])
                         - (self.hx[self.ihx(i, j, k)] - self.hx[self.ihx(i, j - 1, k)]);
                     let idx = self.iez(i, j, k);
+                    let (eps, sigma) = (self.eps[2][idx], self.sigma[2][idx]);
+                    let (decay, gain) = coefficients(eps, sigma);
                     let before = self.ez[idx];
                     self.ez[idx] = decay * before + gain * curl;
                     let mid = 0.5 * (before + self.ez[idx]);
@@ -834,11 +1186,7 @@ impl Cavity {
                 }
             }
         }
-        if sigma > 0.0 {
-            lost.max(0.0)
-        } else {
-            0.0
-        }
+        lost.max(0.0)
     }
 }
 
@@ -879,11 +1227,7 @@ impl Domain for Cavity {
         }
         self.advance_magnetic(h);
         self.dissipated += self.advance_electric(h);
-        if self.boundary.iter().all(|b| *b == Boundary::Conducting) {
-            self.enforce_walls();
-        } else {
-            self.apply_boundaries(h);
-        }
+        self.apply_boundaries(h);
         Ok(())
     }
 
