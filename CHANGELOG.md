@@ -12,6 +12,18 @@ messages carry the full account.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-08-11
+
+**Four new domains, and the list `ARCHITECTURE.md` opened with is closed.** Electromagnetism,
+elasticity, fluids and flow through a packed bed are crates on the kernel now, and none of them
+needed the kernel or either layer above it to change — rule 4 held ten times. Ten domains, sixteen
+crates, 546 tests.
+
+The other half of the release is two tests that make the *relationships* checkable:
+`fields_and_rays.rs` puts a Yee grid against Fresnel's algebra, and `loss_and_lumps.rs` puts a
+field's decay in a conductor against a `Winding` that answers the same number at every frequency.
+Neither closes a gap by making one domain do another's job.
+
 ### Added
 
 - **A waveguide, and its whole dispersion relation from one march.** A box with conducting side
@@ -1434,7 +1446,8 @@ and are not obvious from the outside:
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.11.0
 [0.10.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.10.0
 [0.9.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.9.0
 [0.8.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.8.0

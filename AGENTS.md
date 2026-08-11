@@ -13,7 +13,7 @@ Everything below describes the Rust API.
 
 ```toml
 [dependencies]
-dualis = "0.10"
+dualis = "0.11"
 ```
 
 API docs: <https://docs.rs/dualis>. Source: <https://github.com/YounghyeonPark/dualis>.

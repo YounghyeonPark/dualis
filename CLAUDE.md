@@ -134,7 +134,7 @@ caught it — nothing in the gate above reads that directory at all.
 cd bindings/python
 cargo fmt --check && cargo clippy --release --all-targets -- -D warnings
 python -m maturin build --release
-python -m pip install --force-reinstall target/wheels/dualis-0.10.0-*.whl
+python -m pip install --force-reinstall target/wheels/dualis-0.11.0-*.whl
 python tests/test_dualis.py
 ```
 
