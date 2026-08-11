@@ -114,6 +114,47 @@ pub fn airy_intensity(v: f64) -> f64 {
     a * a
 }
 
+/// A single slit's far-field intensity, normalised to 1 on the axis.
+///
+/// ```text
+///   I(θ) = sinc²(π a sinθ / λ),      sinc x = sin x / x
+/// ```
+///
+/// The one-dimensional counterpart of [`airy_intensity`], and worth having beside it because the two
+/// differ in the way that matters: a slit's first zero is at `sinθ = λ/a` **exactly**, while a
+/// circular aperture's is at `1.22 λ/D`. The 1.22 is the first zero of `J₁` and has no closed form;
+/// the 1 here is `sin π = 0`.
+///
+/// # What this is an approximation to
+///
+/// Scalar diffraction: it assumes the field in the aperture is the incident field, which is
+/// Kirchhoff's boundary condition and is not what Maxwell's equations give. The screen has thickness,
+/// the metal carries currents, and the field in the opening is perturbed near its edges over a
+/// distance of order `λ`. So the fraction of the aperture that is wrong goes as `λ/a`, and this
+/// formula is exact only as `a/λ → ∞`.
+///
+/// `crates/dualis/tests/a_slit.rs` measures that convergence against a field solution, because a
+/// closed form's regime of validity is worth as much as the closed form. Measured, as the largest
+/// absolute difference in intensity: 0.0057 at `a = 12λ`, 0.0311 at `3λ`, and **0.2772 at `1λ`** —
+/// where it is wrong by more than a quarter of the pattern it is predicting.
+pub fn single_slit_intensity(width: Length, wavelength: Length, sin_theta: f64) -> f64 {
+    let u = std::f64::consts::PI * width.to_si() * sin_theta / wavelength.to_si();
+    if u.abs() < 1e-12 {
+        return 1.0;
+    }
+    (u.sin() / u).powi(2)
+}
+
+/// Where a single slit's `m`-th dark fringe falls, as `sinθ = mλ/a`.
+///
+/// Returns `None` past grazing, which happens for `m λ > a` — a slit narrower than the wavelength
+/// has **no** zeros at all, and that is not an edge case to be clamped away: it is the statement
+/// that a sub-wavelength opening does not diffract into a pattern, it radiates.
+pub fn slit_zero(width: Length, wavelength: Length, order: u32) -> Option<f64> {
+    let s = order as f64 * wavelength.to_si() / width.to_si();
+    (order > 0 && s <= 1.0).then_some(s)
+}
+
 /// Fraction of the total energy inside radius `v`.
 ///
 /// `1 - J₀²(v) - J₁²(v)`, exactly. At the first dark ring this is 0.8378: a sixth of
@@ -523,5 +564,74 @@ mod tests {
         assert!((far - 0.4545).abs() < 0.001, "got {far}");
         // Zero distance is not a regime, and reports infinity rather than a NaN.
         assert!(!fresnel_number(Length::mm(5.0), Length::ZERO, green).is_finite());
+    }
+
+    /// **A slit's zeros are at `mλ/a` exactly**, which is the one place a diffraction pattern has a
+    /// closed form with no special constant in it.
+    #[test]
+    fn a_slits_zeros_are_at_m_lambda_over_a() {
+        let (a, l) = (Length::um(10.0), Length::nm(500.0));
+        for m in 1..=5u32 {
+            let s = slit_zero(a, l, m).expect("a 20-wavelength slit has five zeros");
+            assert!(
+                (s - m as f64 * 0.05).abs() < 1e-15,
+                "the {m}th zero is at {m} lambda / a: {s}"
+            );
+            assert!(
+                single_slit_intensity(a, l, s) < 1e-24,
+                "and the intensity there is zero: {:.3e}",
+                single_slit_intensity(a, l, s)
+            );
+        }
+        // Halfway between the first two zeros, `sinc²(3π/2) = 1/(2.25 π²)` — 4.503%. Not quite the
+        // sidelobe's *peak*, which sits slightly inside that angle at 4.72%: `sinc` is falling as
+        // `1/u` while it oscillates, so every maximum is a little before the midpoint.
+        let between = 1.5 * 0.05;
+        let side = single_slit_intensity(a, l, between);
+        let closed = 1.0 / (2.25 * std::f64::consts::PI.powi(2));
+        assert!(
+            (side - closed).abs() < 1e-12,
+            "sinc^2(3 pi / 2) = 1/(2.25 pi^2) = {:.4}%: measured {:.4}%",
+            closed * 100.0,
+            side * 100.0
+        );
+        // On the axis it is exactly one, taken analytically rather than left to divide by zero.
+        assert_eq!(single_slit_intensity(a, l, 0.0), 1.0);
+    }
+
+    /// **A sub-wavelength slit has no zeros at all**, and that is a statement rather than an edge
+    /// case.
+    ///
+    /// `sinθ = λ/a > 1` has no solution: the first dark fringe would be past grazing. Such an opening
+    /// does not diffract into a pattern, it radiates — and the scalar formula, which happily returns
+    /// a number for any angle, is furthest from the truth exactly there.
+    #[test]
+    fn a_slit_narrower_than_the_wavelength_has_no_zeros() {
+        let l = Length::nm(500.0);
+        assert!(slit_zero(Length::nm(400.0), l, 1).is_none());
+        assert!(
+            slit_zero(Length::nm(500.0), l, 1).is_some(),
+            "at a = lambda the zero is at grazing"
+        );
+        assert!(slit_zero(Length::nm(900.0), l, 2).is_none());
+        assert!(
+            slit_zero(Length::um(10.0), l, 0).is_none(),
+            "there is no zeroth zero"
+        );
+        // And a narrow slit's pattern is nearly flat, which is what "radiates" means. Measured
+        // against a wide one at the same angle rather than against a round number: the contrast is
+        // the statement, and either figure alone is just a number.
+        let narrow = single_slit_intensity(Length::nm(300.0), l, 1.0);
+        let wide = single_slit_intensity(Length::um(10.0), l, 0.53);
+        println!("  0.6 lambda at grazing {narrow:.4}, 20 lambda off axis {wide:.6}");
+        assert!(
+            (0.20..0.30).contains(&narrow),
+            "a 0.6-wavelength slit still sends a quarter of its light to grazing: {narrow:.4}"
+        );
+        assert!(
+            narrow / wide > 100.0,
+            "which is two orders more than a wide slit sends anywhere off axis: {:.0}x",
+            narrow / wide
+        );
     }
 }

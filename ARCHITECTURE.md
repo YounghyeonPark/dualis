@@ -313,10 +313,17 @@ are the second half of crates that exist.
 
 Two entries that used to be on this list are answered, and both the same way — not by a domain
 absorbing another's job, but by a test that fails if two of them ever stop being limits of one
-physics. `crates/dualis/tests/fields_and_rays.rs` puts a Yee grid against Fresnel's algebra;
-`loss_and_lumps.rs` puts a field's decay in a conductor against the exact `α(ω)` and then against
-its own famous `√(2/ωμσ)` limit, beside a `Winding` that answers `0.1724 Ω` at every frequency in
-the comparison.
+physics. There are three of those now:
+
+- `fields_and_rays.rs` — a Yee grid against Fresnel's algebra, to 0.5% at eighty cells per
+  wavelength, converging at second order, with a quarter-wave coating taking 14.4% to 0.23%.
+- `loss_and_lumps.rs` — a field's decay in a conductor against the exact `α(ω)`, then against its
+  own famous `√(2/ωμσ)` limit, beside a `Winding` answering `0.1724 Ω` at every frequency.
+- `a_slit.rs` — a diffraction pattern against `sinc²`, which is **not** a comparison the field
+  solution should win or lose. Scalar theory assumes Kirchhoff's boundary condition and Maxwell's
+  equations do not, so the two agree in a limit: measured, the difference falls from 0.277 at one
+  wavelength to 0.0057 at twelve, a factor of 48. The value is knowing *where* a closed form is
+  valid, which is worth as much as the closed form.
 
 **`dualis-optics` having rays and no fields is the one already answered**, and not by adding fields
 to it. `dualis-em` *is* the field formulation, and `crates/dualis/tests/fields_and_rays.rs` is where

@@ -25,7 +25,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 546 tests, all against closed forms
+cargo test --workspace                       # 551 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are twelve of those; three more
@@ -90,7 +90,7 @@ its own scheme. There are tests for those rates now.
 | `dualis-porous` | Flow through a packed bed: Darcy's law solved as a field, the heat the liquid carries, and the dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed and an aquifer |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV, JSON, and **glTF** so Blender, three.js and USD tools can open a result. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
-| `dualis` | A facade over the other fourteen, and where the cross-domain integration tests live — including the one where a Yee grid and Fresnel's algebra, which share no code, agree on a surface's reflectance |
+| `dualis` | A facade over the other fourteen, and where the cross-domain integration tests live — including the three that hold two domains against each other: a Yee grid against Fresnel's algebra, a field's decay in a conductor against a lumped resistance that has no frequency in it, and a diffraction pattern against the scalar theory it converges on |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `runtime/gpu` | `Solid3D`'s stencil as a compute shader — 191× on a 64³ grid, and single precision against the domain's double, so the CPU is the reference and the difference is measured. Its own workspace |
 | `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `dualis`, so the wire format being sufficient is demonstrated rather than claimed |

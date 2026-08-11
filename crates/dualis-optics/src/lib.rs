@@ -70,7 +70,8 @@ pub mod wavefront;
 pub use detector::{Detector, Reading};
 pub use diffraction::{
     abbe_limit, airy_intensity, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy,
-    mtf_at, mtf_ideal, rayleigh_limit, strehl_from_wavefront_error,
+    mtf_at, mtf_ideal, rayleigh_limit, single_slit_intensity, slit_zero,
+    strehl_from_wavefront_error,
 };
 pub use geometry::{
     annulus_intersect, cap_intersect, conic_intersect, conic_sag, cylinder_intersect,

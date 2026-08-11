@@ -125,6 +125,10 @@ pub struct Cavity {
     boundary: [Boundary; 6],
     /// What fills each cell. Uniform unless [`Cavity::fill`] says otherwise.
     cells: Vec<Medium>,
+    /// Cells that are perfect conductors: every electric edge touching one is held at zero.
+    solid: Vec<bool>,
+    /// Whether any cell is, so the common case costs nothing.
+    any_solid: bool,
     /// Permittivity, conductivity and permeability **at each field component's own place**, which
     /// is not a cell centre — see [`Cavity::refresh_media`].
     eps: [Vec<f64>; 3],
@@ -184,6 +188,8 @@ impl Cavity {
             hz: vec![0.0; nx * ny * (nz + 1)],
             boundary: [Boundary::Conducting; 6],
             cells: vec![medium; nx * ny * nz],
+            solid: vec![false; nx * ny * nz],
+            any_solid: false,
             eps: [Vec::new(), Vec::new(), Vec::new()],
             sigma: [Vec::new(), Vec::new(), Vec::new()],
             mu: [Vec::new(), Vec::new(), Vec::new()],
@@ -216,6 +222,70 @@ impl Cavity {
         }
         self.refresh_media();
         self
+    }
+
+    /// Make the cells a predicate selects perfect conductors.
+    ///
+    /// # A staircase, and what that costs
+    ///
+    /// Every electric edge touching a solid cell is held at zero after each update, which is the
+    /// boundary condition a perfect conductor has. It is exact on a surface that lies along the
+    /// grid and a **staircase** on one that does not, so a flat screen normal to an axis — a slit, a
+    /// mask, a ground plane — is represented exactly and a curved one is not.
+    ///
+    /// The alternative is a very large conductivity through [`Cavity::fill`], and it is worse: the
+    /// semi-implicit update's decay factor is `(1−σΔt/2ε)/(1+σΔt/2ε)`, which tends to **−1** rather
+    /// than 0, so a good conductor made that way flips sign every step instead of holding zero.
+    pub fn obstruct(&mut self, which: impl Fn(usize, usize, usize) -> bool) -> &mut Cavity {
+        let (nx, ny, nz) = self.counts;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    if which(i, j, k) {
+                        self.solid[i + nx * (j + ny * k)] = true;
+                        self.any_solid = true;
+                    }
+                }
+            }
+        }
+        self.enforce_solid();
+        self
+    }
+
+    /// Whether one cell is a perfect conductor.
+    pub fn is_solid(&self, i: usize, j: usize, k: usize) -> bool {
+        let (nx, ny, nz) = self.counts;
+        self.solid[i.min(nx - 1) + nx * (j.min(ny - 1) + ny * k.min(nz - 1))]
+    }
+
+    /// Zero every electric edge that touches a solid cell.
+    fn enforce_solid(&mut self) {
+        if !self.any_solid {
+            return;
+        }
+        let (nx, ny, nz) = self.counts;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    if !self.solid[i + nx * (j + ny * k)] {
+                        continue;
+                    }
+                    // The twelve edges of the cell: four along each axis.
+                    for (dj, dk) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let at = self.iex(i, j + dj, k + dk);
+                        self.ex[at] = 0.0;
+                    }
+                    for (di, dk) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let at = self.iey(i + di, j, k + dk);
+                        self.ey[at] = 0.0;
+                    }
+                    for (di, dj) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let at = self.iez(i + di, j + dj, k);
+                        self.ez[at] = 0.0;
+                    }
+                }
+            }
+        }
     }
 
     /// What fills one cell.
@@ -1295,6 +1365,7 @@ impl Domain for Cavity {
         self.advance_magnetic(h);
         self.dissipated += self.advance_electric(h);
         self.apply_boundaries(h);
+        self.enforce_solid();
         Ok(())
     }
 

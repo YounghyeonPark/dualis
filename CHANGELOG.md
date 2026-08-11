@@ -12,6 +12,48 @@ messages carry the full account.
 
 ## [Unreleased]
 
+### Added
+
+- **Diffraction, and where scalar theory stops being true.** `single_slit_intensity` and `slit_zero`
+  in `dualis-optics`, and `Cavity::obstruct` in `dualis-em` for a perfect conductor with a hole in
+  it. `crates/dualis/tests/a_slit.rs` holds one against the other.
+
+  `sinc²(π a sinθ/λ)` rests on **Kirchhoff's** boundary condition — the field in the opening is the
+  incident field — and Maxwell's equations do not say that. The metal carries currents and the
+  opening's field is perturbed over a strip of order `λ` at each edge, so the fraction of the
+  aperture that is wrong goes as `λ/a`:
+
+  ```text
+    a = 12λ    0.0057     largest absolute difference in normalised intensity
+    a =  6λ    0.0125
+    a =  3λ    0.0311
+    a =  1λ    0.2772     wrong by more than a quarter of the pattern it predicts
+  ```
+
+  A factor of **48**, monotone. And the first dark fringe lands at `sinθ = λ/a` to 0.66% at twelve
+  wavelengths — the sharpest number in the pattern, and the one with no special constant in it,
+  where a circular aperture's `1.22 λ/D` has the first zero of `J₁` in it.
+
+  Below a wavelength a slit has **no** zeros at all, which is what `slit_zero` returning `None` is
+  saying: a 0.75λ opening puts 79% of its axial intensity at 30° off axis where a 12λ one puts
+  0.05%. That is the difference between an aperture and an antenna.
+
+- **The far field out of a small box.** Not by making the box `a²/λ` deep — hundreds of wavelengths
+  for a wide slit — but by recording the aperture plane one wavelength behind the screen and Fourier
+  transforming it, which **is** the Fraunhofer limit exactly.
+
+  Magnetic walls make the incident plane wave possible next to a screen, and their mirror images
+  would make this a grating — except that the transform integrates over one box width and the
+  neighbouring slits lie outside it.
+
+- **Three things about the cost of asking.** A one-cell screen leaks, because the electric edges
+  either side of it are shared with the vacuum beyond; two cells hold. A `pattern(width, samples)`
+  that marched per call marched the same box eight times where five would do, at 120 s in a debug
+  build — the mode four of CI's jobs run; separating the march from the sampling took it to 64 s.
+  And the numbers in this entry are measured rather than remembered: the first draft of
+  `single_slit_intensity`'s own tests claimed a sidelobe of `4/(2.25π²)` where it is `1/(2.25π²)`,
+  and a grazing intensity of 0.8 where it is 0.2545.
+
 ## [0.11.0] — 2026-08-11
 
 **Four new domains, and the list `ARCHITECTURE.md` opened with is closed.** Electromagnetism,

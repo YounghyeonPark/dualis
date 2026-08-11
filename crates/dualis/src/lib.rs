@@ -132,7 +132,7 @@ pub mod prelude {
     pub use dualis_molecular::{Fluid, LennardJones, PeriodicBox, Thermostat};
     pub use dualis_optics::diffraction::{
         abbe_limit, airy_radius, cutoff_frequency, depth_of_focus, encircled_energy, mtf_at,
-        rayleigh_limit, strehl_from_wavefront_error,
+        rayleigh_limit, single_slit_intensity, slit_zero, strehl_from_wavefront_error,
     };
     pub use dualis_optics::wavefront::AIRY_ZERO_LAMBDA_OVER_D;
     pub use dualis_optics::{
