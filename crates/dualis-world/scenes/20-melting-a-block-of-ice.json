@@ -1,0 +1,13 @@
+{
+  "title": "a heater melting a block of ice, and the plateau it holds at while it does",
+  "schedule": "multirate",
+  "duration_s": 5.0,
+  "frames": 11,
+  "conservation_tolerance": 1e-9,
+  "domains": [
+    { "kind": "heater", "name": "element", "watts": 100.0, "reserve_j": 500.0 },
+    { "kind": "block", "name": "ice", "cells": [11, 11, 11], "cell_mm": 1.0,
+      "initial_c": -10.0,
+      "material": "ice" }
+  ]
+}

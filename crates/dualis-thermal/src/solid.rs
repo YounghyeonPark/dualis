@@ -122,6 +122,21 @@ pub struct Solid3D {
     mobility: Vec<f64>,
     /// Per-cell heat capacity `ρ_i c_i dx³`, in J/K. `NaN` where a substance does not say.
     capacity: Vec<f64>,
+    /// Per-cell melting point in kelvin, or `+∞` for a substance that does not melt — so the phase
+    /// branch is a comparison that is simply never true rather than an `Option` to unwrap per cell.
+    melt_point: Vec<f64>,
+    /// Per-cell latent heat expressed **in kelvin**: `L/c_p`, the sensible warming the phase change
+    /// is worth. 163 K for ice. Zero where there is no phase change, which is what the sweep tests.
+    ///
+    /// Kelvin rather than joules so the whole update stays in one unit and needs no division per
+    /// step — and because a phase-change problem's numbers are then `O(1)` to `O(163)` rather than
+    /// `O(3e5)`, which is the reference-point lesson `runtime/gpu` paid 1660× for.
+    latent: Vec<f64>,
+    /// How much of each cell has melted, `0` solid and `1` liquid. Derived from the temperature by
+    /// [`resolve`](Solid3D::resolve) and then carried by the sweep.
+    melted: Vec<f64>,
+    /// The phase at the last [`checkpoint`](Domain::checkpoint), alongside `saved`.
+    saved_melted: Vec<f64>,
     /// `max_i dx·Σ_f k_f / C_i`, the reciprocal of the largest stable step. See
     /// [`max_stable_dt`](Domain::max_stable_dt) for why it is a maximum over cells and not a
     /// function of the fastest material.
@@ -158,10 +173,71 @@ impl Solid3D {
             kz: Vec::new(),
             mobility: Vec::new(),
             capacity: Vec::new(),
+            melt_point: Vec::new(),
+            latent: Vec::new(),
+            melted: Vec::new(),
+            saved_melted: Vec::new(),
             worst_rate: 0.0,
         };
         block.resolve();
         block
+    }
+
+    /// How much of one cell has melted: `0` entirely solid, `1` entirely liquid.
+    ///
+    /// Always zero for a substance with no [`FusionProps`](dualis_core::substance::FusionProps), which is every
+    /// entry in the catalogue but [`Substance::ice`].
+    pub fn melted_fraction_at(&self, i: usize, j: usize, k: usize) -> f64 {
+        let (nx, ny, nz) = self.counts;
+        self.melted[i.min(nx - 1) + nx * (j.min(ny - 1) + ny * k.min(nz - 1))]
+    }
+
+    /// Declare how much of a cell has melted, for an initial condition a temperature cannot express.
+    ///
+    /// The counterpart to [`set_temperature`](Solid3D::set_temperature), and it exists because **a
+    /// temperature is not a state** for a substance that melts: 0 °C is ice, water, or any mixture,
+    /// and Stefan's problem starts from liquid at exactly the melting point. Without this the only
+    /// way to say that is to start a hair above it, which puts sensible heat in the initial condition
+    /// that the closed form does not have.
+    ///
+    /// Ignored for a substance that does not melt, and out of range is ignored, matching
+    /// `set_temperature`.
+    ///
+    /// # Supercooling is not representable, and this keeps it that way
+    ///
+    /// The state is one monotone number, so a fraction and a temperature cannot disagree: asking for
+    /// liquid raises the temperature to at least the melting point and asking for solid lowers it to
+    /// at most. Liquid below freezing and solid above it are real states of real matter and this
+    /// model does not have them — the sharp-interface problem assumes the interface is *at* the
+    /// melting point, which is what makes Neumann's solution its solution.
+    pub fn set_melted_fraction(&mut self, i: usize, j: usize, k: usize, fraction: f64) {
+        let Some(idx) = self.index(i, j, k) else {
+            return;
+        };
+        if self.latent[idx] <= 0.0 {
+            return;
+        }
+        let phi = fraction.clamp(0.0, 1.0);
+        self.melted[idx] = phi;
+        let point = self.melt_point[idx];
+        if phi >= 1.0 {
+            self.cells[idx] = self.cells[idx].max(point);
+        } else if phi <= 0.0 {
+            self.cells[idx] = self.cells[idx].min(point);
+        } else {
+            self.cells[idx] = point;
+        }
+    }
+
+    /// The volume that has melted, summed over every cell.
+    ///
+    /// The integral quantity, and the one worth reading rather than a front *position*: a front is
+    /// only a position if the problem is one-dimensional, and this is the same number in three. For
+    /// a column of cells it gives the position anyway — `melted_volume / area` is how far in the
+    /// front has reached, including the partial cell it is currently inside, which is what makes a
+    /// front measurable to better than one cell.
+    pub fn melted_volume(&self) -> Volume {
+        Volume::from_si(self.melted.iter().sum::<f64>() * self.cell_volume())
     }
 
     /// Put a different substance in every cell the predicate accepts.
@@ -322,6 +398,32 @@ impl Solid3D {
             }
         }
 
+        // The phase state, re-derived from the temperature rather than carried across a `fill`. A
+        // cell that was half melted and is then declared to be a different substance has no
+        // meaningful fraction, and `fill` is setup — so this is a no-op in every real use and the
+        // only consistent answer in the one that is not.
+        self.melt_point = Vec::with_capacity(self.cells.len());
+        self.latent = Vec::with_capacity(self.cells.len());
+        self.melted = Vec::with_capacity(self.cells.len());
+        for c in 0..self.cells.len() {
+            let s = &self.materials[self.which[c] as usize];
+            let (point, latent) = match (s.fusion, s.thermal) {
+                (Some(f), Some(t)) => (
+                    f.melting_point.to_si(),
+                    f.sensible_equivalent(t.specific_heat).to_si(),
+                ),
+                // A substance with fusion but no specific heat cannot say what the latent heat is
+                // worth in kelvin. It is not silently treated as zero: `capacity` is already `NaN`
+                // there and the sweep refuses.
+                _ => (f64::INFINITY, 0.0),
+            };
+            self.melt_point.push(point);
+            self.latent.push(latent);
+            self.melted
+                .push(if self.cells[c] > point { 1.0 } else { 0.0 });
+        }
+        self.saved_melted.clone_from(&self.melted);
+
         self.capacity = vec![0.0; self.cells.len()];
         self.mobility = vec![0.0; self.cells.len()];
         self.worst_rate = 0.0;
@@ -408,6 +510,17 @@ impl Solid3D {
     pub fn set_temperature(&mut self, i: usize, j: usize, k: usize, t: Temperature) {
         if let Some(idx) = self.index(i, j, k) {
             self.cells[idx] = t.to_si();
+            // A temperature is not a state for a substance that melts — 0 °C is ice, water, or any
+            // mixture of the two. Naming a temperature therefore names a phase as well, and the
+            // choice is the unmelted one at the point itself: a caller clamping a face below
+            // freezing means ice, and a caller clamping it above means liquid.
+            if self.latent[idx] > 0.0 {
+                self.melted[idx] = if t.to_si() > self.melt_point[idx] {
+                    1.0
+                } else {
+                    0.0
+                };
+            }
         }
     }
 
@@ -420,7 +533,8 @@ impl Solid3D {
         let Some(idx) = self.index(i, j, k) else {
             return;
         };
-        self.cells[idx] += joules.to_si() / self.capacity[idx];
+        let rise = joules.to_si() / self.capacity[idx];
+        self.add_kelvin(idx, rise);
         self.absorbed += joules.to_si();
     }
 
@@ -580,17 +694,100 @@ impl Solid3D {
         dx * dx * dx
     }
 
-    /// Heat held, measured from the temperature the block started at.
+    /// Heat held, measured from the state the block started in.
     ///
     /// Weighted cell by cell, so a filled block's books balance for the same reason a uniform
     /// one's do: the sweep moves `G_f·ΔT` across a face and takes it off one side and puts it on
     /// the other, and this is the sum that is therefore constant.
+    ///
+    /// **In enthalpy, not in temperature**, so a melting front is on the books. A cell holding at its
+    /// melting point while it absorbs 306 mJ per cubic millimetre has taken that heat in and its
+    /// temperature says nothing about it; an audit reading temperature alone would call it a leak.
     fn stored_heat(&self) -> f64 {
-        self.cells
-            .iter()
-            .zip(&self.capacity)
-            .map(|(t, c)| c * (t - self.reference))
+        (0..self.cells.len())
+            .map(|c| {
+                self.capacity[c] * (self.enthalpy_kelvin(c) - self.reference_enthalpy_kelvin(c))
+            })
             .sum()
+    }
+
+    /// The cell's state as one number, in kelvin above its melting point.
+    ///
+    /// Monotone and invertible, which is the whole reason the phase change needs no iteration and
+    /// conserves exactly:
+    ///
+    /// ```text
+    ///   solid    e = T − T_m ≤ 0
+    ///   mush     e = φ·ℓ ∈ [0, ℓ]      at T = T_m
+    ///   liquid   e = ℓ + T − T_m ≥ ℓ
+    /// ```
+    ///
+    /// This is the enthalpy method, bookkept as a temperature and a fraction rather than as a single
+    /// enthalpy field — identical arithmetic, and it keeps `cells` holding kelvin so everything that
+    /// reads a temperature still can.
+    ///
+    /// It is **not** the apparent-heat-capacity method, and the difference is the failure that method
+    /// has: smearing `L` over a narrow temperature interval lets a cell cross the whole interval in
+    /// one step and skip the latent heat, which runs the front fast and conserves nothing. Here a
+    /// step that overshoots the mush deposits the remainder as sensible heat on the far side, because
+    /// the inverse map says where the energy goes rather than a branch guessing.
+    fn enthalpy_kelvin(&self, c: usize) -> f64 {
+        let (t, point, latent) = (self.cells[c], self.melt_point[c], self.latent[c]);
+        if latent <= 0.0 {
+            // No phase change. Measured from the block's own reference rather than from a melting
+            // point at infinity, and that choice is precision: subtracting a nearby number keeps
+            // digits that subtracting 273.15 from 293.15 does not.
+            return t - self.reference;
+        }
+        if self.melted[c] >= 1.0 {
+            latent + t - point
+        } else if self.melted[c] <= 0.0 {
+            t - point
+        } else {
+            self.melted[c] * latent
+        }
+    }
+
+    /// What [`enthalpy_kelvin`](Solid3D::enthalpy_kelvin) was when the block started, so the ledger
+    /// reports what arrived rather than what is there.
+    fn reference_enthalpy_kelvin(&self, c: usize) -> f64 {
+        let (point, latent) = (self.melt_point[c], self.latent[c]);
+        if latent <= 0.0 {
+            return 0.0;
+        }
+        if self.reference > point {
+            latent + self.reference - point
+        } else {
+            self.reference - point
+        }
+    }
+
+    /// Add `rise` kelvin of *enthalpy* to a cell, which is not the same as adding kelvin to it.
+    ///
+    /// The one place heat becomes state, so that a phase change cannot be forgotten at one of the
+    /// several doors heat comes in through — the sweep, [`deposit`](Solid3D::deposit), and the plain
+    /// channel all pass through here. A cell at its melting point takes the whole of it as melting
+    /// and does not warm at all.
+    fn add_kelvin(&mut self, c: usize, rise: f64) {
+        if self.latent[c] > 0.0 {
+            let e = self.enthalpy_kelvin(c) + rise;
+            let (t, phi) = Self::from_enthalpy_kelvin(e, self.melt_point[c], self.latent[c]);
+            self.cells[c] = t;
+            self.melted[c] = phi;
+        } else {
+            self.cells[c] += rise;
+        }
+    }
+
+    /// The inverse: a state in kelvin back to a temperature and a melted fraction.
+    fn from_enthalpy_kelvin(e: f64, point: f64, latent: f64) -> (f64, f64) {
+        if e <= 0.0 {
+            (point + e, 0.0)
+        } else if e >= latent {
+            (point + e - latent, 1.0)
+        } else {
+            (point, e / latent)
+        }
     }
 }
 
@@ -699,8 +896,8 @@ impl Domain for Solid3D {
         if gained != 0.0 {
             self.absorbed += gained;
             let rise = gained / self.capacity.iter().sum::<f64>();
-            for cell in self.cells.iter_mut() {
-                *cell += rise;
+            for c in 0..self.cells.len() {
+                self.add_kelvin(c, rise);
             }
         }
 
@@ -738,7 +935,8 @@ impl Domain for Solid3D {
                     if k + 1 < nz {
                         flux += self.kz[c + nx * ny] * (old[c + nx * ny] - t);
                     }
-                    self.cells[c] = t + dts * self.mobility[c] * flux;
+                    debug_assert_eq!(t, self.cells[c], "the sweep reads `old` and writes `cells`");
+                    self.add_kelvin(c, dts * self.mobility[c] * flux);
                 }
             }
         }
@@ -750,12 +948,20 @@ impl Domain for Solid3D {
         Ledger::new().with(quantity::ENERGY, self.stored_heat())
     }
 
+    /// The temperatures **and** the phase, because a temperature alone is not a state.
+    ///
+    /// A cell at 0 °C is ice, water or any mixture, so saving `cells` and not `melted` would restore
+    /// a block that was half melted as one that was entirely solid at the same temperature — losing
+    /// 306 mJ per cubic millimetre with nothing to say it had gone. `Schedule::Iterative` and the
+    /// audit's retry both restore, so this is a live path and not a precaution.
     fn checkpoint(&mut self) {
         self.saved.clone_from(&self.cells);
+        self.saved_melted.clone_from(&self.melted);
     }
 
     fn restore(&mut self) {
         self.cells.clone_from(&self.saved);
+        self.melted.clone_from(&self.saved_melted);
     }
 
     fn supports_restore(&self) -> bool {
@@ -769,7 +975,7 @@ impl Domain for Solid3D {
     /// much, and the gap between peak and mean is the number that says whether the reduction
     /// would have been honest.
     fn readings(&self) -> Vec<Reading> {
-        vec![
+        let mut out = vec![
             Reading::new(
                 &self.name,
                 "peak",
@@ -789,7 +995,21 @@ impl Domain for Solid3D {
                 "C",
             ),
             Reading::new(&self.name, "absorbed", self.absorbed_energy().to_si(), "J"),
-        ]
+        ];
+        // The melted volume, and **only** for a block that can melt. A column of zeros in every
+        // report tells a reader nothing and costs a line in all of them; the condition is a property
+        // of the block's materials fixed at construction, so it is not a mode that can surprise
+        // anybody mid-run. Without it a phase change is the one thing this domain does that a report
+        // could not see, and the temperature would say a cell was holding still.
+        if self.latent.iter().any(|l| *l > 0.0) {
+            out.push(Reading::new(
+                &self.name,
+                "melted",
+                self.melted_volume().to_si() * 1e9,
+                "mm3",
+            ));
+        }
+        out
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

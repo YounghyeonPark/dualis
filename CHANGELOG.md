@@ -14,6 +14,62 @@ messages carry the full account.
 
 ### Added
 
+- **Latent heat, against Neumann's exact solution of Stefan's problem.** `LatentHeat` in
+  `dualis-units`, `FusionProps` and `Substance::fusion`, `Substance::latent_energy` and
+  `Substance::ice` in `dualis-core`, `Solid3D::set_melted_fraction`, `melted_fraction_at` and
+  `melted_volume` in `dualis-thermal`, `"ice"` in the scene format's materials.
+  `crates/dualis-thermal/tests/a_freezing_front.rs` and `20-melting-a-block-of-ice`.
+
+  The second of `ARCHITECTURE.md`'s three depth entries — every domain was single-phase — and it left
+  one: small-strain. No new crate, and nothing outside `dualis-thermal` but the material data.
+
+  **Why this problem:** it has an exact solution, which almost nothing with a moving boundary does. A
+  semi-infinite liquid at its melting point, surface dropped to `T_s`, freezes to `X(t) = 2λ√(αt)`
+  with `λ e^{λ²} erf(λ) = St/√π`. A *position*, not a rate and not a limit. Measured for ice under 20 K
+  of undercooling:
+
+  ```text
+    dx = 1.0 mm    t = 100 s    5.311 mm against 5.288 mm     0.431%
+                   t = 400 s   10.570 mm against 10.567 mm    0.032%
+                   t = 900 s   15.843 mm against 15.848 mm    0.033%
+    dx = 0.5 mm    t = 100 s    5.285 mm against 5.283 mm     0.032%
+                   t = 900 s   15.847 mm against 15.848 mm    0.012%
+  ```
+
+  And nine times the time gives **2.9984×** the depth against `√9 = 3` — the `√t` law with no closed
+  form in it at all, which a scheme with the right coefficient and the wrong power would fail.
+
+  **The scheme is enthalpy**, bookkept as a temperature and a melted fraction: a cell's state is one
+  monotone number — `T − T_m` below, `φ·ℓ` inside, `ℓ + T − T_m` above — so the sweep adds energy and
+  inverts it. Nothing tracks the front, nothing iterates, and energy is conserved because energy *is*
+  the state. Not **apparent heat capacity**, which smears `L` over a temperature interval and lets a
+  step big enough to cross the interval skip the latent heat silently, running the front fast. Here an
+  overshoot's remainder lands on the far side because the inverse map says where that much energy
+  goes — verified at machine precision with ten times the latent heat in one delivery.
+
+  A cell fed constant power holds at its melting point for exactly `ρLV/P`: measured 305.9 s against
+  305.9 for a cubic millimetre of ice at a milliwatt. For ice `L/c_p` is **163 K**, so a scheme that
+  dropped the latent heat would not be slightly wrong.
+
+  Four things the tests found, all of them mine:
+
+  - **The profile's convergence order is not clean** between adjacent resolutions — 0.78 then 1.84,
+    and averaging five instants did not settle it. A fixed grid makes the front advance in a
+    staircase, so the field at any moment depends on where the front sits between two cell centres and
+    that phase is not a smooth function of `dx`. Over the full fourfold refinement it is 6.2×, between
+    first and second order. Two earlier drafts asserted second order on no evidence and then first
+    order on evidence that did not earn it.
+  - **"Every cell behind the front" is the wrong metric.** It measures a different set of points at
+    each resolution — the nearest one to the front moves inward as `dx` shrinks, into exactly the
+    region a cell-centred profile represents worst. That alone read as order 0.66. Fixed depths.
+  - **The front position is more accurate than the field it comes from** (0.03% against 0.8%), because
+    `melted_volume` is an integral of a conserved quantity where a temperature is a point sample.
+  - **A checkpoint of temperatures alone is not a checkpoint.** 0 °C is ice, water or any mixture, so
+    `checkpoint`/`restore` carry the phase — a live path, since `Schedule::Iterative` restores every
+    iteration and the conservation audit restores on a violation. Without it a half-frozen column
+    comes back as a fully liquid one at the same temperatures, and the ledger balances, because the
+    ledger reads the state that was corrupted.
+
 - **A block can be made of more than one material.** `Solid3D::fill`, `substance_at`, `substances`,
   `face_conductance`, `heat_capacity` and `stability_ratio` in `dualis-thermal`, and `regions` plus
   `material` on the scene format's `block`. `crates/dualis-thermal/tests/a_layered_wall.rs` and
@@ -112,8 +168,19 @@ messages carry the full account.
   has no single value of. `laplacian` stays `∇²T`, which is what the trait asks for.
 
 - **The scene format's material names live in one table**, `dualis_world::MATERIALS`, with
-  `stainless_304` and `borosilicate` added. It was a `match` inside the network builder; the moment a
-  second domain wanted a material that would have been two lists that agree until they do not.
+  `stainless_304`, `borosilicate` and `ice` added. It was a `match` inside the network builder; the
+  moment a second domain wanted a material that would have been two lists that agree until they do not.
+
+- **`Solid3D`'s ledger is in enthalpy**, so a melting front is on the books. A cell holding at its
+  melting point while it absorbs 306 mJ per cubic millimetre has taken that heat in and its
+  temperature says nothing about it; an audit reading temperature alone would call it a leak of exactly
+  that. Every door heat comes in through — the sweep, `deposit`, the plain channel — goes through one
+  place, so a phase change cannot be forgotten at one of them.
+
+- **A `Solid3D` that can melt reports a `melted` reading** in mm³, and one that cannot does not. A
+  column of zeros in every report tells a reader nothing; the condition is a property of the block's
+  materials fixed at construction, so it is not a mode that can surprise anybody mid-run. Without it a
+  phase change was the one thing the domain does that a report could not see.
 
 ## [0.11.0] — 2026-08-11
 

@@ -386,6 +386,16 @@ pub type ThermalConductivity = Qty<1, 1, -3, 0, -1, 0, 0>;
 pub type Conductance = Qty<2, 1, -3, 0, -1, 0, 0>;
 /// J·kg⁻¹·K⁻¹ — the `c_p` that says how much heat a gram of glass can hide.
 pub type SpecificHeat = Qty<2, 0, -2, 0, -1, 0, 0>;
+/// J·kg⁻¹ — the heat a phase change costs at no change in temperature.
+///
+/// [`SpecificHeat`] without the per-kelvin, and that missing kelvin is the whole physics: `c_p`
+/// buys a temperature rise and this buys none. Water's 334 kJ/kg is **eighty times** what it takes
+/// to warm the same water by one kelvin, which is why an ice bath holds at zero.
+///
+/// Divided by a [`SpecificHeat`] it is a [`Temperature`] — the number of kelvin of sensible heat
+/// the phase change is worth, and the reciprocal of the Stefan number. The type system says so,
+/// which is the reason this is its own quantity and not a bare `f64`.
+pub type LatentHeat = Qty<2, 0, -2, 0, 0, 0, 0>;
 /// m²·s⁻¹ — thermal diffusivity `α = k/(ρ c_p)`, and also mass diffusivity.
 pub type Diffusivity = Qty<2, 0, -1, 0, 0, 0, 0>;
 /// K⁻¹ — the coefficient that turns absorbed light into a focus shift.
@@ -512,6 +522,11 @@ product!(MomentOfInertia, Frequency => AngularMomentum);
 product!(Stiffness, Length => Force);
 product!(Damping, Velocity => Force);
 product!(Mass, SpecificHeat => HeatCapacity);
+// A mass times its latent heat is the joules a phase change costs, and latent over specific heat is
+// the kelvin of sensible heat that buys — the Stefan number upside down. Both are identities a
+// freezing front is built out of, so the type system checks them.
+product!(Mass, LatentHeat => Energy);
+product!(SpecificHeat, Temperature => LatentHeat);
 // UA·ΔT is watts, and C/UA is a time — the two identities a thermal network is built out of,
 // so the type system checks them rather than a comment claiming them.
 product!(Conductance, Temperature => Power);
@@ -824,6 +839,18 @@ impl SpecificHeat {
     /// J·kg⁻¹·K⁻¹, the unit a materials table uses.
     pub fn j_per_kg_k(v: f64) -> SpecificHeat {
         Qty(v)
+    }
+}
+
+impl LatentHeat {
+    /// J·kg⁻¹.
+    pub fn j_per_kg(v: f64) -> LatentHeat {
+        Qty(v)
+    }
+
+    /// kJ·kg⁻¹, which is the unit every table of latent heats is written in.
+    pub fn kj_per_kg(v: f64) -> LatentHeat {
+        Qty(v * 1e3)
     }
 }
 

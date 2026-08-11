@@ -113,7 +113,7 @@ pub mod prelude {
     // `thermal: None`, which `LumpedMass` rightly refuses to step, and the three types needed to
     // supply one were not exported. A consumer wanting a material the catalogue does not carry
     // had to reach through two module paths to say so.
-    pub use dualis_core::substance::{AcousticProps, MechanicalProps, ThermalProps};
+    pub use dualis_core::substance::{AcousticProps, FusionProps, MechanicalProps, ThermalProps};
     // `Reading`, `Tolerances` and `Bodies` were reachable only through `dualis::core`. Each is a
     // type a consumer meets while building a frame, setting an audit or writing a domain, which
     // is what a prelude is for.

@@ -1,6 +1,6 @@
 # Scenes
 
-Eighteen worlds described as data, covering seven of the library's ten domains — seventeen of them
+Twenty worlds described as data, covering seven of the library's ten domains — nineteen of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -16,8 +16,8 @@ pointing at a node the scene defines. It reports a parse failure as `file:line:c
 keys that were expected, which is what an editor puts a squiggle under. CI runs it over every
 scene, because it would otherwise be the one entry point nothing exercises.
 
-Every file carries a `format` number, and **absence means 1** — which is what all eighteen here
-are, having been written before the field existed. A version this build cannot read is refused
+Every file carries a `format` number, and **absence means 1** — which is what all twenty here
+are: nothing has yet changed what an existing key means. A version this build cannot read is refused
 rather than half-run: `deny_unknown_fields` catches a key that was *added*, but not one whose
 meaning changed, and that is what the number is for.
 
@@ -32,7 +32,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 | `out.gltf` | The geometry of the last frame, for Blender, three.js, Omniverse or any USD tool |
 
-`.csv` is the one that reaches the domains a picture cannot. Eight of these eighteen scenes have
+`.csv` is the one that reaches the domains a picture cannot. Ten of these twenty scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -54,7 +54,7 @@ simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` 
 `dualis_scene::capture` produces, and everything the table above describes is available to any
 program without going near a scene file.
 
-`.gltf` is the one that leaves this workspace. Eight of the eighteen scenes have geometry to
+`.gltf` is the one that leaves this workspace. Eleven of the twenty scenes have geometry to
 export — bodies, ray paths, a 3D field as its cell centres — and the other nine are **refused with
 a reason** rather than written as an empty scene: a 1D or 2D field is a graph, not something to put
 in a 3D viewer, and the message says which panel and why.
@@ -100,6 +100,12 @@ tells them apart.
 | --- | --- |
 | `15-a-hot-spot-in-a-block` | One cell of a 9×9×9 aluminium block starting 60 K hot, and the spot spreading in **three** dimensions. The scene that a one-dimensional bar cannot express: heat going sideways is the whole job of a spreader plate |
 | `19-a-coating-stops-the-heat` | The same spot in a 9×9×18 block that is aluminium for half its depth and **borosilicate** for the other half. 150× the conductivity leaves the metal nearly isothermal and the glass barely touched, so the entire temperature drop sits on one face — and the test asserts the largest cell-to-cell step along z is exactly the interface one, which is what a block with the coating quietly not applied would fail |
+| `20-melting-a-block-of-ice` | A hundred watts into 1331 mm³ of ice at −10 °C. The mean holds at **exactly 0.000 °C** for 3.6 of the 5 s while `melted` climbs a straight line at 326.9 mm³/s — which is `P/ρL` and has no rate constant in it — and then the leftover 67.9 J warms what is now all water by 27.126 K, against 27.126 predicted. The scene a domain with no latent heat cannot express: without it the block would sail through zero and finish near 190 °C |
+
+`20` is the one that needs latent heat, and its plateau is the whole of what latent heat *is*: a
+temperature that stops moving while energy keeps arriving. Ice is the only entry in the catalogue that
+melts, and a block that cannot melt does not report a `melted` column at all — so the column's
+presence is itself the check that `"material": "ice"` reached the domain.
 
 `19` is the one that needs `Solid3D::fill`, and it is the format's first `regions` key. A region is
 **half-open** — `to` is one past the last cell — and one that selects no cells is refused rather than

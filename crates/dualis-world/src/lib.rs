@@ -515,7 +515,7 @@ pub enum DomainSpec {
 /// One table rather than one per domain. It began as a `match` inside the network builder, and the
 /// moment a second domain wanted a material that would have been two lists that agree until they
 /// do not — which is how a format grows a name that works in one place and is rejected in another.
-pub const MATERIALS: [&str; 7] = [
+pub const MATERIALS: [&str; 8] = [
     "copper",
     "aluminium",
     "stainless_304",
@@ -523,6 +523,7 @@ pub const MATERIALS: [&str; 7] = [
     "borosilicate",
     "fr4",
     "pla",
+    "ice",
 ];
 
 /// Look up a material by the name a scene wrote, or say what the names are.
@@ -538,6 +539,9 @@ fn substance_named(site: &str, material: &str) -> Result<Substance, String> {
         "borosilicate" => Ok(Substance::borosilicate_crown()),
         "fr4" => Ok(Substance::fr4()),
         "pla" => Ok(Substance::pla()),
+        // The only one that changes phase, so the only one for which a block reports a melted
+        // volume. Every other entry is modelled as never melting, which is right for a heat sink.
+        "ice" => Ok(Substance::ice()),
         other => Err(format!(
             "{site}: unknown material {other:?}; known materials are {}",
             MATERIALS

@@ -307,9 +307,38 @@ That closes the list this section opened with. **The physics layer is where it w
 crates, each one added without the kernel or either layer above it changing, which is rule 4 held
 ten times.
 
-What is open now is not a list of missing physics but a list of missing *depth* in what is here:
-every domain is single-phase and small-strain. None of those is a new crate. They are the second
-half of crates that exist.
+What is open now is not a list of missing physics but a list of missing *depth* in what is here.
+**One entry is left — small-strain** — and it is not a new crate either. It is the second half of a
+crate that exists.
+
+**Single-phase** was the second of the three, and `Solid3D` accounts for latent heat now. `Substance`
+carries `FusionProps`, `Substance::ice` is the catalogue's only entry that melts, and the check is
+**Neumann's exact solution** of Stefan's problem — which is why this problem and not another: almost
+nothing with a moving boundary has one.
+
+```text
+  X(t) = 2λ√(αt)      where  λ e^{λ²} erf(λ) = St/√π,   St = c(T_m − T_s)/L
+```
+
+A *position*, not a rate and not a limit. Measured at 1 mm for ice under 20 K of undercooling: 5.311
+against 5.288 mm at 100 s, 10.570 against 10.567 at 400, 15.843 against 15.848 at 900. And nine times
+the time gives 2.9984× the depth against `√9 = 3`, which is the `√t` law with no closed form in it at
+all.
+
+The scheme is **enthalpy**, bookkept as a temperature and a melted fraction: a cell's state is one
+monotone number — `T − T_m` below, `φ·ℓ` inside, `ℓ + T − T_m` above — so the sweep adds energy and
+inverts. Nothing tracks the front, nothing iterates, and energy is conserved because energy *is* the
+state. It is not **apparent heat capacity**, which smears `L` over a temperature interval and lets a
+step big enough to cross the interval skip the latent heat entirely; here an overshoot's remainder
+lands on the far side because the inverse map says where that much energy goes, verified with ten
+times the latent heat in one delivery.
+
+Two things the tests found that are worth carrying: the profile's convergence order is **not** clean
+between adjacent resolutions (0.78 then 1.84) because a fixed grid makes the front advance in a
+staircase and the field depends on where it sits between cell centres — over the full fourfold
+refinement it is 6.2×, between first and second order. And a checkpoint of temperatures alone is not
+a checkpoint: 0 °C is ice, water or any mixture, so `checkpoint` carries the phase, which
+`Schedule::Iterative` and the audit's retry both depend on.
 
 **Single-material** was the third entry and `Solid3D::fill` is the first answer to it — and it
 demonstrates the shape the rest of this list wants, because it changed nothing outside the crate

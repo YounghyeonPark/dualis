@@ -1037,6 +1037,94 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     "{name}: every slice is identical, so z was never sampled"
                 );
             }
+            // **A heater melting a block of ice**, and the plateau it holds at while it does. The
+            // scene a domain with no latent heat cannot express at all: without it the block would
+            // sail through zero and be at 190 °C by the end.
+            //
+            // Three numbers, and none of them is the temperature — which is the point. The melt rate
+            // is `P/ρL` and nothing else: a hundred watts against 306 mJ per cubic millimetre is
+            // 327 mm³/s, and it is a *straight line* because a phase change has no rate constant in
+            // it. Then the plateau ends when the latent heat is paid, and the run's leftover joules
+            // warm what is now all liquid by exactly what its capacity says.
+            "20-melting-a-block-of-ice.json" => {
+                let block = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("ice")
+                    .expect("the ice is still there");
+                let cells = 11.0 * 11.0 * 11.0;
+                let cell = 1e-9;
+                // Ice, written out here rather than read back from the substance the scene named.
+                let (rho, cp, latent) = (917.0, 2050.0, 333_550.0);
+                let capacity = cells * cell * rho * cp;
+                let fusion = cells * cell * rho * latent;
+
+                // Every cubic millimetre is liquid by the end, and the reading exists at all — a
+                // block that cannot melt does not report this column, so its presence is the check
+                // that the scene's `"material": "ice"` reached the domain.
+                let melted = last
+                    .readings
+                    .iter()
+                    .find(|r| r.label == "melted")
+                    .expect("a block that can melt reports how much has");
+                assert!(
+                    (melted.value - cells).abs() < 1e-9,
+                    "{name}: all {cells} mm3 should be liquid, got {}",
+                    melted.value
+                );
+
+                // The plateau's length is what the two heats cost, and its end is where the
+                // temperature leaves zero. 25.0 J of warming then 407.1 J of melting, at 100 W.
+                let warming = capacity * 10.0;
+                let done_at = (warming + fusion) / 100.0;
+                let leftover = (5.0 - done_at) * 100.0;
+                let want = leftover / capacity;
+                let got = block.mean_temperature().to_si() - 273.15;
+                println!(
+                    "  {name}: melting took {done_at:.3} s of the 5, and the remaining \
+                     {leftover:.1} J warmed it {want:.4} K — measured {got:.4}, off {:.2e}",
+                    (got / want - 1.0).abs()
+                );
+                // `1e-4`, which is the resolution the delivery has: the heater pays in whole steps
+                // and the last frame lands where it lands. A first draft allowed 5%, on numbers that
+                // agree to five digits.
+                assert!(
+                    (got / want - 1.0).abs() < 1e-4,
+                    "{name}: the leftover joules warm the water by {want:.4} K, got {got:.4}"
+                );
+
+                // And the rate in between is `P/ρL`, straight. Read off two frames well inside the
+                // plateau, where nothing else is happening.
+                let at = |n: usize| {
+                    let f = &frames[n];
+                    (
+                        f.time_s,
+                        f.readings
+                            .iter()
+                            .find(|r| r.label == "melted")
+                            .expect("melted")
+                            .value,
+                    )
+                };
+                let (t1, v1) = at(2);
+                let (t2, v2) = at(8);
+                let slope = (v2 - v1) / (t2 - t1);
+                let closed = 100.0 / (rho * latent * cell);
+                println!(
+                    "  and it melted at {slope:.2} mm3/s against P/rho L = {closed:.2} mm3/s — off \
+                     {:.2e}",
+                    (slope / closed - 1.0).abs()
+                );
+                // **Machine precision, and that is not luck.** Inside the plateau every joule the
+                // heater pays goes to melting and none to warming, so the discrete slope *is* `P/ρL`
+                // — the scheme has no discretisation error here at all, and 3.33e-16 is the last bit
+                // of the division. A tolerance of a percent would have passed for a scheme that was
+                // merely close.
+                assert!(
+                    (slope / closed - 1.0).abs() < 1e-12,
+                    "{name}: the melt rate is the power over the latent heat: {slope:.2} against \
+                     {closed:.2} mm3/s"
+                );
+            }
             // **A wall of glass halfway down a block of aluminium**, and the heat piling up
             // against it. The scene a single-material block cannot express.
             //

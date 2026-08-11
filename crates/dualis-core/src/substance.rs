@@ -21,8 +21,8 @@
 //! exists to enforce.
 
 use dualis_units::{
-    Density, Diffusivity, HeatCapacity, Length, Mass, Pressure, SpecificHeat, Temperature,
-    ThermalConductivity, ThermalExpansion, Velocity, Volume,
+    Density, Diffusivity, Energy, HeatCapacity, LatentHeat, Length, Mass, Pressure, SpecificHeat,
+    Temperature, ThermalConductivity, ThermalExpansion, Velocity, Volume,
 };
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +41,14 @@ pub struct Substance {
     /// difference between "unknown" and "zero".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thermal: Option<ThermalProps>,
+    /// What it takes to melt it, if it is a substance that melts at a temperature.
+    ///
+    /// Absent for most of them, and absent is not zero — it means the substance is being modelled
+    /// as never changing phase, which is the right model for a heat sink and the wrong one for ice.
+    /// A domain that finds it absent does not change phase; one that finds it present must account
+    /// for the latent heat or its books will not balance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fusion: Option<FusionProps>,
     /// Stiffness, restitution and friction, if they are known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mechanical: Option<MechanicalProps>,
@@ -94,6 +102,37 @@ pub struct MechanicalProps {
     pub yield_strength: Pressure,
 }
 
+/// What it takes to melt it.
+///
+/// # One temperature, and the substances that do not have one
+///
+/// A pure substance melts at a temperature; an alloy, a polymer and a rock melt over a *range*, and
+/// this cannot say so. That is a real restriction rather than a simplification to be embarrassed
+/// about — the sharp-interface problem is the one with an exact solution to check against, and a
+/// mushy range is a different model with a different closed form.
+///
+/// So this is right for water, for a pure metal and for a paraffin phase-change material sold on
+/// its plateau. It is wrong for solder, and a domain given it for solder will put the whole latent
+/// heat on one temperature instead of spreading it over the twenty kelvin it really occupies.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FusionProps {
+    /// The temperature at which it changes phase, and holds there while it does.
+    pub melting_point: Temperature,
+    /// The heat one kilogram absorbs melting, at no change in temperature.
+    pub latent_heat: LatentHeat,
+}
+
+impl FusionProps {
+    /// How many kelvin of sensible heat the phase change is worth: `L / c_p`.
+    ///
+    /// The reciprocal of the Stefan number, and the number that says whether latent heat matters at
+    /// all in a given problem. For ice it is **163 K**, so a freezing front driven by a 10 K
+    /// undercooling is overwhelmingly a latent-heat problem and only incidentally a conduction one.
+    pub fn sensible_equivalent(&self, specific_heat: SpecificHeat) -> Temperature {
+        Temperature::from_si(self.latent_heat.to_si() / specific_heat.to_si())
+    }
+}
+
 /// What it does with sound.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AcousticProps {
@@ -119,6 +158,18 @@ impl Substance {
     pub fn heat_capacity(&self, volume: Volume) -> Option<HeatCapacity> {
         let t = self.thermal?;
         Some(self.mass_of(volume) * t.specific_heat)
+    }
+
+    /// The joules a given volume absorbs changing phase, or `None` if it does not.
+    ///
+    /// The companion to [`heat_capacity`](Substance::heat_capacity), and the pair is what a domain
+    /// needs to keep books that balance across a melting front: one buys kelvin and the other buys
+    /// none. For a cubic millimetre of ice they are 1.88 mJ/K and **306 mJ** — so the phase change
+    /// is worth 163 K of warming, and a scheme that dropped it would run the front 163 times too
+    /// fast rather than slightly wrong.
+    pub fn latent_energy(&self, volume: Volume) -> Option<Energy> {
+        let f = self.fusion?;
+        Some(self.mass_of(volume) * f.latent_heat)
     }
 
     /// Mass of a given volume of it.
@@ -167,6 +218,7 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(7.1),
                 emissivity: 0.90,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(82.0e9),
                 poisson_ratio: 0.206,
@@ -192,6 +244,7 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(23.6),
                 emissivity: 0.09,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(68.9e9),
                 poisson_ratio: 0.33,
@@ -263,6 +316,7 @@ impl Substance {
                 // Rolled and passivated rather than mirror-polished, which is what a basket is.
                 emissivity: 0.28,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(193.0e9),
                 poisson_ratio: 0.29,
@@ -290,6 +344,7 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(16.5),
                 emissivity: 0.04,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(117.0e9),
                 poisson_ratio: 0.34,
@@ -323,6 +378,7 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(14.0),
                 emissivity: 0.90,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(22.0e9),
                 poisson_ratio: 0.16,
@@ -351,6 +407,7 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(12.0),
                 emissivity: 0.30,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(200.0e9),
                 poisson_ratio: 0.29,
@@ -383,6 +440,7 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(70.0),
                 emissivity: 0.90,
             }),
+            fusion: None,
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(3.5e9),
                 poisson_ratio: 0.36,
@@ -403,9 +461,53 @@ impl Substance {
                 expansion: ThermalExpansion::ppm_per_k(69.0),
                 emissivity: 0.96,
             }),
+            fusion: None,
             mechanical: None,
             acoustic: Some(AcousticProps {
                 sound_speed: Velocity::m_per_s(1_482.0),
+            }),
+        }
+    }
+
+    /// Ice at 0 °C, and the only entry in this catalogue that changes phase.
+    ///
+    /// The canonical Stefan material, and the numbers are the ones the closed-form tests need.
+    /// 2.22 W/m·K is **four times** liquid water's 0.598, which is the thing about ice that surprises
+    /// people and the reason a lake freezes downward at all.
+    ///
+    /// # This is the solid, and the one-phase model uses it for both sides
+    ///
+    /// A domain given this for a melting problem is taking the liquid's conductivity and specific
+    /// heat to be the solid's, which they are not — water conducts a quarter as well and holds twice
+    /// as much. That is **Stefan's original one-phase problem**, and it is exact when the liquid is
+    /// already at the melting point so no heat flows through it: a lake freezing from a cold sky,
+    /// where all the resistance is in the ice.
+    ///
+    /// It is not right for melting a block of ice into water that then warms up. Use
+    /// [`Substance::water`] for the liquid and note that a cell cannot currently be both.
+    pub fn ice() -> Substance {
+        Substance {
+            name: "ice".to_string(),
+            density: Density::g_per_cm3(0.917),
+            thermal: Some(ThermalProps {
+                conductivity: ThermalConductivity::w_per_m_k(2.22),
+                specific_heat: SpecificHeat::j_per_kg_k(2_050.0),
+                // Ice's expansion is anisotropic and this is the polycrystalline mean.
+                expansion: ThermalExpansion::ppm_per_k(51.0),
+                emissivity: 0.97,
+            }),
+            fusion: Some(FusionProps {
+                melting_point: Temperature::celsius(0.0),
+                latent_heat: LatentHeat::kj_per_kg(333.55),
+            }),
+            mechanical: Some(MechanicalProps {
+                youngs_modulus: Pressure::from_si(9.1e9),
+                poisson_ratio: 0.33,
+                // Tensile strength, and ice is brittle: there is no yield before it.
+                yield_strength: Pressure::from_si(1.0e6),
+            }),
+            acoustic: Some(AcousticProps {
+                sound_speed: Velocity::m_per_s(3_840.0),
             }),
         }
     }
@@ -416,6 +518,7 @@ impl Substance {
             name: name.to_string(),
             density,
             thermal: None,
+            fusion: None,
             mechanical: None,
             acoustic: None,
         }
