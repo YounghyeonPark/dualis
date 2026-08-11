@@ -8,6 +8,7 @@ version = "0.10.0"
 dependencies = [
  "dualis-acoustic",
  "dualis-core",
+ "dualis-elastic",
  "dualis-electrical",
  "dualis-mechanics",
  "dualis-molecular",
@@ -37,6 +38,15 @@ dependencies = [
  "glam",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dualis-elastic"
+version = "0.10.0"
+dependencies = [
+ "dualis-core",
+ "dualis-units",
+ "glam",
 ]
 
 [[package]]

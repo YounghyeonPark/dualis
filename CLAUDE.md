@@ -37,8 +37,8 @@ Stated in full in CONTRIBUTING.md. The compressed version:
    are bit-for-bit identical across platforms, optimisation levels, WebAssembly and thread
    counts, and there is a pinned digest that says so.
 4. **The kernel must never depend on a domain**, and no domain may depend on another. That
-   claim is the reason for the crate split and has now been held through seven domains.
-5. **Every public item is documented.** `#![deny(missing_docs)]` in all thirteen crates.
+   claim is the reason for the crate split and has now been held through eight domains.
+5. **Every public item is documented.** `#![deny(missing_docs)]` in all fourteen crates.
 
 ## The subagent team
 
@@ -147,8 +147,8 @@ simulation.
 
 ### How often to release, and the order
 
-Twelve crates are published together and share one version. A published version is permanent —
-it can be yanked, never replaced — so the cost of a release is twelve permanent version numbers
+Thirteen crates are published together and share one version. A published version is permanent —
+it can be yanked, never replaced — so the cost of a release is thirteen permanent version numbers
 on crates.io, one on PyPI, and a prose sweep.
 
 The prose sweep is not optional and is the part that gets skipped. A release moves the test
@@ -165,7 +165,7 @@ accumulates.
 The order matters: each crate must be live on the index before the next one resolves it.
 
 ```sh
-for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-porous dualis-scene dualis-view dualis; do
+for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-elastic dualis-porous dualis-scene dualis-view dualis; do
   cargo publish -p "$c" --locked || break
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel

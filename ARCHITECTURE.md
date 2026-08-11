@@ -31,7 +31,7 @@ promise dates.
     ┌───────────────────────────┴─────────────────────────────────┐
     │  PHYSICS       what evolves, and what it conserves           │
     │                the kernel, and one crate per physics         │
-    │                          `dualis-core` + seven domain crates │
+    │                          `dualis-core` + eight domain crates │
     └─────────────────────────────────────────────────────────────┘
 
 As of 0.9.0 all three are crates on crates.io. Before that the upper two lived inside an
@@ -92,7 +92,7 @@ per-frame normalisation is what you get if you do not think about it.
 
 ## Where the work is: 3D is not the default yet
 
-The physics layer is seven crates deep and dimensionally uneven. This is the honest state.
+The physics layer is eight crates deep and dimensionally uneven. This is the honest state.
 
 | crate | space it lives in | for the goal |
 | --- | --- | --- |
@@ -103,6 +103,7 @@ The physics layer is seven crates deep and dimensionally uneven. This is the hon
 | `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
 | `dualis-electrical` | **3D** `Conductor`; `Winding` is a lumped `I²R` | done |
 | `dualis-porous` | **3D** — Darcy flow, advected heat and dissolution in a packed bed | done |
+| `dualis-elastic` | **3D** — linear elasticity on trilinear elements | done |
 
 Two observations follow, and they point in opposite directions.
 
@@ -230,7 +231,7 @@ different quantities, the second separates domains carrying the same one.
    `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
    rate measured across three doublings.
 
-   Five of the seven domains are three-dimensional now. What is left is `dualis-electrical`, which
+   Six of the eight domains are three-dimensional now. What is left is `dualis-electrical`, which
    is gap 4 below, and `dualis-optics`, whose rays are already 3D and whose *fields* are not.
 
    Building the first one **found a gap in the layer above it**, which is what a first
@@ -285,8 +286,10 @@ different quantities, the second separates domains carrying the same one.
    painter's algorithm sorts correctly, and a field is composited rather than occluded. It becomes
    worth doing when something here has *surfaces* — a mesh, an isosurface — and nothing does.
 
-Beyond these, the physics itself is open-ended: electromagnetism, fluid dynamics, elasticity.
-Each is a crate on the kernel. None is a change to the layers.
+Beyond these, the physics itself is open-ended. **Elasticity is done** — `dualis-elastic`, the
+third elliptic domain and the first whose unknown is a vector, added without the kernel or either
+layer changing at all, which is the claim rule 4 makes and the eighth time it has held. What is
+left of that list is electromagnetism and fluid dynamics. Each is a crate on the kernel.
 
 ---
 

@@ -14,6 +14,58 @@ messages carry the full account.
 
 ### Added
 
+- **An eighth domain: `dualis-elastic`.** What a shape does under load — `∇·σ = 0` with
+  `σ = λ tr(ε)I + 2μ ε` — solved rather than stated, so a stiffness is a property of a geometry the
+  way `Conductor` made a resistance one.
+
+  The third elliptic domain here and the first whose unknown is a **vector** at every node. That is
+  the only thing that is new, and it is why the operator is assembled from the strain energy rather
+  than differenced from the Navier–Cauchy equation: a Hessian is symmetric by construction, which
+  conjugate gradients needs, and `∇(∇·u)` differenced on a collocated grid admits a checkerboard
+  displacement that costs no energy.
+
+  **Four moduli come out exactly**, at any mesh, because trilinear elements reproduce a linear
+  displacement field exactly:
+
+  ```text
+    uniaxial stress    E = 68.90 GPa      and nu = 0.330000000 with it
+    confined           M = 102.09 GPa     = lambda + 2mu, 1.48x E
+    hydrostatic        K = 67.55 GPa
+    simple shear       G = 25.90 GPa      where 2G would be the classic factor-of-two error
+  ```
+
+  Four combinations of two constants. A solver with `λ` and `μ` transposed reproduces none; one
+  whose shear rows carried `2μ` passes the first three and fails the fourth. Checking one modulus
+  is checking that a stiffness exists.
+
+  Beside them: the **patch test** on a general linear field with a rotation mixed in — the interior
+  lands on it to `1.9e-20 m` — **Clapeyron's `2U = Σf·u`** to `4e-16`, and a null space that is
+  exactly the six rigid motions and nothing else, each costing `1e-32 J` against a reference
+  strain's `9e-6`.
+
+  **Bending only converges**, from the stiff side, and that is stated rather than tuned away: a
+  fully integrated element develops shear where it should flex, so a cantilever runs 0.866, 0.933,
+  0.960, 0.981 of `PL³/3EI` as the mesh refines. Reduced integration would cure it and buy hourglass
+  modes, which is trading a stiffness error for a *singularity*.
+
+- **Three things the elasticity tests found about their own design.**
+
+  **A shear rig is not simple shear.** Clamp the base, drag the top, read `τ/γ` — and a cube gives
+  **0.40 of `G`**, because the sides are free and the block bends. `prescribe_boundary` puts the
+  analytic field on the whole surface instead, which is the patch test and removes the rig from the
+  answer. Displacement control needed the solver to start its iterate at the prescribed values
+  rather than at zero, and the relative residual to be measured against the initial one when there
+  are no loads at all.
+
+  **A reaction has to be read by component.** A node on an edge belongs to two faces, so
+  `reaction(YLow)` sums the `y`-low share of the `x`-low rollers' 30 N and reports 2.5 N of a force
+  it is not carrying. `normal_reaction` is the unambiguous one; the magnitude is not, and the test
+  now asserts both — that the normal is zero *and* that the magnitude is not, so the distinction
+  cannot quietly stop mattering.
+
+  **Two domains wanted the name `Body`.** `dualis-mechanics` had it for a rigid one. The prelude is
+  where that shows, and only because both are exported there. The elastic one is `Block`.
+
 - **The native viewer opens the espresso run, and two things `runtime/viewer`'s README already
   claimed turned out not to be true of its renderer.**
 

@@ -69,7 +69,7 @@
 //! dualis             depends on all of them
 //! ```
 //!
-//! None of the seven domains knows about any of the others. They meet on the kernel's
+//! None of the eight domains knows about any of the others. They meet on the kernel's
 //! [`Exchange`](dualis_core::Exchange), and each one that arrived left the others
 //! untouched — which is the claim the split was made to test, now held six times.
 //!
@@ -85,6 +85,7 @@
 #![deny(missing_docs)]
 pub use dualis_acoustic as acoustic;
 pub use dualis_core as core;
+pub use dualis_elastic as elastic;
 pub use dualis_electrical as electrical;
 pub use dualis_mechanics as mechanics;
 pub use dualis_molecular as molecular;
@@ -115,6 +116,11 @@ pub mod prelude {
     // type a consumer meets while building a frame, setting an audit or writing a domain, which
     // is what a prelude is for.
     pub use dualis_core::{Bodies, Ensemble, Estimate, Pose, Reading, Tolerances};
+    // `Block` rather than `Body`, because `dualis-mechanics` had that name first for a rigid
+    // one. Two domains both wanted it, and the prelude is where that shows: a consumer who
+    // imports everything gets one name for two quite different things, and the compiler catches
+    // it only because both are exported here.
+    pub use dualis_elastic::{Block, Elastic, Face};
     pub use dualis_electrical::{Conductor, Winding};
     pub use dualis_mechanics::{
         Body, ContactSystem, Coords, Ground, Inertia, NBody, RigidBody, TreeNBody, GRAVITATION,

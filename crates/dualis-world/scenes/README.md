@@ -1,6 +1,6 @@
 # Scenes
 
-Eighteen worlds described as data, covering all seven of the library's domains — seventeen of them
+Eighteen worlds described as data, covering seven of the library's eight domains — seventeen of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -16,7 +16,7 @@ pointing at a node the scene defines. It reports a parse failure as `file:line:c
 keys that were expected, which is what an editor puts a squiggle under. CI runs it over every
 scene, because it would otherwise be the one entry point nothing exercises.
 
-Every file carries a `format` number, and **absence means 1** — which is what all seventeen here
+Every file carries a `format` number, and **absence means 1** — which is what all eighteen here
 are, having been written before the field existed. A version this build cannot read is refused
 rather than half-run: `deny_unknown_fields` catches a key that was *added*, but not one whose
 meaning changed, and that is what the number is for.
@@ -233,7 +233,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all seventeen on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all eighteen on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is
