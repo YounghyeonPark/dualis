@@ -308,8 +308,34 @@ crates, each one added without the kernel or either layer above it changing, whi
 ten times.
 
 What is open now is not a list of missing physics but a list of missing *depth* in what is here:
-every domain is single-phase, single-material and small-strain. None of those is a new crate. They
-are the second half of crates that exist.
+every domain is single-phase and small-strain. None of those is a new crate. They are the second
+half of crates that exist.
+
+**Single-material** was the third entry and `Solid3D::fill` is the first answer to it — and it
+demonstrates the shape the rest of this list wants, because it changed nothing outside the crate
+and it turned on a closed form rather than on a feature.
+
+The number is the conductivity **on a face**, which is the harmonic mean of the two cells' and not
+the arithmetic one. That is not a coarser convention: for aluminium against borosilicate the two
+are 2.21 and 84.1 W/m/K, a factor of 38, and the arithmetic one short-circuits the interface. The
+harmonic mean earns an *equality* — with the material interface on a cell face, the discrete chain
+of face resistances is exactly `Σ Lᵢ/(kᵢA)` at every resolution, so a layered wall's resistance has
+no discretisation error at all. The arithmetic mean's is first order, which is the dangerous kind:
+8.9% at twelve cells, 1.0% at ninety-six, and about a thousand cells to reach in 0.1% what harmonic
+has at three. A single-resolution check would have read that as a tolerance.
+
+It also moved the stability limit off being a material property, and in the direction nobody
+expects. `max_stable_dt` sums the actual face conductances now, so it is `minᵢ Cᵢ/(dx·Σ_f k_f)` —
+which is `dx²/(2α)`, `dx²/(4α)` or `dx²/(6α)` according to how many axes have more than one cell
+(this domain charged every shape the 3D rate, and a bar-shaped block three times the steps it
+needed), and for a filled block is usually far *looser* than `dx²/(6·α_max)`. One aluminium cell
+inside borosilicate is stable at exactly `k/k_face` = **75×** aluminium's own limit, because heat
+cannot reach a cell faster than its worst face delivers it.
+
+The consumer half is `regions` in the scene format and `19-a-coating-stops-the-heat`, where the
+whole temperature drop sits on one face. A region that selects **no cells** is refused rather than
+ignored: a mistyped bound otherwise gives a block of one material that runs, audits, renders and
+answers the wrong question with nothing saying the coating was never applied.
 
 Two entries that used to be on this list are answered, and both the same way — not by a domain
 absorbing another's job, but by a test that fails if two of them ever stop being limits of one

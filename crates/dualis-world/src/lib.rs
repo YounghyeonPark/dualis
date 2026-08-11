@@ -429,6 +429,17 @@ pub enum DomainSpec {
         cell_mm: f64,
         /// Starting temperature, uniform, in celsius.
         initial_c: f64,
+        /// What it is made of, one of [`MATERIALS`]. Absent is `aluminium`, which is what every
+        /// block written before this key existed is.
+        #[serde(default)]
+        material: Option<String>,
+        /// Boxes of cells made of something else — a layer, a coating, a joint, an inclusion.
+        ///
+        /// Applied in order, so a later region overwrites an earlier one where they overlap. That
+        /// is worth stating because it is how a coating *on* a layer is written and there is no
+        /// other way to mean it.
+        #[serde(default)]
+        regions: Vec<Region>,
         /// A cell to warm at the start, and by how much, so there is a hot spot to watch spread.
         ///
         /// **A statement about the initial state, not a delivery of heat.** It moves what the
@@ -499,14 +510,52 @@ pub enum DomainSpec {
     },
 }
 
+/// The materials a scene may name, and the only place the spelling lives.
+///
+/// One table rather than one per domain. It began as a `match` inside the network builder, and the
+/// moment a second domain wanted a material that would have been two lists that agree until they
+/// do not — which is how a format grows a name that works in one place and is rejected in another.
+pub const MATERIALS: [&str; 7] = [
+    "copper",
+    "aluminium",
+    "stainless_304",
+    "electrical_steel",
+    "borosilicate",
+    "fr4",
+    "pla",
+];
+
+/// Look up a material by the name a scene wrote, or say what the names are.
+///
+/// The error lists them, because a caller who guessed wrong has no other way to find out: this is a
+/// JSON file with no completion and no type checker behind it.
+fn substance_named(site: &str, material: &str) -> Result<Substance, String> {
+    match material {
+        "copper" => Ok(Substance::copper()),
+        "aluminium" => Ok(Substance::aluminium_6061()),
+        "stainless_304" => Ok(Substance::stainless_304()),
+        "electrical_steel" => Ok(Substance::electrical_steel()),
+        "borosilicate" => Ok(Substance::borosilicate_crown()),
+        "fr4" => Ok(Substance::fr4()),
+        "pla" => Ok(Substance::pla()),
+        other => Err(format!(
+            "{site}: unknown material {other:?}; known materials are {}",
+            MATERIALS
+                .iter()
+                .map(|m| format!("{m:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
 /// One body in a [`DomainSpec::Network`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkNode {
     /// What the links call it. Unique within the network.
     pub name: String,
-    /// One of `copper`, `aluminium`, `electrical_steel`, `fr4`, `pla`. Mixing them is the
-    /// point: a motor is not a billet of its main metal.
+    /// One of [`MATERIALS`]. Mixing them is the point: a motor is not a billet of its main metal.
     pub material: String,
     /// Volume of this body.
     pub volume_cm3: f64,
@@ -833,20 +882,8 @@ impl DomainSpec {
             } => {
                 let mut network = ThermalNetwork::new(name.clone());
                 for n in nodes {
-                    let substance = match n.material.as_str() {
-                        "copper" => Substance::copper(),
-                        "aluminium" => Substance::aluminium_6061(),
-                        "electrical_steel" => Substance::electrical_steel(),
-                        "fr4" => Substance::fr4(),
-                        "pla" => Substance::pla(),
-                        other => {
-                            return Err(format!(
-                                "{name}/{}: unknown material {other:?}; known materials are \
-                                 \"copper\", \"aluminium\", \"electrical_steel\", \"fr4\", \"pla\"",
-                                n.name
-                            ))
-                        }
-                    };
+                    let substance =
+                        substance_named(&format!("{name}/{}", n.name), n.material.as_str())?;
                     let volume = Volume::from_si(n.volume_cm3 * 1e-6);
                     let thickness = Length::mm(n.thickness_mm);
                     let initial = Temperature::celsius(n.initial_c);
@@ -1032,15 +1069,38 @@ impl DomainSpec {
                 cells,
                 cell_mm,
                 initial_c,
+                material,
+                regions,
                 hot_spot,
             } => {
+                let bulk = substance_named(
+                    name,
+                    material.as_deref().unwrap_or("aluminium"),
+                )?;
                 let mut block = dualis::thermal::Solid3D::new(
                     name.clone(),
-                    Substance::aluminium_6061(),
+                    bulk,
                     (cells[0], cells[1], cells[2]),
                     Length::mm(*cell_mm),
                     Temperature::celsius(*initial_c),
                 );
+                for (n, r) in regions.iter().enumerate() {
+                    let site = format!("{name}/regions[{n}]");
+                    let substance = substance_named(&site, &r.material)?;
+                    let empty = (0..3).any(|a| r.to[a] <= r.from[a]);
+                    let outside = (0..3).any(|a| r.to[a] > cells[a]);
+                    if empty || outside {
+                        return Err(format!(
+                            "{site}: {:?}..{:?} selects no cells of a {}x{}x{} block; `to` is one \
+                             past the last cell, so a single cell is `to = from + 1`",
+                            r.from, r.to, cells[0], cells[1], cells[2]
+                        ));
+                    }
+                    block.fill(substance, |i, j, k| {
+                        let p = [i, j, k];
+                        (0..3).all(|a| p[a] >= r.from[a] && p[a] < r.to[a])
+                    });
+                }
                 if let Some(spot) = hot_spot {
                     block.set_temperature(
                         spot.at[0],
@@ -1054,6 +1114,28 @@ impl DomainSpec {
         };
         Ok(domain)
     }
+}
+
+/// A box of cells in a [`DomainSpec::Block`] made of something other than the block.
+///
+/// # Half-open, and empty is an error
+///
+/// `to` is one past the last cell, so a single cell is `to = from + 1` and a twelve-cell layer along
+/// z is `from: [0,0,12], to: [1,1,24]`. That is the convention every index in this workspace uses,
+/// and mixing it with an inclusive one somewhere is worse than either.
+///
+/// A region that selects **no cells** is refused rather than ignored. It is the whole silent failure
+/// this format can have: a mistyped bound gives a block of one material that runs, audits, renders
+/// and answers the wrong question, with nothing anywhere saying the coating was not applied.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Region {
+    /// What this box is made of, one of [`MATERIALS`].
+    pub material: String,
+    /// The first cell, as `[i, j, k]`.
+    pub from: [usize; 3],
+    /// One past the last cell, as `[i, j, k]`.
+    pub to: [usize; 3],
 }
 
 /// One cell of a [`DomainSpec::Block`], warmed at the start.

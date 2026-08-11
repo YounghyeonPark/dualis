@@ -185,6 +185,87 @@ fn a_scene_that_makes_no_sense_is_refused() {
     assert!(World::build(still).is_err());
 }
 
+/// **A region that selects no cells is refused, and a block with no material is still aluminium.**
+///
+/// Two halves of the same worry, in opposite directions.
+///
+/// A mistyped region is the silent failure this key can have. `"to": [9, 9, 9]` where `[9, 9, 18]`
+/// was meant selects nothing, and a block of one material runs, audits, renders and answers the
+/// wrong question with nothing anywhere saying the coating was not applied. So an empty region — or
+/// one naming a cell the block does not have — is a refusal with the convention spelled out, because
+/// half-open bounds are exactly what a person gets wrong here.
+///
+/// And the other way: `material` and `regions` were **added** to a format that carries a
+/// compatibility promise, so every block written before they existed has to keep meaning what it
+/// meant. Absence is aluminium, and that is asserted from the old spelling rather than assumed.
+#[test]
+fn a_region_that_selects_nothing_is_refused_and_absence_is_aluminium() {
+    let block = |extra: &str| {
+        format!(
+            r#"{{ "title": "t", "schedule": "multirate", "duration_s": 1e-4, "frames": 2,
+              "domains": [{{ "kind": "block", "name": "b", "cells": [4, 4, 8],
+                "cell_mm": 1.0, "initial_c": 20.0{extra} }}] }}"#
+        )
+    };
+
+    // The pre-`material` spelling, which is what every shipped block scene was.
+    let old: Scene = serde_json::from_str(&block("")).expect("an old block still parses");
+    let world = World::build(old).expect("and still builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert_eq!(b.substances(), 1, "no regions means one material");
+    assert_eq!(
+        b.substance_at(0, 0, 0).name,
+        "Al 6061",
+        "absence of `material` is aluminium, as it was before the key existed"
+    );
+
+    // A region that is fine, to establish that the refusals below are about the bounds.
+    let good = block(
+        r#", "material": "copper",
+             "regions": [{ "material": "fr4", "from": [0, 0, 4], "to": [4, 4, 8] }]"#,
+    );
+    let world = World::build(serde_json::from_str(&good).expect("parses")).expect("builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert_eq!(b.substances(), 2, "the region is a second material");
+    assert_eq!(b.substance_at(0, 0, 0).name, "Cu ETP");
+    assert_eq!(b.substance_at(0, 0, 7).name, "FR-4");
+
+    for (why, spec) in [
+        (
+            "an empty range",
+            r#", "regions": [{ "material": "fr4", "from": [0, 0, 4], "to": [4, 4, 4] }]"#,
+        ),
+        (
+            "a range that runs backwards",
+            r#", "regions": [{ "material": "fr4", "from": [0, 0, 6], "to": [4, 4, 2] }]"#,
+        ),
+        (
+            "a cell the block does not have",
+            r#", "regions": [{ "material": "fr4", "from": [0, 0, 4], "to": [4, 4, 9] }]"#,
+        ),
+        (
+            "an unknown material",
+            r#", "regions": [{ "material": "unobtainium", "from": [0, 0, 4], "to": [4, 4, 8] }]"#,
+        ),
+    ] {
+        let scene: Scene =
+            serde_json::from_str(&block(spec)).expect("it parses; the check is later");
+        let Err(err) = World::build(scene) else {
+            panic!("{why} must be refused");
+        };
+        assert!(
+            err.contains("b/regions[0]"),
+            "{why}: the message should say which region: {err}"
+        );
+    }
+}
+
 /// Two domains that do not interact still run, and both are captured.
 #[test]
 fn a_scene_can_hold_more_than_one_domain() {
@@ -955,6 +1036,69 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     panel.slice(0) != panel.slice(4),
                     "{name}: every slice is identical, so z was never sampled"
                 );
+            }
+            // **A wall of glass halfway down a block of aluminium**, and the heat piling up
+            // against it. The scene a single-material block cannot express.
+            //
+            // What is checked is where the *gradient* is, which is the only thing a two-material
+            // block says that a one-material block does not. Aluminium's 150x conductivity leaves
+            // it nearly isothermal over its own 9 mm, and borosilicate's diffusion length in half
+            // a second is half a cell — so the whole temperature drop sits on one face, and the
+            // largest cell-to-cell step along z must be exactly the one at the material interface.
+            //
+            // A block with the coating quietly not applied would put its largest step next to the
+            // hot spot instead, which is the failure this catches and a peak temperature would not.
+            "19-a-coating-stops-the-heat.json" => {
+                let block = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("joint")
+                    .expect("the joint is still there");
+                let ambient = Temperature::celsius(20.0).to_si();
+                let at = |k: usize| block.temperature_at(4, 4, k).to_si();
+
+                // The books, not the mean: with two capacities it is `Σ Cᵢ Tᵢ` that is fixed, and
+                // the mean temperature is not. 60 K in one aluminium cell of 2.4192 mJ/K.
+                let opening = 2700.0 * 896.0 * 1e-9 * 60.0;
+                let held = block
+                    .ledger()
+                    .get(quantity::ENERGY)
+                    .expect("energy is on the books");
+                assert!(
+                    (held - opening).abs() < 1e-9 * opening,
+                    "{name}: insulated, so it still holds {opening:.9} J, got {held:.9}"
+                );
+
+                let steps: Vec<f64> = (0..17).map(|k| at(k) - at(k + 1)).collect();
+                let (worst, _) = steps.iter().enumerate().fold((0, 0.0f64), |acc, (k, s)| {
+                    if *s > acc.1 {
+                        (k, *s)
+                    } else {
+                        acc
+                    }
+                });
+                assert_eq!(
+                    worst, 8,
+                    "{name}: the gradient belongs on the interface face, not at cell {worst}: \
+                     {steps:?}"
+                );
+
+                // The metal is nearly isothermal and the glass is nearly untouched, which is the
+                // same statement read from either side.
+                let (near, far) = (at(0) - ambient, at(8) - ambient);
+                assert!(
+                    (near - far).abs() < 0.2 * far,
+                    "{name}: 150x the conductivity should level the metal: {near:.3} K at the far \
+                     face against {far:.3} K at the interface"
+                );
+                assert!(
+                    at(12) - ambient < 0.02 * far,
+                    "{name}: the glass should have stopped it: {:.4} K four cells in against \
+                     {far:.3} K in the metal",
+                    at(12) - ambient
+                );
+
+                let panel = &last.panels[0];
+                assert_eq!(panel.grid(), Some((9, 9, 18)));
             }
             // **The mode a floor plan does not have.** A 4.4 x 3.1 x 2.4 m room released in its
             // oblique (1,1,1) mode, which needs all three axes at once.

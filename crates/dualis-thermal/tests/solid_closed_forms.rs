@@ -332,8 +332,11 @@ fn a_hot_spot_spreads_the_same_way_along_every_axis() {
 ///
 /// The reduction that makes the three-dimensional operator checkable against a one-dimensional
 /// closed form. An axis of one cell is a mirror against itself, contributes nothing to the
-/// eigenvalue, and must leave the remaining axis behaving as the 1D scheme does — including its
-/// looser stability limit being *unavailable*, since this domain still reports `dx²/6α`.
+/// eigenvalue, and must leave the remaining axis behaving as the 1D scheme does.
+///
+/// It now includes the **stability limit**, which it did not: this domain reported `dx²/6α` for
+/// every shape and so charged a bar-shaped block three times the steps it needed.
+/// `a_layered_wall.rs` pins the limit for one, two and three active axes.
 #[test]
 fn one_cell_thick_reduces_to_a_bar() {
     let n = 12;

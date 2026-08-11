@@ -99,6 +99,12 @@ tells them apart.
 | Scene | What it shows |
 | --- | --- |
 | `15-a-hot-spot-in-a-block` | One cell of a 9×9×9 aluminium block starting 60 K hot, and the spot spreading in **three** dimensions. The scene that a one-dimensional bar cannot express: heat going sideways is the whole job of a spreader plate |
+| `19-a-coating-stops-the-heat` | The same spot in a 9×9×18 block that is aluminium for half its depth and **borosilicate** for the other half. 150× the conductivity leaves the metal nearly isothermal and the glass barely touched, so the entire temperature drop sits on one face — and the test asserts the largest cell-to-cell step along z is exactly the interface one, which is what a block with the coating quietly not applied would fail |
+
+`19` is the one that needs `Solid3D::fill`, and it is the format's first `regions` key. A region is
+**half-open** — `to` is one past the last cell — and one that selects no cells is refused rather than
+ignored, because a mistyped bound is otherwise invisible: a block of one material runs, audits and
+renders, and nothing anywhere says the coating was not applied.
 
 `15` is the first scene whose field is a volume, and the report draws it as **every z-slice at
 once** rather than as one plane with the rest behind a slider — because a viewer who never

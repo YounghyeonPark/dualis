@@ -64,7 +64,7 @@
 use dualis_core::conserved::quantity;
 use dualis_core::Reading;
 use dualis_core::{
-    units::{Energy, Length, LengthVec, Temperature, Time, Volume},
+    units::{Conductance, Energy, HeatCapacity, Length, LengthVec, Temperature, Time, Volume},
     Domain, Exchange, Ledger, ScalarField, Substance, Violation,
 };
 use glam::DVec3;
@@ -78,7 +78,7 @@ use crate::HEAT;
 /// there is anything to ask.
 pub const STABLE_FOURIER_3D: f64 = 1.0 / 6.0;
 
-/// A rectangular block of one material, conducting in three dimensions.
+/// A rectangular block, conducting in three dimensions, of one material or of several.
 ///
 /// Cells are **cubes** of a single spacing rather than boxes of three. That is a deliberate
 /// restriction and the same one `Room::of_air` makes: an anisotropic cell makes the stability
@@ -89,10 +89,19 @@ pub const STABLE_FOURIER_3D: f64 = 1.0 / 6.0;
 /// Faces are **insulated**. Every boundary cell exchanges with the neighbours it has and no
 /// others, which is what makes the total exactly conserved rather than conserved to a tolerance.
 /// A block that should lose heat gets that from a domain on the other side of the bus.
+///
+/// [`fill`](Solid3D::fill) gives cells a different substance from the constructor's, which is what
+/// makes a coating, a joint or a layered wall expressible. Read that method for the one number the
+/// scheme turns on — the conductivity **on a face** is the harmonic mean of the two cells', not
+/// the arithmetic one, and the difference is not a refinement away.
 #[derive(Clone, Debug)]
 pub struct Solid3D {
     name: String,
-    substance: Substance,
+    /// Every substance in the block. Index 0 is the constructor's, and a block nobody has
+    /// [`fill`](Solid3D::fill)ed holds only that one.
+    materials: Vec<Substance>,
+    /// Which of `materials` each cell is, indexed as `cells` is.
+    which: Vec<u32>,
     /// Cell-centre temperatures, indexed `x + nx*(y + ny*z)`.
     cells: Vec<f64>,
     saved: Vec<f64>,
@@ -102,6 +111,21 @@ pub struct Solid3D {
     /// What [`stored_heat`](Solid3D::stored_heat) is measured from — see [`Bar1D`](crate::Bar1D)
     /// for why an enthalpy reference is chosen for precision rather than for physics.
     reference: f64,
+    /// Face conductivities in W/m/K, rebuilt by [`resolve`](Solid3D::resolve): `kx` is indexed
+    /// `i + (nx+1)*(j + ny*k)` and holds the face between cells `i-1` and `i`, so `kx[0]` and
+    /// `kx[nx]` are the outer faces and are **zero** — which is the insulated boundary, stated in
+    /// the conductance rather than in the stencil's index arithmetic.
+    kx: Vec<f64>,
+    ky: Vec<f64>,
+    kz: Vec<f64>,
+    /// Per-cell `dx / C_i`, which is what multiplies `Σ k_f ΔT` to give a rate of temperature.
+    mobility: Vec<f64>,
+    /// Per-cell heat capacity `ρ_i c_i dx³`, in J/K. `NaN` where a substance does not say.
+    capacity: Vec<f64>,
+    /// `max_i dx·Σ_f k_f / C_i`, the reciprocal of the largest stable step. See
+    /// [`max_stable_dt`](Domain::max_stable_dt) for why it is a maximum over cells and not a
+    /// function of the fastest material.
+    worst_rate: f64,
 }
 
 impl Solid3D {
@@ -119,15 +143,215 @@ impl Solid3D {
     ) -> Solid3D {
         let counts = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
         let cells = vec![initial.to_si(); counts.0 * counts.1 * counts.2];
-        Solid3D {
+        let mut block = Solid3D {
             name: name.into(),
-            substance,
+            materials: vec![substance],
+            which: vec![0; cells.len()],
             saved: cells.clone(),
             cells,
             counts,
             dx,
             absorbed: 0.0,
             reference: initial.to_si(),
+            kx: Vec::new(),
+            ky: Vec::new(),
+            kz: Vec::new(),
+            mobility: Vec::new(),
+            capacity: Vec::new(),
+            worst_rate: 0.0,
+        };
+        block.resolve();
+        block
+    }
+
+    /// Put a different substance in every cell the predicate accepts.
+    ///
+    /// Composable: call it once per layer, per coating, per inclusion. Cells nobody claims keep the
+    /// constructor's substance, so a block is never partly undefined.
+    ///
+    /// # The harmonic mean, and why it is not a detail
+    ///
+    /// Heat crosses a face, and a face has two materials touching it. The conductance of the half
+    /// cell either side is in **series**, so the conductivity that governs the face is
+    ///
+    /// ```text
+    ///   k_face = 2 k_L k_R / (k_L + k_R)
+    /// ```
+    ///
+    /// the harmonic mean, and the arithmetic mean `(k_L + k_R)/2` is not an alternative convention
+    /// — it is wrong. With aluminium against borosilicate the two differ by **38×** (2.21 against
+    /// 84.1 W/m/K), and the arithmetic one short-circuits the interface: a wall it models has 4.2%
+    /// less resistance than its own layers add up to at 24 cells, and reaching the harmonic answer
+    /// to 0.1% would take about a thousand.
+    ///
+    /// The harmonic mean is not merely better. With the material interface on a cell face it makes
+    /// the discrete series resistance **exactly** `Σ Lᵢ/(kᵢA)` at every resolution, which is why
+    /// `a_layered_wall.rs` is an equality and not a tolerance.
+    ///
+    /// "On a cell face" is the whole condition, and it is one this method cannot break: cells are
+    /// whole, so an interface is always on a face. A scheme that placed a layer boundary partway
+    /// through a cell would be first order there whichever mean it used, because the cell would be a
+    /// mixture and no single conductivity describes one.
+    ///
+    /// # What it costs
+    ///
+    /// Five `f64` and a `u32` per cell beyond the temperatures: three face conductivities, a
+    /// capacity, its reciprocal scaled by `dx`, and which substance the cell is. All rebuilt here
+    /// and none of it in the sweep, which is the trade — the alternative is six harmonic means and
+    /// six divisions per cell per step.
+    ///
+    /// A uniform block pays the same. That is deliberate: a fast path for one material would be a
+    /// second implementation of the same physics, exercised by the tests that came before this
+    /// method and by nothing after it.
+    pub fn fill(
+        &mut self,
+        substance: Substance,
+        which: impl Fn(usize, usize, usize) -> bool,
+    ) -> &mut Solid3D {
+        let id = match self.materials.iter().position(|s| *s == substance) {
+            Some(at) => at as u32,
+            None => {
+                self.materials.push(substance);
+                (self.materials.len() - 1) as u32
+            }
+        };
+        let (nx, ny, nz) = self.counts;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    if which(i, j, k) {
+                        self.which[i + nx * (j + ny * k)] = id;
+                    }
+                }
+            }
+        }
+        self.resolve();
+        self
+    }
+
+    /// The substance in one cell. Out of range reads the nearest one in range.
+    pub fn substance_at(&self, i: usize, j: usize, k: usize) -> &Substance {
+        let (nx, ny, nz) = self.counts;
+        let idx = i.min(nx - 1) + nx * (j.min(ny - 1) + ny * k.min(nz - 1));
+        &self.materials[self.which[idx] as usize]
+    }
+
+    /// How many distinct substances are in the block. One until something has [`fill`]ed it.
+    ///
+    /// [`fill`]: Solid3D::fill
+    pub fn substances(&self) -> usize {
+        self.materials.len()
+    }
+
+    /// The conductance of the face between two cells, or `None` if they are not face neighbours.
+    ///
+    /// `k_face · A / dx`, which for cubic cells is `k_face · dx`. This is the number the sweep
+    /// actually uses, so a caller checking a joint against `Σ Lᵢ/(kᵢA)` by hand is checking the
+    /// same arithmetic the march does rather than a restatement of it.
+    pub fn face_conductance(
+        &self,
+        a: (usize, usize, usize),
+        b: (usize, usize, usize),
+    ) -> Option<Conductance> {
+        let (nx, ny, _) = self.counts;
+        self.index(a.0, a.1, a.2)?;
+        self.index(b.0, b.1, b.2)?;
+        let step = |p: usize, q: usize| (p as isize - q as isize).abs();
+        let (di, dj, dk) = (step(a.0, b.0), step(a.1, b.1), step(a.2, b.2));
+        let k = match (di, dj, dk) {
+            (1, 0, 0) => self.kx[a.0.max(b.0) + (nx + 1) * (a.1 + ny * a.2)],
+            (0, 1, 0) => self.ky[a.0 + nx * (a.1.max(b.1) + (ny + 1) * a.2)],
+            (0, 0, 1) => self.kz[a.0 + nx * (a.1 + ny * a.2.max(b.2))],
+            _ => return None,
+        };
+        Some(Conductance::from_si(k * self.dx.to_si()))
+    }
+
+    /// Rebuild everything derived from the materials: face conductivities, mobilities, the limit.
+    ///
+    /// Called by the constructor and by every [`fill`](Solid3D::fill), on the rule this workspace
+    /// learned from `Puck::repack` — a mutator that leaves a cached solve stale reports a number
+    /// that was true about the previous object, and it looks exactly like a number.
+    fn resolve(&mut self) {
+        let (nx, ny, nz) = self.counts;
+        let dx = self.dx.to_si();
+        let volume = Volume::from_si(dx * dx * dx);
+        // Per material rather than per cell: a block has a handful of substances and millions of
+        // cells. `NaN` for a substance that does not say, which `step` refuses on rather than
+        // stepping with a plausible default.
+        let props: Vec<(f64, f64)> = self
+            .materials
+            .iter()
+            .map(|s| {
+                (
+                    s.thermal.map_or(f64::NAN, |t| t.conductivity.to_si()),
+                    s.heat_capacity(volume).map_or(f64::NAN, |c| c.to_si()),
+                )
+            })
+            .collect();
+        let k_of = |cell: usize| props[self.which[cell] as usize].0;
+
+        // The series mean of the two half cells. Written as `2ab/(a+b)` and guarded at zero,
+        // because a perfect insulator is a legitimate fill and `0/0` is not a boundary condition.
+        let series = |a: f64, b: f64| {
+            let sum = a + b;
+            if sum > 0.0 {
+                2.0 * a * b / sum
+            } else {
+                0.0
+            }
+        };
+
+        self.kx = vec![0.0; (nx + 1) * ny * nz];
+        self.ky = vec![0.0; nx * (ny + 1) * nz];
+        self.kz = vec![0.0; nx * ny * (nz + 1)];
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let c = i + nx * (j + ny * k);
+                    if i > 0 {
+                        self.kx[i + (nx + 1) * (j + ny * k)] = series(k_of(c - 1), k_of(c));
+                    }
+                    if j > 0 {
+                        self.ky[i + nx * (j + (ny + 1) * k)] = series(k_of(c - nx), k_of(c));
+                    }
+                    if k > 0 {
+                        self.kz[i + nx * (j + ny * k)] = series(k_of(c - nx * ny), k_of(c));
+                    }
+                }
+            }
+        }
+
+        self.capacity = vec![0.0; self.cells.len()];
+        self.mobility = vec![0.0; self.cells.len()];
+        self.worst_rate = 0.0;
+        let mut nowhere = false;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let c = i + nx * (j + ny * k);
+                    let cap = props[self.which[c] as usize].1;
+                    self.capacity[c] = cap;
+                    self.mobility[c] = dx / cap;
+                    let sum = self.kx[i + (nx + 1) * (j + ny * k)]
+                        + self.kx[i + 1 + (nx + 1) * (j + ny * k)]
+                        + self.ky[i + nx * (j + (ny + 1) * k)]
+                        + self.ky[i + nx * (j + 1 + (ny + 1) * k)]
+                        + self.kz[i + nx * (j + ny * k)]
+                        + self.kz[i + nx * (j + ny * (k + 1))];
+                    // NaN loses every comparison, so `max` would step straight past a substance
+                    // that does not say what it conducts. Tested for, and the sweep is refused.
+                    let rate = self.mobility[c] * sum;
+                    if rate.is_nan() {
+                        nowhere = true;
+                    } else {
+                        self.worst_rate = self.worst_rate.max(rate);
+                    }
+                }
+            }
+        }
+        if nowhere {
+            self.worst_rate = f64::NAN;
         }
     }
 
@@ -196,8 +420,7 @@ impl Solid3D {
         let Some(idx) = self.index(i, j, k) else {
             return;
         };
-        let capacity = self.cell_capacity();
-        self.cells[idx] += joules.to_si() / capacity;
+        self.cells[idx] += joules.to_si() / self.capacity[idx];
         self.absorbed += joules.to_si();
     }
 
@@ -222,12 +445,35 @@ impl Solid3D {
         Energy::from_si(self.absorbed)
     }
 
-    /// `α·dt/dx²`. Must stay at or under [`STABLE_FOURIER_3D`].
+    /// `α·dt/dx²` for the constructor's substance — the classic Fourier number.
+    ///
+    /// This is the quantity [`mode_amplification`](Solid3D::mode_amplification) is written in terms
+    /// of, so it stays the textbook one and does not become shape- or fill-aware. For a block of
+    /// one material with at least two cells on every axis it *is* the stability number, and
+    /// `fourier_number(max_stable_dt) == 1/6` exactly.
+    ///
+    /// It is **not** the stability number for a thin block or a filled one, and those are the two
+    /// cases where a caller sizing a step by hand needs the other one — see
+    /// [`stability_ratio`](Solid3D::stability_ratio), which is what `step` actually enforces.
     pub fn fourier_number(&self, dt: Time) -> f64 {
-        let Some(alpha) = self.substance.diffusivity() else {
+        let Some(alpha) = self.materials[0].diffusivity() else {
             return f64::INFINITY;
         };
         alpha.to_si() * dt.to_si() / (self.dx.to_si() * self.dx.to_si())
+    }
+
+    /// `dt` as a fraction of the largest step this block is stable at — exactly one at the limit.
+    ///
+    /// The number `step` refuses on, and the honest one for a block that is thin or filled. It is
+    /// `dt · maxᵢ (Σ_f k_f / Cᵢ) · dx`: a maximum over **cells**, because stability is a statement
+    /// about a row of the update matrix and each cell has its own.
+    pub fn stability_ratio(&self, dt: Time) -> f64 {
+        dt.to_si() * self.worst_rate
+    }
+
+    /// The heat capacity of the whole block, which for a filled one is a sum and not a product.
+    pub fn heat_capacity(&self) -> HeatCapacity {
+        HeatCapacity::from_si(self.capacity.iter().sum())
     }
 
     /// The exact per-step amplification of one separable cosine mode.
@@ -334,28 +580,17 @@ impl Solid3D {
         dx * dx * dx
     }
 
-    fn cell_capacity(&self) -> f64 {
-        self.substance
-            .heat_capacity(Volume::from_si(self.cell_volume()))
-            .map(|c| c.to_si())
-            .unwrap_or(f64::INFINITY)
-    }
-
     /// Heat held, measured from the temperature the block started at.
-    fn stored_heat(&self) -> f64 {
-        self.cell_capacity() * self.cells.iter().map(|t| t - self.reference).sum::<f64>()
-    }
-
-    /// The value at a cell, with out-of-range indices mirrored back — an insulated face.
     ///
-    /// A mirror rather than a zero, and the distinction is the whole boundary condition: a zero
-    /// neighbour is a face held at absolute zero and would drain the block, where a mirror is a
-    /// face with no gradient across it and so no flow through it.
-    fn mirrored(&self, i: isize, j: isize, k: isize) -> f64 {
-        let (nx, ny, nz) = self.counts;
-        let clamp = |v: isize, n: usize| v.clamp(0, n as isize - 1) as usize;
-        let idx = clamp(i, nx) + nx * (clamp(j, ny) + ny * clamp(k, nz));
-        self.cells[idx]
+    /// Weighted cell by cell, so a filled block's books balance for the same reason a uniform
+    /// one's do: the sweep moves `G_f·ΔT` across a face and takes it off one side and puts it on
+    /// the other, and this is the sum that is therefore constant.
+    fn stored_heat(&self) -> f64 {
+        self.cells
+            .iter()
+            .zip(&self.capacity)
+            .map(|(t, c)| c * (t - self.reference))
+            .sum()
     }
 }
 
@@ -368,7 +603,35 @@ impl Domain for Solid3D {
         &self.name
     }
 
-    /// `dx²/(6α)` — the explicit limit with all three axes counted.
+    /// `minᵢ Cᵢ / (dx · Σ_f k_f)` — the tightest row of the update matrix, and `dx²/(6α)` when the
+    /// block is one material with at least two cells on every axis.
+    ///
+    /// # Why a maximum over cells, and what summing the faces buys
+    ///
+    /// Stability is Gershgorin's condition on one row: the update is `I + dt·D⁻¹L`, row `i` has
+    /// diagonal `−θᵢ` and off-diagonals summing to `+θᵢ` for `θᵢ = dt Σ_f G_f / Cᵢ`, so every
+    /// eigenvalue is in `[1 − 2θ_max, 1]` and `θ_max ≤ 1` is the limit.
+    ///
+    /// On a uniform grid that disc is **tight** rather than cautious — the sharpest representable
+    /// mode saturates it — and this is where `1/2`, `1/4` and `1/6` come from. They are not three
+    /// dimensions; they are however many axes have more than one cell, and the block is stepped at
+    /// whichever applies. This used to report `dx²/(6α)` for every shape, which cost a bar-shaped
+    /// block three times the steps for nothing.
+    ///
+    /// On a filled grid the value is the opposite one: the limit is usually far **looser** than
+    /// `dx²/(6·α_max)`, because `k_f ≤ 2·min(k_L, k_R)` means a cell cannot be heated through a
+    /// face faster than its worse side allows. Heat does not reach a fast material at that
+    /// material's own rate; it reaches it at the rate the neighbour delivers. Measured on one
+    /// aluminium cell embedded in borosilicate, the honest limit is **75×** the one aluminium's
+    /// diffusivity would name, and that factor is wall-clock.
+    ///
+    /// It can in principle go the other way — up to a factor of two, when a cell's neighbours
+    /// conduct better *and* store more — but that needs volumetric heat capacity to vary as widely
+    /// as conductivity, and across solids it varies by one order of magnitude where conductivity
+    /// varies by four. So the tightening is a bound this catalogue cannot reach, and the loosening
+    /// is a saving any coating or inclusion gets.
+    ///
+    /// # A third of the bar's, for a cube
     ///
     /// A third of what [`Bar1D`](crate::Bar1D) reports for the same spacing and material. That
     /// factor is the reason `Schedule::Multirate` exists: a block and a lumped mass in one scene
@@ -391,24 +654,30 @@ impl Domain for Solid3D {
     /// hand can sit exactly on it. `cargo run --example heat_in_three_dimensions` is the
     /// measurement.
     fn max_stable_dt(&self, _now: Time) -> Time {
-        let Some(alpha) = self.substance.diffusivity() else {
+        if self.worst_rate.is_nan() {
             return Time::from_si(f64::INFINITY);
-        };
-        let dx = self.dx.to_si();
-        Time::from_si(STABLE_FOURIER_3D * dx * dx / alpha.to_si())
+        }
+        Time::from_si(1.0 / self.worst_rate)
     }
 
     fn step(&mut self, _t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
-        let f = self.fourier_number(dt);
-        if !f.is_finite() {
-            return Err(Violation::at(&self.name, "substance has no diffusivity", f));
+        let ratio = self.stability_ratio(dt);
+        if ratio.is_nan() {
+            return Err(Violation::at(
+                &self.name,
+                "substance has no diffusivity",
+                f64::INFINITY,
+            ));
         }
-        if f > STABLE_FOURIER_3D + 1e-12 {
+        // Reported in Fourier-number units, which is `dt/(6·max_stable_dt)` — the classic
+        // `α·dt/dx²` for a block of one material with two cells on every axis, and the number the
+        // limit is expressed in for every other block.
+        if ratio > 1.0 + 6e-12 {
             return Err(Violation {
                 quantity: "Fourier number".to_string(),
                 site: format!("{} (explicit 3D conduction)", self.name),
                 before: STABLE_FOURIER_3D,
-                after: f,
+                after: ratio * STABLE_FOURIER_3D,
                 scale: STABLE_FOURIER_3D,
                 tolerance: 1e-12,
             });
@@ -423,34 +692,53 @@ impl Domain for Solid3D {
         // carried — and a hot spot that came from a tie-break is worse than no hot spot, because
         // it looks like physics. Even spreading is the unique choice that adds no information.
         // Heat that *does* have a place arrives through `deposit` or over an `Interface`.
+        // Spread to a uniform **rise**, which for a filled block means in proportion to each cell's
+        // capacity rather than in equal joules. Equal joules would warm the low-capacity material
+        // more and so would say where the heat landed, which the bus never carried.
         let gained = bus.take_share(HEAT, dt);
         if gained != 0.0 {
             self.absorbed += gained;
-            let per_cell = gained / (self.cells.len() as f64 * self.cell_capacity());
+            let rise = gained / self.capacity.iter().sum::<f64>();
             for cell in self.cells.iter_mut() {
-                *cell += per_cell;
+                *cell += rise;
             }
         }
 
-        // The seven-point stencil, with insulated faces by mirroring.
+        // The seven-point stencil in conductance form: `Cᵢ ΔTᵢ = dt Σ_f G_f (T_f − Tᵢ)`.
+        //
+        // It is the **face flux** that is computed, and each face is read once from each side with
+        // opposite sign, so `Σ Cᵢ Tᵢ` is conserved to the last bit rather than to a tolerance —
+        // and it stays that way when the capacities differ, which a stencil written as
+        // `f·(Σ T_n − 6T)` cannot do because there is no per-cell `f` in it.
         let (nx, ny, nz) = self.counts;
-        let previous = self.cells.clone();
-        let old = Solid3D {
-            cells: previous,
-            ..self.clone()
-        };
+        let old = self.cells.clone();
+        let dts = dt.to_si();
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..nx {
-                    let (i_, j_, k_) = (i as isize, j as isize, k as isize);
-                    let centre = old.mirrored(i_, j_, k_);
-                    let sum = old.mirrored(i_ - 1, j_, k_)
-                        + old.mirrored(i_ + 1, j_, k_)
-                        + old.mirrored(i_, j_ - 1, k_)
-                        + old.mirrored(i_, j_ + 1, k_)
-                        + old.mirrored(i_, j_, k_ - 1)
-                        + old.mirrored(i_, j_, k_ + 1);
-                    self.cells[i + nx * (j + ny * k)] = centre + f * (sum - 6.0 * centre);
+                    let c = i + nx * (j + ny * k);
+                    let t = old[c];
+                    let (xr, yr) = ((nx + 1) * (j + ny * k), nx * (j + (ny + 1) * k));
+                    let mut flux = 0.0;
+                    if i > 0 {
+                        flux += self.kx[i + xr] * (old[c - 1] - t);
+                    }
+                    if i + 1 < nx {
+                        flux += self.kx[i + 1 + xr] * (old[c + 1] - t);
+                    }
+                    if j > 0 {
+                        flux += self.ky[i + yr] * (old[c - nx] - t);
+                    }
+                    if j + 1 < ny {
+                        flux += self.ky[i + nx + yr] * (old[c + nx] - t);
+                    }
+                    if k > 0 {
+                        flux += self.kz[c] * (old[c - nx * ny] - t);
+                    }
+                    if k + 1 < nz {
+                        flux += self.kz[c + nx * ny] * (old[c + nx * ny] - t);
+                    }
+                    self.cells[c] = t + dts * self.mobility[c] * flux;
                 }
             }
         }
@@ -582,7 +870,12 @@ impl ScalarField for Solid3D {
         )
     }
 
-    /// The seven-point stencil — the same one [`Domain::step`] uses, which is the point.
+    /// `∇²T` on the seven-point stencil.
+    ///
+    /// The Laplacian of the *temperature*, which is what the trait asks for and is a statement
+    /// about the field rather than about the material. It is the operator the sweep uses only when
+    /// the block is one material; for a filled one the sweep uses `∇·(k∇T)`, and
+    /// [`rate`](ScalarField::rate) is where that appears.
     fn laplacian(&self, p: LengthVec, _t: Time, _h: Length) -> f64 {
         let (i, j, k) = self.nearest_cell(p);
         let dx = self.dx.to_si();
@@ -596,16 +889,62 @@ impl ScalarField for Solid3D {
         (sum - 6.0 * centre) / (dx * dx)
     }
 
-    /// `∂T/∂t = α∇²T`. Conduction only — heat arriving over the bus is a source this cannot see.
-    fn rate(&self, p: LengthVec, t: Time, _dt: Time) -> f64 {
-        let Some(alpha) = self.substance.diffusivity() else {
-            return 0.0;
-        };
-        alpha.to_si() * self.laplacian(p, t, self.dx)
+    /// `∂T/∂t = (1/Cᵢ)·Σ_f G_f (T_f − Tᵢ)`, which is `α∇²T` where the block is one material.
+    ///
+    /// The conductance form rather than `α·laplacian`, so that it is the sweep's own operator at a
+    /// point in a filled block too — read off the same face conductivities, not reconstructed from
+    /// a diffusivity the block may not have a single value of.
+    ///
+    /// Conduction only: heat arriving over the bus is a source this cannot see.
+    fn rate(&self, p: LengthVec, _t: Time, _dt: Time) -> f64 {
+        let (nx, ny, nz) = self.counts;
+        let (i, j, k) = self.nearest_cell(p);
+        let clamp = |v: isize, n: usize| v.clamp(0, n as isize - 1) as usize;
+        let (i, j, k) = (clamp(i, nx), clamp(j, ny), clamp(k, nz));
+        let c = i + nx * (j + ny * k);
+        let t = self.cells[c];
+        let (xr, yr) = ((nx + 1) * (j + ny * k), nx * (j + (ny + 1) * k));
+        let mut flux = 0.0;
+        if i > 0 {
+            flux += self.kx[i + xr] * (self.cells[c - 1] - t);
+        }
+        if i + 1 < nx {
+            flux += self.kx[i + 1 + xr] * (self.cells[c + 1] - t);
+        }
+        if j > 0 {
+            flux += self.ky[i + yr] * (self.cells[c - nx] - t);
+        }
+        if j + 1 < ny {
+            flux += self.ky[i + nx + yr] * (self.cells[c + nx] - t);
+        }
+        if k > 0 {
+            flux += self.kz[c] * (self.cells[c - nx * ny] - t);
+        }
+        if k + 1 < nz {
+            flux += self.kz[c + nx * ny] * (self.cells[c + nx * ny] - t);
+        }
+        let rate = self.mobility[c] * flux;
+        if rate.is_finite() {
+            rate
+        } else {
+            0.0
+        }
     }
 }
 
 impl Solid3D {
+    /// The value at a cell, with out-of-range indices mirrored back — an insulated face.
+    ///
+    /// A mirror rather than a zero, and the distinction is the whole boundary condition: a zero
+    /// neighbour is a face held at absolute zero and would drain the block, where a mirror is a
+    /// face with no gradient across it and so no flow through it.
+    fn mirrored(&self, i: isize, j: isize, k: isize) -> f64 {
+        let (nx, ny, nz) = self.counts;
+        let clamp = |v: isize, n: usize| v.clamp(0, n as isize - 1) as usize;
+        let idx = clamp(i, nx) + nx * (clamp(j, ny) + ny * clamp(k, nz));
+        self.cells[idx]
+    }
+
     /// The cell a point falls in, as signed indices so a stencil can walk off the edge.
     fn nearest_cell(&self, p: LengthVec) -> (isize, isize, isize) {
         let q = p.to_si() / self.dx.to_si();

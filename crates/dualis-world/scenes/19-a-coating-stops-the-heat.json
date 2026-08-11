@@ -1,0 +1,16 @@
+{
+  "title": "a hot spot in aluminium, meeting a wall of borosilicate halfway",
+  "schedule": "multirate",
+  "duration_s": 0.5,
+  "frames": 11,
+  "conservation_tolerance": 1e-9,
+  "domains": [
+    { "kind": "block", "name": "joint", "cells": [9, 9, 18], "cell_mm": 1.0,
+      "initial_c": 20.0,
+      "material": "aluminium",
+      "regions": [
+        { "material": "borosilicate", "from": [0, 0, 9], "to": [9, 9, 18] }
+      ],
+      "hot_spot": { "at": [4, 4, 4], "above_k": 60.0 } }
+  ]
+}

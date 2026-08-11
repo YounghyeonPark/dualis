@@ -14,6 +14,27 @@ messages carry the full account.
 
 ### Added
 
+- **A block can be made of more than one material.** `Solid3D::fill`, `substance_at`, `substances`,
+  `face_conductance`, `heat_capacity` and `stability_ratio` in `dualis-thermal`, and `regions` plus
+  `material` on the scene format's `block`. `crates/dualis-thermal/tests/a_layered_wall.rs` and
+  `19-a-coating-stops-the-heat`.
+
+  The first of `ARCHITECTURE.md`'s three *depth* entries — single-phase, single-material,
+  small-strain — and it cost no new crate and nothing outside `dualis-thermal`.
+
+  The number it turns on is the conductivity **on a face**, which is the harmonic mean
+  `2k_Lk_R/(k_L+k_R)` and not the arithmetic one. For aluminium against borosilicate those are
+  2.21 and 84.1 W/m/K, a factor of **38**, and the arithmetic mean short-circuits the interface.
+  The harmonic mean earns an *equality*: with the material interface on a cell face the discrete
+  chain of face resistances is exactly `Σ Lᵢ/(kᵢA)` at every resolution, measured to `2.2e-16` at
+  twelve, twenty-four, forty-eight and ninety-six cells. A layered wall's resistance has no
+  discretisation error at all.
+
+  The arithmetic mean's is **first order**, which is the dangerous kind — 8.852%, 4.233%, 2.072%,
+  1.025% over those four, halving each time. It vanishes on refinement, so a single-resolution check
+  would have read it as a discretisation error and given it a tolerance. Reaching 0.1% would take
+  about **984** cells; harmonic is there at twelve.
+
 - **Diffraction, and where scalar theory stops being true.** `single_slit_intensity` and `slit_zero`
   in `dualis-optics`, and `Cavity::obstruct` in `dualis-em` for a perfect conductor with a hole in
   it. `crates/dualis/tests/a_slit.rs` holds one against the other.
@@ -53,6 +74,38 @@ messages carry the full account.
   And the numbers in this entry are measured rather than remembered: the first draft of
   `single_slit_intensity`'s own tests claimed a sidelobe of `4/(2.25π²)` where it is `1/(2.25π²)`,
   and a grazing intensity of 0.8 where it is 0.2545.
+
+### Changed
+
+- **`Solid3D::max_stable_dt` sums the face conductances instead of dividing by a diffusivity**, so
+  it is `minᵢ Cᵢ/(dx·Σ_f k_f)`. Two answers moved, and a caller stepping by hand will notice.
+
+  It is now **shape-aware**: `dx²/(2α)`, `dx²/(4α)` or `dx²/(6α)` according to how many axes have
+  more than one cell. This domain charged every shape the three-dimensional rate, so a bar-shaped
+  block — the shape its own closed-form tests use to check the axes against a 1D answer — paid three
+  times the steps it needed. At each of the three limits the sharpest representable mode amplifies
+  by exactly `−1.000000000000000`, which is what makes the limit an equality rather than a caution.
+
+  And a filled block is limited by its worst **cell**, which is usually far *looser* than
+  `dx²/(6·α_max)`: one aluminium cell inside borosilicate is stable at exactly `k/k_face` = 167/2.21
+  = **75.45×** aluminium's own limit, because heat cannot reach a cell faster than its worst face
+  delivers it. It can go the other way by at most 2×, and reaching that needs neighbours that conduct
+  better *and* store more — impossible for real solids, whose volumetric heat capacity spans one
+  order of magnitude where conductivity spans four. Measured at 1.9945× with a doctored specific
+  heat, which is the only way to get there.
+
+- **`Solid3D`'s ledger and its placeless heat are weighted per cell.** `Σ CᵢTᵢ` is what a
+  two-capacity block conserves, not the mean temperature, and heat off the plain channel spreads to
+  a uniform *rise* — in proportion to capacity, not in equal joules, which would have warmed the
+  poorer-storing material more and so claimed a location the bus never carried.
+
+- **`ScalarField::rate` on a block is the conductance form**, `(1/Cᵢ)Σ_f G_f(T_f − Tᵢ)`, read off the
+  same faces the sweep uses rather than reconstructed as `α·∇²T` from a diffusivity a filled block
+  has no single value of. `laplacian` stays `∇²T`, which is what the trait asks for.
+
+- **The scene format's material names live in one table**, `dualis_world::MATERIALS`, with
+  `stainless_304` and `borosilicate` added. It was a `match` inside the network builder; the moment a
+  second domain wanted a material that would have been two lists that agree until they do not.
 
 ## [0.11.0] — 2026-08-11
 
