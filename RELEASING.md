@@ -142,6 +142,23 @@ newest. Cite the concept DOI in prose and the version DOI when the result depend
 Once the first one exists, add it to `CITATION.cff` as `doi:` and to the BibTeX block in `README.md`.
 Neither can be written before there is a DOI to write, which is why they are not there now.
 
+### The first deposition failed, and the failure is silent from inside the repository
+
+v0.13.0 went to crates.io and PyPI and got **no DOI**. Zenodo read `CITATION.cff`, rejected it, and
+said so only as a red *Failed* on its own web page — nothing in the release, the tag, or CI knew.
+
+One line: `license: MIT OR Apache-2.0`. That is a valid SPDX **expression** and `Cargo.toml` is right
+to use it; CFF's schema takes an identifier or a **list** of them and an expression matches neither.
+
+`crates/dualis-world/tests/citation_is_valid.rs` now checks that and the other fields a deposition is
+built from, so the next one fails in the gate instead of on a web page. Before a release, also check
+the page itself: **zenodo.org → GitHub → the repository** lists every release Zenodo has seen and what
+it did with each.
+
+**A failed deposition does not retry.** Delete the GitHub release and create it again on the same tag;
+that sends a fresh `release: published` event. The tag stays where it is and nothing on crates.io or
+PyPI is touched.
+
 **The order matters for the next release.** Throw the switch *before* tagging, or 0.13.0 is another tag
 with no DOI and the first citable version waits for 0.14.0.
 

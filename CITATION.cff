@@ -17,7 +17,11 @@ authors:
   - family-names: Park
     given-names: Younghyeon
     orcid: "https://orcid.org/0000-0002-4733-5049"
-license: MIT OR Apache-2.0
+# A list, not the SPDX expression `MIT OR Apache-2.0`. CFF wants identifiers and Zenodo rejected the
+# expression outright -- the v0.13.0 deposition failed on exactly this line.
+license:
+  - MIT
+  - Apache-2.0
 repository-code: "https://github.com/YounghyeonPark/dualis"
 version: 0.13.0
 date-released: "2026-08-12"
