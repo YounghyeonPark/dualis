@@ -30,13 +30,10 @@
 # and buys no priority, no support commitment and no promise of a feature" costs one line and prevents
 # the whole misunderstanding.
 #
-# WHOSE INCOME IT IS. Every commit in this repository is authored as `ypark@curibio.com`. That is a
-# company address on a personally owned, permissively licensed public repository, and it is the record
-# anybody looking at provenance sees first. Employment agreements commonly assign intellectual
-# property created in the scope of employment or with employer resources, and many require outside
-# income to be disclosed. Which of those apply is a question about one contract and not about this
-# file -- but the answer should be known before money arrives, not after, and the same answer bears on
-# the patent question.
-#
-# For future commits: `git config user.email you@personal.example` in this repository sets it per
-# repository without touching the global identity or the existing history.
+# WHOSE INCOME IT IS. Every commit was authored as a company address until the history was rewritten
+# on 2026-08-12; all 148 now carry `ypark.dev@gmail.com` as author and committer. That closes the
+# provenance record, and it does not answer the question underneath it: employment agreements commonly
+# assign intellectual property created in the scope of employment or with employer resources, and many
+# require outside income to be disclosed. Which of those apply is a question about one contract and not
+# about this file -- but the answer should be known before money arrives, not after, and the same
+# answer bears on the patent question.

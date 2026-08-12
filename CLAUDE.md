@@ -74,17 +74,21 @@ is the part worth keeping. Backticks in a message break `git commit -m` under so
 message to a file and use `git commit -F`.
 
 **Commit as `ypark.dev@gmail.com`.** Set per repository with
-`git config user.email ypark.dev@gmail.com`, which is already done here and does not touch any global
-identity. It matters more than a preference: the first 146 commits were authored with a company
-address on a personally owned, permissively licensed public repository, and that is the record anybody
-checking provenance reads first — it bears on who owns the work and on whether outside income has to be
-disclosed. If a fresh clone is ever made, set it again before the first commit.
+`git config user.email ypark.dev@gmail.com`, which does not touch any global identity — and a fresh
+clone starts from the global one, so set it again before the first commit there.
+
+The whole history was rewritten to that address on 2026-08-12. Every one of the 148 commits now has it
+as both author and committer, and no commit mentions the company address it was written with. That
+matters more than a preference: a company address on a personally owned, permissively licensed public
+repository is the record anybody checking provenance reads first, and it bears on who owns the work and
+on whether outside income has to be disclosed.
 
 **No `Co-Authored-By` trailer.** An agent's default is to add one and this repository does not want it:
 the commits are the maintainer's, and a tool that wrote some of the text is not a contributor. The
-seventy commits that already carry one are left alone — removing them would rewrite every SHA from the
-initial commit and orphan twelve release tags, which is a larger price than the credit is worth. This
-line is the standing instruction so the next session does not put it back.
+seventy that carried one no longer do — they came off in the same rewrite that changed the author
+address, which is the only reason the price was worth paying: one force-push and one set of twelve
+recreated tags bought both. This line is the standing instruction so the next session does not put it
+back.
 
 ## The subagent team
 
