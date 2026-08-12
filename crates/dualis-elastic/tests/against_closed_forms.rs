@@ -730,3 +730,110 @@ fn a_face_names_its_axis_the_same_way_twice() {
     }
     assert_eq!(Axis::ALL.map(|a| a.index()), [0, 1, 2], "ALL is in order");
 }
+
+/// **Every catalogue substance with a mechanical description converts, a fluid declines, and the
+/// yield strain says how little room the linear model has.**
+///
+/// The conversion existed in a test before it existed in the library — `two_wave_speeds.rs` built an
+/// `Elastic` from a `Substance` by hand, which means every consumer wanting to solve an elastic
+/// problem with a catalogue material wrote the same four lines. That is the gap `consumer-advocate`
+/// exists to find and this is it closed.
+///
+/// The three numbers must arrive unchanged; there is no arithmetic in the conversion and a test that
+/// allowed any would be permitting one to appear.
+///
+/// And the yield strain is reported because `Elastic` **drops** the yield strength. A solve past yield
+/// returns a displacement that is arithmetically correct and physically meaningless, with nothing in
+/// the answer to say which — so the number a caller needs is printed here rather than left implicit.
+#[test]
+fn a_substance_converts_to_a_material_and_the_yield_strain_is_small() {
+    use dualis_core::Substance;
+
+    let catalogue = [
+        ("Al 6061", Substance::aluminium_6061()),
+        ("304 stainless", Substance::stainless_304()),
+        ("Cu ETP", Substance::copper()),
+        ("N-BK7", Substance::borosilicate_crown()),
+        ("electrical steel", Substance::electrical_steel()),
+        ("PLA", Substance::pla()),
+        ("FR-4", Substance::fr4()),
+        ("ice", Substance::ice()),
+    ];
+    let mut converted = 0;
+    let mut strains: Vec<(&str, f64)> = Vec::new();
+    for (name, s) in &catalogue {
+        let Some(e) = Elastic::from_substance(s) else {
+            continue;
+        };
+        let m = s.mechanical.expect("it converted, so it has one");
+        // Unchanged, to the bit. The conversion carries three numbers and does nothing to them.
+        assert_eq!(e.youngs_modulus, m.youngs_modulus, "{name}: E");
+        assert_eq!(e.poisson_ratio, m.poisson_ratio, "{name}: nu");
+        assert_eq!(e.density, s.density, "{name}: rho");
+
+        let yield_strain = m.yield_strength.to_si() / m.youngs_modulus.to_si();
+        println!(
+            "  {name:17} E {:6.1} GPa  nu {:.3}  yields at {:.3}% strain",
+            m.youngs_modulus.to_si() / 1e9,
+            m.poisson_ratio,
+            yield_strain * 100.0
+        );
+        // A loose sanity bound only: any real structural material yields somewhere between a
+        // hundredth of a percent and a few percent of strain, and a pair outside that has an `E` and
+        // a `yield_strength` that are not describing the same material. The spread below is the
+        // interesting statement.
+        assert!(
+            yield_strain > 1e-4 && yield_strain < 3e-2,
+            "{name}: {:.4}% is not a strain any real structural material yields at",
+            yield_strain * 100.0
+        );
+        strains.push((*name, yield_strain));
+        converted += 1;
+    }
+    assert_eq!(
+        converted,
+        catalogue.len(),
+        "all eight describe themselves mechanically"
+    );
+
+    // **"Small strain" is not one number, and this catalogue spans more than an order of magnitude.**
+    //
+    // A first draft asserted every entry was under 1% and failed on PLA at 1.43% — correctly, because
+    // a polymer is not a metal: 3.5 GPa against a 50 MPa yield leaves twenty times the elastic room
+    // copper has. The bound was wrong, not the data.
+    //
+    // So the claim is the spread, and it matters because it is the answer to "is my load case still
+    // linear". Measured: **130×**, from ice at 0.011% to PLA at 1.429%. Ice is the tightest because it
+    // is brittle — 1 MPa of tensile strength against 9.1 GPa — and a solver with no yield in it cannot
+    // tell you which of those you have passed.
+    strains.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let (tightest, loosest) = (strains[0], strains[strains.len() - 1]);
+    println!(
+        "  the linear regime ends at {:.3}% for {} and {:.3}% for {} — a spread of {:.0}x",
+        tightest.1 * 100.0,
+        tightest.0,
+        loosest.1 * 100.0,
+        loosest.0,
+        loosest.1 / tightest.1
+    );
+    assert!(
+        loosest.1 / tightest.1 > 10.0,
+        "small strain means different things for a metal and a polymer: {:.1}x",
+        loosest.1 / tightest.1
+    );
+
+    // A fluid declines, because it has no shear modulus to build one from — and it declines rather
+    // than reporting zero, which would be a solid of no stiffness and would solve.
+    assert!(
+        Elastic::from_substance(&Substance::water()).is_none(),
+        "water has no mechanical description and the conversion says so"
+    );
+    assert!(
+        Elastic::from_substance(&Substance::bulk(
+            "mystery",
+            dualis_core::units::Density::g_per_cm3(2.0)
+        ))
+        .is_none(),
+        "and neither does a substance known only by its density"
+    );
+}

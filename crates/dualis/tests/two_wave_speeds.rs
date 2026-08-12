@@ -69,10 +69,11 @@ fn both() -> Vec<(&'static str, Substance)> {
     ]
 }
 
+/// These four lines used to live here, and that was the finding: every consumer wanting to solve an
+/// elastic problem with a catalogue material wrote them. `Elastic::from_substance` is them, in the
+/// library, and this file using it is the check that it is the right shape.
 fn elastic_of(s: &Substance) -> Elastic {
-    let m = s.mechanical.expect("these all have mechanical properties");
-    Elastic::new(m.youngs_modulus, m.poisson_ratio, s.density)
-        .expect("a catalogue entry is a representable material")
+    Elastic::from_substance(s).expect("a catalogue entry with mechanical properties converts")
 }
 
 /// **The speed ratio is Poisson's ratio and nothing else, for every material in the catalogue.**

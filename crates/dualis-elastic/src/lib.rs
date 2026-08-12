@@ -63,6 +63,7 @@
 //! part worth sharing: the static tests check that operator against four exact moduli and the
 //! dynamic ones check it against two exact speeds.
 
+use dualis_core::Substance;
 use dualis_units::{Density, Pressure, Velocity};
 
 mod block;
@@ -112,6 +113,42 @@ impl Elastic {
     pub fn aluminium_6061() -> Elastic {
         Elastic::new(Pressure::from_si(68.9e9), 0.33, Density::from_si(2700.0))
             .expect("6061 is a representable material")
+    }
+
+    /// A material from a [`Substance`], or `None` if that substance has no mechanical description.
+    ///
+    /// The kernel's catalogue carries `youngs_modulus`, `poisson_ratio` and `density`, which is
+    /// exactly what this type needs — so the conversion is arithmetic-free and the only question is
+    /// which crate it lives in. **Here**, because the kernel must not know that elasticity exists;
+    /// a `Substance::elastic()` would have made it know.
+    ///
+    /// `None` for a fluid: [`Substance::water`](dualis_core::Substance::water) has no `mechanical`
+    /// entry at all, because a liquid has no shear modulus to make one out of. That is the same
+    /// asymmetry [`s_wave_speed`](Elastic::s_wave_speed) is about.
+    ///
+    /// # It drops the yield strength, and that is the one thing to know
+    ///
+    /// `Substance` says where a material **stops coming back**; this type has no yield and no
+    /// plasticity, so it cannot represent that and does not pretend to. A solve past yield returns a
+    /// displacement that is arithmetically correct and physically meaningless, and nothing in the
+    /// answer says which.
+    ///
+    /// So keep the `Substance`. The strain at which the linear model stops applying is
+    /// `yield_strength / E`, and across this catalogue it spans **130×**:
+    ///
+    /// ```text
+    ///   ice        0.011%     brittle: 1 MPa against 9.1 GPa, and no plastic region beyond it
+    ///   Cu ETP     0.060%
+    ///   N-BK7      0.073%
+    ///   Al 6061    0.401%
+    ///   PLA        1.429%     a polymer has twenty times a metal's elastic room
+    /// ```
+    ///
+    /// So "small strain" is not one number, and a bound that would be absurdly conservative for PLA
+    /// is already past yield for ice. A load case that looked reasonable can be past several of these.
+    pub fn from_substance(substance: &Substance) -> Option<Elastic> {
+        let m = substance.mechanical?;
+        Elastic::new(m.youngs_modulus, m.poisson_ratio, substance.density)
     }
 
     /// Structural steel.

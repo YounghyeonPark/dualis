@@ -17,6 +17,29 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Added
 
+- **`Elastic::from_substance`, and "small strain" spans 130× across the catalogue.** The conversion
+  from `dualis-core`'s material catalogue to `dualis-elastic`'s material existed **in a test** —
+  `two_wave_speeds.rs` built one by hand — which means every consumer wanting to solve an elastic
+  problem with a catalogue material wrote the same four lines. It is in the library now, in
+  `dualis-elastic`, because the kernel must not learn that elasticity exists.
+
+  It **drops the yield strength**, which is the one thing to know: `Substance` says where a material
+  stops coming back and this type has no yield, so a solve past it returns a displacement that is
+  arithmetically correct and physically meaningless with nothing in the answer to say which. So the
+  strain where the linear model ends is documented and measured, and the spread is the finding:
+
+  ```text
+    ice        0.011%     brittle: 1 MPa against 9.1 GPa
+    Cu ETP     0.060%
+    N-BK7      0.073%
+    Al 6061    0.401%
+    PLA        1.429%     a polymer has twenty times a metal's elastic room
+  ```
+
+  A first draft asserted every entry was under 1% and failed on PLA at 1.43% — correctly, because a
+  polymer is not a metal. The bound was wrong, not the data, so the claim is now the **spread**: 130×,
+  meaning a strain bound that would be absurdly conservative for PLA is already past yield for ice.
+
 - **Neither half of `dualis-elastic` could be drawn, and its two constructors disagreed.** A
   stabilisation pass, continued: `Block::as_field`, `Face::on`, and `Waves::new`'s arguments in
   `Block::new`'s order.
