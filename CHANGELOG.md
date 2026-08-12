@@ -15,6 +15,57 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ## [Unreleased]
 
+### Added
+
+- **Two-phase conduction, against the two-phase Neumann solution.** `FusionProps::liquid`, `new` and
+  `with_liquid`. `crates/dualis-thermal/tests/two_phase_stefan.rs`.
+
+  The one-phase model is exact while the liquid sits at the melting point, because a face with no
+  temperature difference carries no heat whatever its conductivity. It stops being right the moment the
+  liquid is warmer, and not by a little: **20 K of superheat slows a freezing front 16%**, from 15.85 mm
+  to 13.33 mm at 900 s.
+
+  The closed form was established before any code changed, and its check is the **reduction**: setting
+  the superheat to zero must give back the one-phase condition. It does, proportionally — the gap is
+  `9.446e-12`, `9.447e-9`, `9.446e-6` at `1e-9`, `1e-6` and `1e-3` kelvin, which is `9.4465e-3` per
+  kelvin over three decades. Three decades of exactly proportional error is a stronger statement than
+  one equality.
+
+  ```text
+    superheat   front      two-phase says     one-phase says
+        0 K   15.50 mm   15.85 ( 2.20%)     15.85 ( 2.20%)
+        5 K   14.70      15.13 ( 2.89%)     15.85 ( 7.27%)
+       20 K   12.83      13.33 ( 3.78%)     15.85 (19.07%)
+  ```
+
+  Worst 3.78% against a `dx/X` bound of 6.31%, and at 20 K the one-phase model is **19.1% out** — three
+  times the bound. `dx/X` and not its square, because the cell holding the interface has a *mixed*
+  conductivity and that is a first-order error.
+
+  **Three things I had wrong, all caught by measurement:**
+
+  - **The kelvin-normalised latent heat breaks with two capacities.** `L/c_p` multiplied by a cell's
+    *current* capacity charged `4182/2050` = 2.04× to freeze water, and the front came out **27%
+    short** with nothing pointing at the latent heat. The enthalpy map is in joules now, with both
+    capacities named.
+  - **"A liquid at the melting point cannot influence anything" is false for the scheme.** True of the
+    continuum; a fixed grid puts a *wholly* liquid cell where the continuum has an interface, and its
+    low conductivity throttles the front — 2.1% at twenty cells, closing 2.99× over a fourfold
+    refinement. So `Substance::ice` keeps `liquid: None`: switching it on took the *one-phase* answer
+    from 0.43% to 6.9%, sixteen times worse for physics that had not changed, and a default that costs
+    a caller a factor of sixteen is the wrong default. Two phases are opt-in.
+  - **Melting loosens the stability limit and freezing tightens it.** I checked one direction. A step
+    sized on an all-liquid block is refused a few hundred steps later once there is ice in it, water's
+    limit being 7.57× ice's. The guard caught it, which is how it was found.
+
+  Cost measured before designing: a `resolve` is 1.6× a `step` at 40 cells and 4.2× at 4096, so a
+  two-phase sweep runs 2.6× to 5.2× a one-phase one. Simple and whole-grid; an incremental update
+  touching only the mush is the optimisation available if a problem needs it, and none does.
+
+  And `FusionProps` gaining a field broke every struct literal — exactly what `Substance` gaining
+  `fusion` did one level up, to tests written the week before. `FusionProps::new` and `with_liquid` are
+  the same answer applied one level down.
+
 ### Fixed
 
 - **`CITATION.cff`'s licence field, which failed the 0.13.0 Zenodo deposition.** `license:

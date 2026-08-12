@@ -53,10 +53,10 @@ fn paraffin() -> Substance {
             expansion: ThermalExpansion::ppm_per_k(300.0),
             emissivity: 0.90,
         })
-        .with_fusion(FusionProps {
-            melting_point: Temperature::celsius(44.0),
-            latent_heat: LatentHeat::kj_per_kg(250.0),
-        })
+        .with_fusion(FusionProps::new(
+            Temperature::celsius(44.0),
+            LatentHeat::kj_per_kg(250.0),
+        ))
 }
 
 /// **Every entry in the catalogue passes its own validator.**
@@ -134,10 +134,10 @@ fn an_impossible_material_is_refused_by_the_field_that_is_wrong() {
         ),
         (
             "a latent heat of nothing",
-            base().with_fusion(FusionProps {
-                melting_point: Temperature::celsius(44.0),
-                latent_heat: LatentHeat::kj_per_kg(0.0),
-            }),
+            base().with_fusion(FusionProps::new(
+                Temperature::celsius(44.0),
+                LatentHeat::kj_per_kg(0.0),
+            )),
             "latent_heat",
         ),
         (

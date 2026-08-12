@@ -125,13 +125,31 @@ pub struct Solid3D {
     /// Per-cell melting point in kelvin, or `+∞` for a substance that does not melt — so the phase
     /// branch is a comparison that is simply never true rather than an `Option` to unwrap per cell.
     melt_point: Vec<f64>,
-    /// Per-cell latent heat expressed **in kelvin**: `L/c_p`, the sensible warming the phase change
-    /// is worth. 163 K for ice. Zero where there is no phase change, which is what the sweep tests.
+    /// Per-cell latent heat in **joules**: `ρ L dx³`. Zero where there is no phase change, which is
+    /// what the sweep tests.
     ///
-    /// Kelvin rather than joules so the whole update stays in one unit and needs no division per
-    /// step — and because a phase-change problem's numbers are then `O(1)` to `O(163)` rather than
-    /// `O(3e5)`, which is the reference-point lesson `runtime/gpu` paid 1660× for.
+    /// # It was kelvin, and two phases broke that
+    ///
+    /// `L/c_p` — 163 K for ice — kept the whole update in one unit and the numbers `O(1)` rather than
+    /// `O(3e5)`, which is the reference-point argument `runtime/gpu` paid 1660× for. It is correct
+    /// while a cell has **one** specific heat.
+    ///
+    /// With two it is not, and it fails quietly. The kelvin figure is normalised by the *solid's*
+    /// `c_p` and then multiplied by the cell's *current* capacity, which for a liquid cell is the
+    /// liquid's — so freezing a cell of water cost `4182/2050` = **2.04×** what it should, and the
+    /// front came out **27% short** with nothing pointing at the latent heat. Joules do not have a
+    /// normalisation to get wrong.
     latent: Vec<f64>,
+    /// Per-cell capacity of the **solid** phase, `ρ c_s dx³`, in J/K.
+    ///
+    /// The enthalpy map needs both capacities by name: `C_s` below the melting point and `C_l` above
+    /// it. `capacity` is the *mixed* one and is what the sweep divides a flux by, which is right —
+    /// a fully solid or fully liquid cell has its own, and a mushy cell does not change temperature
+    /// at all, so what it would have divided by never matters.
+    cap_solid: Vec<f64>,
+    /// Per-cell capacity of the **liquid** phase, `ρ c_l dx³`. Equal to `cap_solid` under the
+    /// one-phase model.
+    cap_liquid: Vec<f64>,
     /// How much of each cell has melted, `0` solid and `1` liquid. Derived from the temperature by
     /// [`resolve`](Solid3D::resolve) and then carried by the sweep.
     melted: Vec<f64>,
@@ -141,6 +159,11 @@ pub struct Solid3D {
     /// [`max_stable_dt`](Domain::max_stable_dt) for why it is a maximum over cells and not a
     /// function of the fastest material.
     worst_rate: f64,
+    /// Whether any material names a **liquid** phase whose properties differ from its solid.
+    ///
+    /// The one thing that decides whether the sweep has to rebuild its operator each step. A block of
+    /// ice does; a block of aluminium, or of ice under the one-phase model, does not.
+    two_phase: bool,
 }
 
 impl Solid3D {
@@ -177,7 +200,10 @@ impl Solid3D {
             latent: Vec::new(),
             melted: Vec::new(),
             saved_melted: Vec::new(),
+            cap_solid: Vec::new(),
+            cap_liquid: Vec::new(),
             worst_rate: 0.0,
+            two_phase: false,
         };
         block.resolve();
         block
@@ -352,23 +378,113 @@ impl Solid3D {
         let (nx, ny, nz) = self.counts;
         let dx = self.dx.to_si();
         let volume = Volume::from_si(dx * dx * dx);
-        // Per material rather than per cell: a block has a handful of substances and millions of
-        // cells. `NaN` for a substance that does not say, which `step` refuses on rather than
-        // stepping with a plausible default.
-        let props: Vec<(f64, f64)> = self
+
+        // Per material, the **solid** pair and the **liquid** pair. A material whose `FusionProps`
+        // names no liquid uses the solid pair for both, which is the one-phase model — exact whenever
+        // the liquid sits at the melting point, because a face with no temperature difference across
+        // it carries no heat whatever its conductivity.
+        //
+        // `NaN` for a substance that does not say, which `step` refuses on rather than stepping with
+        // a plausible default.
+        let props: Vec<((f64, f64), (f64, f64))> = self
             .materials
             .iter()
             .map(|s| {
-                (
+                let solid = (
                     s.thermal.map_or(f64::NAN, |t| t.conductivity.to_si()),
                     s.heat_capacity(volume).map_or(f64::NAN, |c| c.to_si()),
+                );
+                let liquid = match s.fusion.and_then(|f| f.liquid) {
+                    Some(t) => (
+                        t.conductivity.to_si(),
+                        s.mass_of(volume).to_si() * t.specific_heat.to_si(),
+                    ),
+                    None => solid,
+                };
+                (solid, liquid)
+            })
+            .collect();
+
+        // A liquid phase that differs from the solid is what makes the operator move with the front.
+        // A material whose `liquid` is absent, or identical to its solid, needs no per-step rebuild.
+        self.two_phase =
+            self.materials
+                .iter()
+                .any(|s| match (s.fusion.and_then(|f| f.liquid), s.thermal) {
+                    (Some(l), Some(t)) => {
+                        l.conductivity != t.conductivity || l.specific_heat != t.specific_heat
+                    }
+                    _ => false,
+                });
+
+        // The phase state first, because everything below depends on it.
+        //
+        // Rebuilt from temperature only when there is not one yet. Once the sweep is carrying a
+        // fraction, re-deriving it would throw away every partially melted cell — and this runs every
+        // step for a two-phase block, because a cell's conductivity moves with its fraction.
+        let fresh = self.melted.len() != self.cells.len();
+        let carried = std::mem::take(&mut self.melted);
+        self.melt_point = Vec::with_capacity(self.cells.len());
+        self.latent = Vec::with_capacity(self.cells.len());
+        self.melted = Vec::with_capacity(self.cells.len());
+        for (c, prior) in carried
+            .iter()
+            .copied()
+            .chain(std::iter::repeat(0.0))
+            .take(self.cells.len())
+            .enumerate()
+        {
+            let s = &self.materials[self.which[c] as usize];
+            let (point, latent) = match (s.fusion, s.thermal) {
+                (Some(f), Some(_)) => (
+                    f.melting_point.to_si(),
+                    s.latent_energy(volume).map_or(0.0, |e| e.to_si()),
+                ),
+                // A substance with fusion but no thermal properties cannot be stepped at all: its
+                // capacity is `NaN` and the sweep refuses rather than guessing.
+                _ => (f64::INFINITY, 0.0),
+            };
+            self.melt_point.push(point);
+            self.latent.push(latent);
+            self.melted.push(if fresh {
+                if self.cells[c] > point {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                prior
+            });
+        }
+        // Only on a fresh build. Doing it every time would overwrite a checkpoint, and `resolve` is
+        // called from the sweep now.
+        if fresh {
+            self.saved_melted.clone_from(&self.melted);
+        }
+
+        // **Mixed by melt fraction, arithmetically, and that choice is the one to argue about.**
+        //
+        // A half-melted cell is half of each, and across a cell the two phases sit side by side
+        // rather than in series — heat crossing the mush passes through both at once, so a parallel
+        // mean is what matches. The *face* between two cells stays the harmonic mean of whatever the
+        // two cells came out as, because a face **is** series. Mixing one way and joining the other
+        // is not an inconsistency; they are different geometries.
+        //
+        // It applies only inside the mush, one or two cells wide, and that is where the scheme's
+        // remaining first-order error lives.
+        let mixed: Vec<(f64, f64)> = (0..self.cells.len())
+            .map(|c| {
+                let (solid, liquid) = props[self.which[c] as usize];
+                let phi = self.melted[c];
+                (
+                    solid.0 + phi * (liquid.0 - solid.0),
+                    solid.1 + phi * (liquid.1 - solid.1),
                 )
             })
             .collect();
-        let k_of = |cell: usize| props[self.which[cell] as usize].0;
 
-        // The series mean of the two half cells. Written as `2ab/(a+b)` and guarded at zero,
-        // because a perfect insulator is a legitimate fill and `0/0` is not a boundary condition.
+        // The series mean of the two half cells. Written as `2ab/(a+b)` and guarded at zero, because
+        // a perfect insulator is a legitimate fill and `0/0` is not a boundary condition.
         let series = |a: f64, b: f64| {
             let sum = a + b;
             if sum > 0.0 {
@@ -377,6 +493,7 @@ impl Solid3D {
                 0.0
             }
         };
+        let k_of = |cell: usize| mixed[cell].0;
 
         self.kx = vec![0.0; (nx + 1) * ny * nz];
         self.ky = vec![0.0; nx * (ny + 1) * nz];
@@ -398,32 +515,12 @@ impl Solid3D {
             }
         }
 
-        // The phase state, re-derived from the temperature rather than carried across a `fill`. A
-        // cell that was half melted and is then declared to be a different substance has no
-        // meaningful fraction, and `fill` is setup — so this is a no-op in every real use and the
-        // only consistent answer in the one that is not.
-        self.melt_point = Vec::with_capacity(self.cells.len());
-        self.latent = Vec::with_capacity(self.cells.len());
-        self.melted = Vec::with_capacity(self.cells.len());
-        for c in 0..self.cells.len() {
-            let s = &self.materials[self.which[c] as usize];
-            let (point, latent) = match (s.fusion, s.thermal) {
-                (Some(f), Some(t)) => (
-                    f.melting_point.to_si(),
-                    f.sensible_equivalent(t.specific_heat).to_si(),
-                ),
-                // A substance with fusion but no specific heat cannot say what the latent heat is
-                // worth in kelvin. It is not silently treated as zero: `capacity` is already `NaN`
-                // there and the sweep refuses.
-                _ => (f64::INFINITY, 0.0),
-            };
-            self.melt_point.push(point);
-            self.latent.push(latent);
-            self.melted
-                .push(if self.cells[c] > point { 1.0 } else { 0.0 });
-        }
-        self.saved_melted.clone_from(&self.melted);
-
+        self.cap_solid = (0..self.cells.len())
+            .map(|c| props[self.which[c] as usize].0 .1)
+            .collect();
+        self.cap_liquid = (0..self.cells.len())
+            .map(|c| props[self.which[c] as usize].1 .1)
+            .collect();
         self.capacity = vec![0.0; self.cells.len()];
         self.mobility = vec![0.0; self.cells.len()];
         self.worst_rate = 0.0;
@@ -432,7 +529,7 @@ impl Solid3D {
             for j in 0..ny {
                 for i in 0..nx {
                     let c = i + nx * (j + ny * k);
-                    let cap = props[self.which[c] as usize].1;
+                    let cap = mixed[c].1;
                     self.capacity[c] = cap;
                     self.mobility[c] = dx / cap;
                     let sum = self.kx[i + (nx + 1) * (j + ny * k)]
@@ -441,8 +538,8 @@ impl Solid3D {
                         + self.ky[i + nx * (j + 1 + (ny + 1) * k)]
                         + self.kz[i + nx * (j + ny * k)]
                         + self.kz[i + nx * (j + ny * (k + 1))];
-                    // NaN loses every comparison, so `max` would step straight past a substance
-                    // that does not say what it conducts. Tested for, and the sweep is refused.
+                    // NaN loses every comparison, so `max` would step straight past a substance that
+                    // does not say what it conducts. Tested for, and the sweep is refused.
                     let rate = self.mobility[c] * sum;
                     if rate.is_nan() {
                         nowhere = true;
@@ -705,9 +802,7 @@ impl Solid3D {
     /// temperature says nothing about it; an audit reading temperature alone would call it a leak.
     fn stored_heat(&self) -> f64 {
         (0..self.cells.len())
-            .map(|c| {
-                self.capacity[c] * (self.enthalpy_kelvin(c) - self.reference_enthalpy_kelvin(c))
-            })
+            .map(|c| self.enthalpy_joules(c) - self.reference_enthalpy_joules(c))
             .sum()
     }
 
@@ -731,18 +826,18 @@ impl Solid3D {
     /// one step and skip the latent heat, which runs the front fast and conserves nothing. Here a
     /// step that overshoots the mush deposits the remainder as sensible heat on the far side, because
     /// the inverse map says where the energy goes rather than a branch guessing.
-    fn enthalpy_kelvin(&self, c: usize) -> f64 {
+    fn enthalpy_joules(&self, c: usize) -> f64 {
         let (t, point, latent) = (self.cells[c], self.melt_point[c], self.latent[c]);
         if latent <= 0.0 {
             // No phase change. Measured from the block's own reference rather than from a melting
             // point at infinity, and that choice is precision: subtracting a nearby number keeps
             // digits that subtracting 273.15 from 293.15 does not.
-            return t - self.reference;
+            return self.capacity[c] * (t - self.reference);
         }
         if self.melted[c] >= 1.0 {
-            latent + t - point
+            latent + self.cap_liquid[c] * (t - point)
         } else if self.melted[c] <= 0.0 {
-            t - point
+            self.cap_solid[c] * (t - point)
         } else {
             self.melted[c] * latent
         }
@@ -750,15 +845,15 @@ impl Solid3D {
 
     /// What [`enthalpy_kelvin`](Solid3D::enthalpy_kelvin) was when the block started, so the ledger
     /// reports what arrived rather than what is there.
-    fn reference_enthalpy_kelvin(&self, c: usize) -> f64 {
+    fn reference_enthalpy_joules(&self, c: usize) -> f64 {
         let (point, latent) = (self.melt_point[c], self.latent[c]);
         if latent <= 0.0 {
             return 0.0;
         }
         if self.reference > point {
-            latent + self.reference - point
+            latent + self.cap_liquid[c] * (self.reference - point)
         } else {
-            self.reference - point
+            self.cap_solid[c] * (self.reference - point)
         }
     }
 
@@ -770,8 +865,14 @@ impl Solid3D {
     /// and does not warm at all.
     fn add_kelvin(&mut self, c: usize, rise: f64) {
         if self.latent[c] > 0.0 {
-            let e = self.enthalpy_kelvin(c) + rise;
-            let (t, phi) = Self::from_enthalpy_kelvin(e, self.melt_point[c], self.latent[c]);
+            // `rise` is what the cell *would* have warmed by; the joules it stands for are that times
+            // whichever capacity the cell has now, which is the mixed one and is exactly right for a
+            // cell that is wholly one phase. A mushy cell does not change temperature, so the flux
+            // that reaches it has to be converted through the capacity it had when the flux was
+            // computed — the same one.
+            let joules = rise * self.capacity[c];
+            let e = self.enthalpy_joules(c) + joules;
+            let (t, phi) = self.state_from_enthalpy(c, e);
             self.cells[c] = t;
             self.melted[c] = phi;
         } else {
@@ -780,11 +881,12 @@ impl Solid3D {
     }
 
     /// The inverse: a state in kelvin back to a temperature and a melted fraction.
-    fn from_enthalpy_kelvin(e: f64, point: f64, latent: f64) -> (f64, f64) {
+    fn state_from_enthalpy(&self, c: usize, e: f64) -> (f64, f64) {
+        let (point, latent) = (self.melt_point[c], self.latent[c]);
         if e <= 0.0 {
-            (point + e, 0.0)
+            (point + e / self.cap_solid[c], 0.0)
         } else if e >= latent {
-            (point + e - latent, 1.0)
+            (point + (e - latent) / self.cap_liquid[c], 1.0)
         } else {
             (point, e / latent)
         }
@@ -939,6 +1041,24 @@ impl Domain for Solid3D {
                     self.add_kelvin(c, dts * self.mobility[c] * flux);
                 }
             }
+        }
+
+        // **A two-phase block re-derives its conductivities, because they moved.**
+        //
+        // A cell's `k` and `c` depend on how much of it has melted, so a front that advanced changed
+        // the operator. `resolve` carries the fractions the sweep just produced rather than rebuilding
+        // them from temperature, and recomputes the faces, the capacities and the limit from them.
+        //
+        // Only when there is a liquid phase to mix toward: `latent > 0` alone is the one-phase model,
+        // whose properties do not depend on the fraction at all, and paying for a rebuild there would
+        // slow every non-melting block for nothing.
+        //
+        // Measured, so the cost is on the record rather than assumed: a `resolve` is 1.6x a `step` at
+        // 40 cells and 4.2x at 4096, so a two-phase sweep runs 2.6x to 5.2x a one-phase one. That is
+        // the price of the simple version. An incremental update touching only the mush — one or two
+        // cells wide — is the optimisation available if a problem ever needs it, and none does yet.
+        if self.two_phase {
+            self.resolve();
         }
         Ok(())
     }

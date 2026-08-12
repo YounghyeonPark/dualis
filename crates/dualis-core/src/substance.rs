@@ -135,9 +135,54 @@ pub struct FusionProps {
     pub melting_point: Temperature,
     /// The heat one kilogram absorbs melting, at no change in temperature.
     pub latent_heat: LatentHeat,
+    /// What the **liquid** conducts and holds, if it differs from the solid.
+    ///
+    /// `None` is the **one-phase** model: the liquid is taken to have the solid's conductivity and
+    /// specific heat. That is not a simplification to apologise for — it is exact whenever the liquid
+    /// sits at the melting point, because then no heat flows through it whatever its properties are,
+    /// and it is the case Stefan's original problem and Neumann's solution are about.
+    ///
+    /// It is wrong the moment the liquid is **superheated**, and wrong by a lot. Water conducts a
+    /// quarter of what ice does and holds twice as much, and a liquid 20 K above freezing slows a
+    /// front by **16%** — from 15.85 mm to 13.33 mm at 900 s. That is far more than any
+    /// discretisation error, so the one-phase answer is not a slightly worse two-phase answer.
+    ///
+    /// The same type as the solid's, because a phase is a thing that conducts and holds heat and there
+    /// is no reason to describe it differently. `expansion` and `emissivity` are carried and unused by
+    /// conduction; give the liquid's if they are known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liquid: Option<ThermalProps>,
 }
 
 impl FusionProps {
+    /// A one-phase description: a melting point and a latent heat, and no separate liquid.
+    ///
+    /// # Because adding `liquid` broke every literal, twice over
+    ///
+    /// `Substance` gained `fusion` and every struct literal outside this crate stopped compiling;
+    /// builders were added so the next field would not do it again. Then `FusionProps` gained `liquid`
+    /// and did exactly that one level down, to the tests written the week before.
+    ///
+    /// So this pair exists for the same reason `Substance::with_*` does. A field added below here
+    /// costs nothing to a caller who went through `new` and [`with_liquid`](FusionProps::with_liquid).
+    pub fn new(melting_point: Temperature, latent_heat: LatentHeat) -> FusionProps {
+        FusionProps {
+            melting_point,
+            latent_heat,
+            liquid: None,
+        }
+    }
+
+    /// Name the liquid phase's conductivity and specific heat, making a block **two-phase**.
+    ///
+    /// Read [`liquid`](FusionProps::liquid) before reaching for this: it is the right model for a
+    /// superheated liquid and it costs first-order accuracy at the interface, so it is not a strictly
+    /// better version of the one-phase model.
+    pub fn with_liquid(mut self, liquid: ThermalProps) -> FusionProps {
+        self.liquid = Some(liquid);
+        self
+    }
+
     /// How many kelvin of sensible heat the phase change is worth: `L / c_p`.
     ///
     /// The reciprocal of the Stefan number, and the number that says whether latent heat matters at
@@ -515,6 +560,21 @@ impl Substance {
             fusion: Some(FusionProps {
                 melting_point: Temperature::celsius(0.0),
                 latent_heat: LatentHeat::kj_per_kg(333.55),
+                // **One-phase, deliberately, and this was measured before being decided.**
+                //
+                // Giving this entry water as its liquid made the one-phase answer *worse*: the front
+                // in `a_freezing_front.rs` went from 0.43% out to 6.9% at forty cells, sixteen times
+                // worse for a problem whose physics had not changed. The cause is the mushy cell,
+                // whose conductivity is a mixture — so the cell holding the interface conducts partly
+                // like water, and the heat reaching the interface has less conductance than the exact
+                // solution gives it. That is a first-order error at the front and it is the price of
+                // two phases.
+                //
+                // A default that silently costs a caller a factor of sixteen is the wrong default. Two
+                // phases are opt-in: `Substance::ice().with_fusion(FusionProps { liquid: Some(..), .. })`
+                // and `crates/dualis-thermal/tests/two_phase_stefan.rs` shows it against the two-phase
+                // Neumann solution, where it is the *right* answer and the one-phase model is 16% out.
+                liquid: None,
             }),
             mechanical: Some(MechanicalProps {
                 youngs_modulus: Pressure::from_si(9.1e9),

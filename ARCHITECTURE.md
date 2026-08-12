@@ -327,7 +327,13 @@ Newton iteration, and more importantly its closed forms are weak — a neo-Hooke
 extension is an answer that depends on which material model was chosen, which is the closest this
 workspace gets to the thing it wrote down as verifying nothing.
 
-**Single-phase** was the second of the three, and `Solid3D` accounts for latent heat now. `Substance`
+**Single-phase** was the second of the three, and `Solid3D` accounts for latent heat now — in **two
+phases** as of the release after, where the liquid has its own conductivity and specific heat and the
+check is the two-phase Neumann solution. The one-phase model is not a worse version of it: it is exact
+while the liquid sits at the melting point, and switching two phases on costs first-order accuracy at
+the interface, so `Substance::ice` keeps `liquid: None` and two phases are opt-in. The reduction between
+them is the check on the algebra — zero superheat gives back the one-phase condition, proportionally, at
+`9.4465e-3` per kelvin. `Substance`
 carries `FusionProps`, `Substance::ice` is the catalogue's only entry that melts, and the check is
 **Neumann's exact solution** of Stefan's problem — which is why this problem and not another: almost
 nothing with a moving boundary has one.
