@@ -21,6 +21,7 @@ dependencies = [
  "dualis-units",
  "dualis-view",
  "glam",
+ "serde_json",
 ]
 
 [[package]]

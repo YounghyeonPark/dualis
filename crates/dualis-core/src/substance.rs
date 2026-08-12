@@ -27,7 +27,19 @@ use dualis_units::{
 use serde::{Deserialize, Serialize};
 
 /// A material, as much of it as is known.
+///
+/// # A key this type does not know is refused, not dropped
+///
+/// `deny_unknown_fields`, here and on all four property blocks. `serde` discards unknown keys by
+/// default, which is right for a wire protocol that must tolerate a newer peer and wrong for a
+/// material somebody wrote down: a mistyped `"thermalz"` would leave the whole thermal block absent
+/// and the substance would run as one whose conductivity is *unknown* rather than as one whose file
+/// has a typo in it.
+///
+/// The same rule `dualis-world`'s scene format has, for the same reason, and it was added after a
+/// test asked whether a typo was caught and found that it was not.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Substance {
     /// What it is called. Free text: a catalogue designation, a common name, whatever the
     /// caller will recognise in a violation message.
@@ -77,6 +89,7 @@ pub struct Substance {
 /// as still-air convection at room temperature. [`Substance::with_emissivity`] exists so a finish
 /// does not have to become a new material.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ThermalProps {
     /// Fourier's `k`: how fast heat moves through it.
     pub conductivity: ThermalConductivity,
@@ -92,6 +105,7 @@ pub struct ThermalProps {
 
 /// What it does under load.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MechanicalProps {
     /// Young's modulus.
     pub youngs_modulus: Pressure,
@@ -115,6 +129,7 @@ pub struct MechanicalProps {
 /// its plateau. It is wrong for solder, and a domain given it for solder will put the whole latent
 /// heat on one temperature instead of spreading it over the twenty kelvin it really occupies.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FusionProps {
     /// The temperature at which it changes phase, and holds there while it does.
     pub melting_point: Temperature,
@@ -135,6 +150,7 @@ impl FusionProps {
 
 /// What it does with sound.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AcousticProps {
     /// Longitudinal speed of sound.
     pub sound_speed: Velocity,
@@ -509,6 +525,155 @@ impl Substance {
             acoustic: Some(AcousticProps {
                 sound_speed: Velocity::m_per_s(3_840.0),
             }),
+        }
+    }
+
+    /// Give it thermal properties, or replace the ones it has.
+    ///
+    /// # Why builders exist, when the fields are already public
+    ///
+    /// Because a struct literal names **every** field, so it breaks the moment this type learns one.
+    /// `fusion` was added for latent heat and every literal outside this crate stopped compiling —
+    /// allowed in `0.x`, and still a cost paid by exactly the callers this catalogue is least able to
+    /// help: the ones whose material is not in it.
+    ///
+    /// A chain of `with_*` on [`bulk`](Substance::bulk) is immune to that, and it is how any real
+    /// material becomes expressible without waiting for it to be added here:
+    ///
+    /// ```
+    /// # use dualis_core::substance::{MechanicalProps, Substance, ThermalProps};
+    /// # use dualis_core::units::*;
+    /// // Ti-6Al-4V, from a datasheet rather than from this crate.
+    /// let titanium = Substance::bulk("Ti-6Al-4V", Density::g_per_cm3(4.43))
+    ///     .with_thermal(ThermalProps {
+    ///         conductivity: ThermalConductivity::w_per_m_k(6.7),
+    ///         specific_heat: SpecificHeat::j_per_kg_k(526.0),
+    ///         expansion: ThermalExpansion::ppm_per_k(8.6),
+    ///         emissivity: 0.30,
+    ///     })
+    ///     .with_mechanical(MechanicalProps {
+    ///         youngs_modulus: Pressure::from_si(113.8e9),
+    ///         poisson_ratio: 0.342,
+    ///         yield_strength: Pressure::from_si(880.0e6),
+    ///     });
+    /// assert!(titanium.check().is_ok());
+    /// ```
+    ///
+    /// **Enumeration does not reach "every material" and data does.** This catalogue holds nine
+    /// entries because each is a set of numbers somebody has to be answerable for; a caller with a
+    /// datasheet is answerable for theirs. [`check`](Substance::check) is what the library can still
+    /// do for them.
+    pub fn with_thermal(mut self, thermal: ThermalProps) -> Substance {
+        self.thermal = Some(thermal);
+        self
+    }
+
+    /// Give it mechanical properties, or replace the ones it has.
+    pub fn with_mechanical(mut self, mechanical: MechanicalProps) -> Substance {
+        self.mechanical = Some(mechanical);
+        self
+    }
+
+    /// Give it acoustic properties, or replace the ones it has.
+    pub fn with_acoustic(mut self, acoustic: AcousticProps) -> Substance {
+        self.acoustic = Some(acoustic);
+        self
+    }
+
+    /// Give it a phase change, or replace the one it has.
+    pub fn with_fusion(mut self, fusion: FusionProps) -> Substance {
+        self.fusion = Some(fusion);
+        self
+    }
+
+    /// Every problem with this substance's numbers, or `Ok` if there are none.
+    ///
+    /// For a material that came from outside this crate — a datasheet, a JSON file, a builder chain —
+    /// where nobody has checked the numbers against anything. It cannot tell whether a conductivity is
+    /// *right*; it can tell whether it is **possible**, and an impossible one otherwise produces an
+    /// answer that is plausible and wrong.
+    ///
+    /// Reports all of them at once rather than the first, because a material transcribed from the
+    /// wrong column is usually wrong in several places.
+    ///
+    /// # The one check that is not a bound on a single field
+    ///
+    /// If a substance states both a sound speed and elastic constants, those are **three independent
+    /// numbers describing one thing**, and they have to agree. A longitudinal wave in a solid is
+    /// bounded below by the rod speed `sqrt(E/rho)` — free to bulge sideways — and above by the bulk
+    /// speed `sqrt((lambda+2mu)/rho)`, fully constrained, so a stated speed must sit near one of them.
+    ///
+    /// **15%**, and it is measured rather than chosen: across this catalogue every entry is within
+    /// 6.2% of whichever it means, and the gap is there because a tensile test and an ultrasonic
+    /// measurement are not the same measurement — read as a bulk wave, copper's stated speed implies
+    /// 132 GPa against the 117 in its own entry. So the bound cannot be tighter than that, and at 15%
+    /// it still catches a **shear** speed transcribed by mistake, which sits 45% below the rod speed.
+    pub fn check(&self) -> Result<(), String> {
+        let mut wrong: Vec<String> = Vec::new();
+        let positive = |what: &str, v: f64, out: &mut Vec<String>| {
+            if !(v.is_finite() && v > 0.0) {
+                out.push(format!("{what} must be finite and positive, is {v}"));
+            }
+        };
+        positive("density", self.density.to_si(), &mut wrong);
+        if let Some(t) = self.thermal {
+            positive("conductivity", t.conductivity.to_si(), &mut wrong);
+            positive("specific_heat", t.specific_heat.to_si(), &mut wrong);
+            if !(0.0..=1.0).contains(&t.emissivity) {
+                wrong.push(format!(
+                    "emissivity is a fraction of a blackbody's and must be in 0..=1, is {}",
+                    t.emissivity
+                ));
+            }
+            if !t.expansion.to_si().is_finite() {
+                wrong.push("expansion must be finite".to_string());
+            }
+        }
+        if let Some(m) = self.mechanical {
+            positive("youngs_modulus", m.youngs_modulus.to_si(), &mut wrong);
+            positive("yield_strength", m.yield_strength.to_si(), &mut wrong);
+            // The same range `dualis-elastic` refuses outside of: at one half the material is
+            // incompressible and lambda is infinite, at minus one the shear modulus diverges.
+            if !(-1.0 < m.poisson_ratio && m.poisson_ratio < 0.5) {
+                wrong.push(format!(
+                    "poisson_ratio must be in (-1, 0.5) for a stable isotropic solid, is {}",
+                    m.poisson_ratio
+                ));
+            }
+        }
+        if let Some(a) = self.acoustic {
+            positive("sound_speed", a.sound_speed.to_si(), &mut wrong);
+        }
+        if let Some(f) = self.fusion {
+            positive("latent_heat", f.latent_heat.to_si(), &mut wrong);
+            positive("melting_point", f.melting_point.to_si(), &mut wrong);
+        }
+        // The cross-check, and only when there is something to cross.
+        if let (Some(m), Some(a)) = (self.mechanical, self.acoustic) {
+            let (e, nu, rho) = (
+                m.youngs_modulus.to_si(),
+                m.poisson_ratio,
+                self.density.to_si(),
+            );
+            if e > 0.0 && rho > 0.0 && -1.0 < nu && nu < 0.5 {
+                let rod = (e / rho).sqrt();
+                let bulk = (e * (1.0 - nu) / ((1.0 + nu) * (1.0 - 2.0 * nu) * rho)).sqrt();
+                let c = a.sound_speed.to_si();
+                let gap = (c / rod - 1.0).abs().min((c / bulk - 1.0).abs());
+                if gap > 0.15 {
+                    wrong.push(format!(
+                        "sound_speed {c:.0} m/s is {:.0}% from the nearer of the rod speed {rod:.0} \
+                         and the bulk speed {bulk:.0} that its own E, nu and density give — so one of \
+                         the four is not this material's, or the speed is a shear wave",
+                        gap * 100.0
+                    ));
+                }
+            }
+        }
+        if wrong.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("{}: {}", self.name, wrong.join("; ")))
         }
     }
 

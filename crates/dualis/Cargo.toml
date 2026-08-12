@@ -28,3 +28,6 @@ dualis-units = { workspace = true }
 
 [dev-dependencies]
 glam = { workspace = true }
+# Tests only. A consumer of `dualis` never resolves this, so the twelve-crate
+# count the README states is unaffected; `dualis-core` already dev-depends on it.
+serde_json = { workspace = true }
