@@ -26,7 +26,7 @@ done
 echo "the gate passed"     # and if this line does not appear, it did not
 ```
 
-### This gate has reported a pass it had not earned, six times
+### This gate has reported a pass it had not earned, seven times
 
 Every one of them the same mistake — reading the *output* of a check as evidence the check **ran**:
 
@@ -63,6 +63,20 @@ Two more of the same shape, outside the shell.
 
 `gh run watch --exit-status` has returned zero with a job still `queued`, so a run was read as green
 before a job had started — ask each job for its own `conclusion`.
+
+And `gh run list --limit 1` immediately after a push returns the run for the **previous** commit,
+because the new one has not been created yet. Read once that way, a force-push's run was mistaken for
+the run of the commit after it — and that run had five jobs `cancelled`, which is neither a pass nor a
+failure and would have been reported as one or the other. Select by `headSha`:
+
+```sh
+SHA=$(git rev-parse HEAD)
+gh run list --limit 10 --json databaseId,headSha -q ".[] | select(.headSha==\"$SHA\") | .databaseId"
+```
+
+`cancelled` is its own outcome and worth naming. `concurrency: cancel-in-progress: true` is on this
+workflow, so any push supersedes the run before it — which is right, and means a run found by recency
+rather than by SHA is quite likely to be one that was killed.
 
 And a script that edits several files fails **halfway**, not cleanly. The mild version writes nothing
 while having already printed success for the edits it thought it made; the version that reached `main`

@@ -157,3 +157,17 @@ gh api "repos/YounghyeonPark/dualis/actions/runs/<id>/jobs?per_page=50" \
 `gh run watch --exit-status` has returned zero with a job still `queued`, and the run reported
 `success` while `examples` had not started. Re-run that job and wait for its own `status` to reach
 `completed`.
+
+Select the run by `headSha` and never by recency. `gh run list --limit 1` straight after a push returns
+the previous commit's run, because the new one does not exist yet — and with
+`cancel-in-progress: true` on this workflow the previous one has probably just been **cancelled**,
+which is neither a pass nor a failure:
+
+```sh
+SHA=$(git rev-parse HEAD)
+RUN=$(gh run list --limit 10 --json databaseId,headSha \
+  -q ".[] | select(.headSha==\"$SHA\") | .databaseId" | head -1)
+```
+
+This matters most at a release, where the tag push and the branch push are seconds apart and each
+starts a run.
