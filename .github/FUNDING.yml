@@ -28,6 +28,22 @@
 # above rather than a head start on it.
 # github: YounghyeonPark
 
+# PAYOUT ROUTE: a bank account through Stripe Connect, not a fiscal host.
+#
+# A fiscal host sells exactly one thing a solo project cannot get otherwise -- it is a legal entity, so
+# it can invoice a company, issue a receipt, and survive a procurement process that will not send money
+# to an individual. That is worth roughly ten percent of everything plus an expense-claim workflow and
+# public books on every transaction.
+#
+# None of which is needed until a company is actually on the other end of the conversation, and it is
+# not a one-way door: moving to a host later is possible, and at that point the reason for it exists
+# rather than being anticipated. Paying now buys an option that may never be exercised, and the
+# overhead is the same whether the account holds nothing or something.
+#
+# The fiscal-host choice is also an organization-account feature; a personal account may not be
+# offered it at all, in which case there is no decision to make.
+
+
 # Deliberately not enabled, rather than not considered:
 #
 #   ko_fi / buy_me_a_coffee   reach further with less setup, and take a cut. Worth adding only if
