@@ -770,6 +770,7 @@ and GitHub renders it as a **Cite this repository** button; the same content as 
   version = {0.13.0},
   year    = {2026},
   url     = {https://github.com/YounghyeonPark/dualis},
+  note    = {ORCID: 0000-0002-4733-5049},
   license = {MIT OR Apache-2.0}
 }
 ```
