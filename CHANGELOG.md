@@ -68,40 +68,6 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   The file costs 68 s in debug, and that is written into it, because the first draft cost 5.4× more for
   the same claims.
 
-### Changed
-
-- **A packed bed's conductivity is Maxwell–Eucken now, not an arithmetic mean.** `Puck::bed_conductivity`
-  and `Puck::conductivity_at`. `crates/dualis-porous/tests/the_beds_conductivity.rs`.
-
-  It was `ε k_l + (1−ε) k_s`, which is the **Voigt bound** — exact only when the two phases lie in
-  parallel with the flux, which in a bed of spheres nothing does. Nobody chose it; it is what you get if
-  you do not think about it. The structural fact about a saturated bed is that the **liquid is the
-  continuous phase** and the grains are dispersed in it, which is precisely what Maxwell–Eucken describes
-  and is attained by a coated-sphere assemblage. For coffee at 45% porosity the old value was **11.0%
-  high**: 0.38625 against 0.34811 W/m·K, and the honest range narrows from 1.674 to 1.184.
-
-  Cross-checked rather than asserted: the puck's Maxwell–Eucken equals `Mix::hashin_shtrikman`'s bound
-  built around the liquid to `2.1e-15` over 76 cases, and `Mix`'s form is itself checked against
-  Maxwell–Garnett. Two independently written arrangements of one physics; the puck does not call `Mix`.
-
-  **Why it went unexamined for four releases, measured both ways.** Under flow the bed is isothermal, so
-  conduction carries no heat and `λ` is multiplied by zero — swinging it over a factor of eight leaves the
-  extraction yield identical to `1e-14`, and scene `18` is bit-for-bit unchanged by this commit. It stops
-  being free with a gradient: in a 20 °C basket the yield moves 4.9% per unit `ln λ`, so the range the old
-  rule left open was worth about 2% in extraction. Both halves are now tests, so the choice cannot go back
-  to being invisible.
-
-  What moved: the cold-basket branch of `espresso_shot`, where the cup cools 3.0102 °C instead of 3.1829
-  and the yield reads 19.43% instead of 19.44%. Both stay inside the capacity bound the example asserts,
-  and no assertion in the workspace changed — every gradient claim here is an inequality or a structural
-  statement rather than a recorded value, which is the only reason a model change was safe to make in one
-  commit.
-
-  One thing I chased that was not there: a 287% yield, above the 30% soluble ceiling. The domain saturates
-  at exactly 30.00000% when driven to it; a percentage in the printout had been multiplied by a hundred
-  twice.
-
-### Added
 
 - **Composites: two substances made into one, with the bounded properties returned as bounds.**
   `dualis_core::mixture::Mix`, re-exported as `dualis::prelude::Mix`.
@@ -242,6 +208,39 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   And `FusionProps` gaining a field broke every struct literal — exactly what `Substance` gaining
   `fusion` did one level up, to tests written the week before. `FusionProps::new` and `with_liquid` are
   the same answer applied one level down.
+
+### Changed
+
+- **A packed bed's conductivity is Maxwell–Eucken now, not an arithmetic mean.** `Puck::bed_conductivity`
+  and `Puck::conductivity_at`. `crates/dualis-porous/tests/the_beds_conductivity.rs`.
+
+  It was `ε k_l + (1−ε) k_s`, which is the **Voigt bound** — exact only when the two phases lie in
+  parallel with the flux, which in a bed of spheres nothing does. Nobody chose it; it is what you get if
+  you do not think about it. The structural fact about a saturated bed is that the **liquid is the
+  continuous phase** and the grains are dispersed in it, which is precisely what Maxwell–Eucken describes
+  and is attained by a coated-sphere assemblage. For coffee at 45% porosity the old value was **11.0%
+  high**: 0.38625 against 0.34811 W/m·K, and the honest range narrows from 1.674 to 1.184.
+
+  Cross-checked rather than asserted: the puck's Maxwell–Eucken equals `Mix::hashin_shtrikman`'s bound
+  built around the liquid to `2.1e-15` over 76 cases, and `Mix`'s form is itself checked against
+  Maxwell–Garnett. Two independently written arrangements of one physics; the puck does not call `Mix`.
+
+  **Why it went unexamined for four releases, measured both ways.** Under flow the bed is isothermal, so
+  conduction carries no heat and `λ` is multiplied by zero — swinging it over a factor of eight leaves the
+  extraction yield identical to `1e-14`, and scene `18` is bit-for-bit unchanged by this commit. It stops
+  being free with a gradient: in a 20 °C basket the yield moves 4.9% per unit `ln λ`, so the range the old
+  rule left open was worth about 2% in extraction. Both halves are now tests, so the choice cannot go back
+  to being invisible.
+
+  What moved: the cold-basket branch of `espresso_shot`, where the cup cools 3.0102 °C instead of 3.1829
+  and the yield reads 19.43% instead of 19.44%. Both stay inside the capacity bound the example asserts,
+  and no assertion in the workspace changed — every gradient claim here is an inequality or a structural
+  statement rather than a recorded value, which is the only reason a model change was safe to make in one
+  commit.
+
+  One thing I chased that was not there: a 287% yield, above the 30% soluble ceiling. The domain saturates
+  at exactly 30.00000% when driven to it; a percentage in the printout had been multiplied by a hundred
+  twice.
 
 ### Fixed
 
