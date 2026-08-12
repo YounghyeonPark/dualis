@@ -6,8 +6,9 @@
 //! that turns out to be awkward. A library with no consumers is a library whose ergonomics
 //! nobody has measured.
 //!
-//! Findings are collected in `FRICTION.md` beside this crate. Sixteen of the twenty-two are
+//! Findings are collected in `FRICTION.md` beside this crate. Eighteen of the twenty-four are
 //! fixed — this crate is the record of what the API was like before, and the reason it changed.
+//! The count in that file is under test; this line is not, and had been stale for two releases.
 //!
 //! The layers it once carried are libraries now. `dualis-scene` owns capture, and this crate is
 //! left with what an *application* actually is: a file format, the domain types that format names,
@@ -98,6 +99,35 @@ pub struct Scene {
     /// and this format has been bitten by exactly that once already with `aluminum`.
     #[serde(default)]
     pub tolerance_for: std::collections::BTreeMap<String, f64>,
+    /// Substances this scene defines, by the name its domains will use.
+    ///
+    /// The catalogue holds nine materials and the world holds hundreds of thousands, so this is the
+    /// door that matters: a `Substance` is data, so anything with a datasheet can be written here and
+    /// used exactly as a catalogue entry is. Nothing downstream can tell the difference, and the
+    /// [Stefan front of a declared gallium](https://docs.rs/dualis) is checked against Neumann's exact
+    /// solution to the same standard as ice.
+    ///
+    /// ```json
+    /// "materials": {
+    ///   "gallium": {
+    ///     "name": "gallium (99.99%)",
+    ///     "density": 5904.0,
+    ///     "thermal": { "conductivity": 40.6, "specific_heat": 371.0,
+    ///                  "expansion": 1.8e-5, "emissivity": 0.1 },
+    ///     "fusion": { "melting_point": 302.91, "latent_heat": 80160.0 }
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// A `BTreeMap` and not a `HashMap`, because the names come back out in error messages and a
+    /// message whose word order changes between runs of the same file is not a message anybody can
+    /// diff. Determinism is a promise this workspace makes about every byte it emits.
+    ///
+    /// Three things are refused rather than accepted quietly, and [`Palette`] says why each: an
+    /// impossible substance, a name that shadows the catalogue, and — the one worth reading —
+    /// a declaration that nothing goes on to use.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub materials: BTreeMap<String, Substance>,
 }
 
 fn default_tolerance() -> f64 {
@@ -510,46 +540,103 @@ pub enum DomainSpec {
     },
 }
 
-/// The materials a scene may name, and the only place the spelling lives.
+/// The materials a scene may name without declaring them: [`Substance::CATALOGUE`], verbatim.
 ///
-/// One table rather than one per domain. It began as a `match` inside the network builder, and the
-/// moment a second domain wanted a material that would have been two lists that agree until they
-/// do not — which is how a format grows a name that works in one place and is rejected in another.
-pub const MATERIALS: [&str; 8] = [
-    "copper",
-    "aluminium",
-    "stainless_304",
-    "electrical_steel",
-    "borosilicate",
-    "fr4",
-    "pla",
-    "ice",
-];
+/// It is an alias now and used to be a hand-written copy — eight names beside the catalogue's nine,
+/// which is why `water` could not be named in any of eleven releases. A format's spelling of a
+/// material belongs beside the material.
+pub const MATERIALS: [&str; 9] = Substance::CATALOGUE;
 
-/// Look up a material by the name a scene wrote, or say what the names are.
+/// The substances a scene can resolve a name to: the catalogue, plus whatever the scene declared.
 ///
-/// The error lists them, because a caller who guessed wrong has no other way to find out: this is a
-/// JSON file with no completion and no type checker behind it.
-fn substance_named(site: &str, material: &str) -> Result<Substance, String> {
-    match material {
-        "copper" => Ok(Substance::copper()),
-        "aluminium" => Ok(Substance::aluminium_6061()),
-        "stainless_304" => Ok(Substance::stainless_304()),
-        "electrical_steel" => Ok(Substance::electrical_steel()),
-        "borosilicate" => Ok(Substance::borosilicate_crown()),
-        "fr4" => Ok(Substance::fr4()),
-        "pla" => Ok(Substance::pla()),
-        // The only one that changes phase, so the only one for which a block reports a melted
-        // volume. Every other entry is modelled as never melting, which is right for a heat sink.
-        "ice" => Ok(Substance::ice()),
-        other => Err(format!(
-            "{site}: unknown material {other:?}; known materials are {}",
-            MATERIALS
-                .iter()
-                .map(|m| format!("{m:?}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+/// # Why this is a type and not a function
+///
+/// It records what it was asked for. A declaration nothing asks for is [refused](Palette::unused),
+/// and "asked for" has exactly one honest definition: it went through [`Palette::get`]. The
+/// alternative is a second list of the places a material name can appear in this format, which would
+/// be a list that agrees with the builder until somebody adds a field — the defect [`MATERIALS`] was
+/// just cured of, reintroduced one level up.
+pub struct Palette {
+    declared: BTreeMap<String, Substance>,
+    asked: std::collections::BTreeSet<String>,
+}
+
+impl Palette {
+    /// Validate a scene's declarations and prepare to resolve names against them.
+    ///
+    /// Three refusals here, and each is a wrong answer this format would otherwise produce:
+    ///
+    /// - **An impossible substance.** [`Substance::check`], with the declared name as the site. A
+    ///   negative conductivity or a zero density reaches a sweep as `NaN` and poisons a field with
+    ///   nothing saying which number it came from.
+    /// - **A name that shadows the catalogue.** Two files that both say `"copper"` have to mean the
+    ///   same copper, or a run's material is a property of the file it was launched from and no
+    ///   comparison between two runs means anything.
+    /// - **A declaration nothing names.** See [`Palette::unused`] — this is the one that is not
+    ///   obvious and it is the important one.
+    pub fn new(declared: &BTreeMap<String, Substance>) -> Result<Palette, String> {
+        for (key, substance) in declared {
+            if key.is_empty() {
+                return Err("materials: a declared material needs a name".to_string());
+            }
+            if Substance::from_name(key).is_some() {
+                return Err(format!(
+                    "materials.{key}: {key:?} is already a catalogue material and a scene may not \
+                     redefine it — two files saying {key:?} have to mean the same substance, or no \
+                     comparison between two runs means anything. Pick another name",
+                ));
+            }
+            substance
+                .check()
+                .map_err(|e| format!("materials.{key}: {e}"))?;
+        }
+        Ok(Palette {
+            declared: declared.clone(),
+            asked: std::collections::BTreeSet::new(),
+        })
+    }
+
+    /// Resolve the name a scene wrote, recording that it was asked for.
+    ///
+    /// The catalogue first, then the declarations — an order that cannot matter, because
+    /// [`Palette::new`] has already refused any declaration that could collide.
+    ///
+    /// The error lists every name that would have worked, because a caller who guessed wrong has no
+    /// other way to find out: this is a JSON file with no completion and no type checker behind it.
+    pub fn get(&mut self, site: &str, material: &str) -> Result<Substance, String> {
+        self.asked.insert(material.to_string());
+        if let Some(s) = Substance::from_name(material) {
+            return Ok(s);
+        }
+        if let Some(s) = self.declared.get(material) {
+            return Ok(s.clone());
+        }
+        let mut known: Vec<String> = MATERIALS.iter().map(|m| format!("{m:?}")).collect();
+        known.extend(self.declared.keys().map(|k| format!("{k:?} (declared)")));
+        Err(format!(
+            "{site}: unknown material {material:?}; known materials are {}",
+            known.join(", ")
+        ))
+    }
+
+    /// Every declared name that no domain asked for.
+    ///
+    /// # Why this is an error and not a warning
+    ///
+    /// Because `material` on a block is **optional and defaults to aluminium**. A scene that declares
+    /// a substance and then does not name it — a field left off, a name misspelled at the *use* site
+    /// where the declaration is spelled right — runs as a block of aluminium. It runs, it audits, it
+    /// renders, and it answers a question about the wrong material with nothing anywhere saying so.
+    ///
+    /// That is the same failure a region selecting no cells has, one level up, and it gets the same
+    /// treatment for the same reason. The cost of being wrong about this is a line deleted from a
+    /// file; the cost of the other way is a number somebody believes.
+    pub fn unused(&self) -> Vec<&str> {
+        self.declared
+            .keys()
+            .filter(|k| !self.asked.contains(*k))
+            .map(|k| k.as_str())
+            .collect()
     }
 }
 
@@ -684,7 +771,11 @@ impl DomainSpec {
     /// green at `conservation_tolerance(0.0)`, the strictest setting expressible, with the lamp
     /// doing nothing at all. One character — `aluminium` against `aluminum` — turned off the
     /// check this library exists for.
-    pub fn build(&self) -> Result<Box<dyn Domain>, String> {
+    ///
+    /// Takes the [`Palette`] by mutable reference because resolving a material name is what *records*
+    /// that the name was used, and a declared substance nobody used is refused. See
+    /// [`Palette::unused`].
+    pub fn build(&self, palette: &mut Palette) -> Result<Box<dyn Domain>, String> {
         let domain: Box<dyn Domain> = match self {
             DomainSpec::Room {
                 name,
@@ -887,7 +978,7 @@ impl DomainSpec {
                 let mut network = ThermalNetwork::new(name.clone());
                 for n in nodes {
                     let substance =
-                        substance_named(&format!("{name}/{}", n.name), n.material.as_str())?;
+                        palette.get(&format!("{name}/{}", n.name), n.material.as_str())?;
                     let volume = Volume::from_si(n.volume_cm3 * 1e-6);
                     let thickness = Length::mm(n.thickness_mm);
                     let initial = Temperature::celsius(n.initial_c);
@@ -1077,10 +1168,7 @@ impl DomainSpec {
                 regions,
                 hot_spot,
             } => {
-                let bulk = substance_named(
-                    name,
-                    material.as_deref().unwrap_or("aluminium"),
-                )?;
+                let bulk = palette.get(name, material.as_deref().unwrap_or("aluminium"))?;
                 let mut block = dualis::thermal::Solid3D::new(
                     name.clone(),
                     bulk,
@@ -1090,7 +1178,7 @@ impl DomainSpec {
                 );
                 for (n, r) in regions.iter().enumerate() {
                     let site = format!("{name}/regions[{n}]");
-                    let substance = substance_named(&site, &r.material)?;
+                    let substance = palette.get(&site, &r.material)?;
                     let empty = (0..3).any(|a| r.to[a] <= r.from[a]);
                     let outside = (0..3).any(|a| r.to[a] > cells[a]);
                     if empty || outside {
@@ -1260,8 +1348,25 @@ impl World {
             }
         }
 
+        // Validated before any domain is built, so an impossible substance is reported as the
+        // declaration it is rather than as a `NaN` somewhere downstream.
+        let mut palette = Palette::new(&scene.materials)?;
         for spec in &scene.domains {
-            sim = sim.with_boxed(spec.build()?);
+            sim = sim.with_boxed(spec.build(&mut palette)?);
+        }
+        // And after, because "used" means a domain asked for it, which is only known once they all
+        // have. A block's `material` is optional and defaults to aluminium, so a declaration nothing
+        // named is a run on the wrong substance that reports nothing.
+        let unused = palette.unused();
+        if !unused.is_empty() {
+            return Err(format!(
+                "materials: {} declared and used by nothing — a block with no `material` runs as                  aluminium, so this scene would answer about a material it did not mean. Name it or                  delete it",
+                unused
+                    .iter()
+                    .map(|u| format!("{u:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
 
         Ok(World { scene, sim })

@@ -91,6 +91,72 @@ fn the_catalogue_passes_its_own_check() {
         .is_ok());
 }
 
+/// **The catalogue's list of names and its lookup agree, in both directions.**
+///
+/// Two hand-written lists that have to match are the shape of defect this workspace keeps finding, and
+/// this one was live: no scene file could name `water`, because the scene format kept its own copy of
+/// the catalogue's spelling and that copy was written by hand. It began as five names in v0.3.0 and was
+/// still missing `water` in v0.13.0 — **eleven releases**, for every version in which a scene could
+/// name a material at all. Nothing could have noticed: a name absent from a lookup is not a wrong
+/// answer, it is a substance that never appears.
+///
+/// So both directions, and neither is enough alone:
+///
+/// - every slug in `CATALOGUE` resolves — catches a name added to the list and not the lookup;
+/// - every **constructor** is reachable through some slug — catches the reverse, which is the one that
+///   was live and the one no error message can ever report.
+///
+/// The second direction is why the nine constructors are written out here rather than iterated: there
+/// is no way to enumerate a type's associated functions, so this list is the only thing that can hold
+/// the lookup to account. A tenth constructor with no slug fails here.
+#[test]
+fn every_catalogue_entry_can_be_named_and_every_name_resolves() {
+    for slug in Substance::CATALOGUE {
+        let found = Substance::from_name(slug);
+        assert!(found.is_some(), "{slug:?} is listed and does not resolve");
+        assert!(
+            found.unwrap().check().is_ok(),
+            "{slug:?} resolves to something impossible"
+        );
+    }
+
+    for s in [
+        Substance::aluminium_6061(),
+        Substance::borosilicate_crown(),
+        Substance::stainless_304(),
+        Substance::copper(),
+        Substance::fr4(),
+        Substance::electrical_steel(),
+        Substance::pla(),
+        Substance::water(),
+        Substance::ice(),
+    ] {
+        // Compared by value, not by name: `Substance::name` is free text and two entries could share
+        // it, and a slug pointing at the *wrong* constructor is a defect this catches and a name
+        // comparison would not.
+        assert!(
+            Substance::CATALOGUE
+                .iter()
+                .any(|slug| Substance::from_name(slug).as_ref() == Some(&s)),
+            "{} is in the catalogue and no name reaches it",
+            s.name
+        );
+    }
+
+    assert_eq!(
+        Substance::CATALOGUE.len(),
+        9,
+        "nine entries; this number is quoted in four documents"
+    );
+    // And a name that is not one of them is `None` rather than a plausible default.
+    for wrong in ["aluminum", "Aluminium", "al6061", "", "steel"] {
+        assert!(
+            Substance::from_name(wrong).is_none(),
+            "{wrong:?} resolved to something"
+        );
+    }
+}
+
 /// **An impossible material is refused, and the message names the field.**
 ///
 /// Each of these is a transcription mistake somebody makes: a percentage where a fraction belongs, a

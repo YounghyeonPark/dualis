@@ -1401,6 +1401,112 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 assert_eq!(last.panels[0].grid(), Some(puck.counts()));
                 assert_eq!(last.panels[0].unit, "");
             }
+            "21-a-wax-thermal-buffer.json" => {
+                // n-octadecane, and every number here is in the scene file rather than in the
+                // library. That is the point of the scene: nothing in `dualis` knows this substance.
+                let (rho, cp, latent, melting_c) = (814.0, 1934.0, 244_000.0, 301.3 - 273.15);
+                // `melted` is reported in mm3 and the cells are 2 mm, so the two conversions are
+                // different numbers and mixing them up is easy: one cell is 8 mm3, and a cubic
+                // millimetre is 1e-9 m3 whatever the cell size. A first draft used 8e-9 as the
+                // mm3-to-m3 factor and reported the block as 402% melted.
+                const MM3: f64 = 1e-9;
+                let total_mm3 = 11.0 * 11.0 * 11.0 * 8.0;
+                let mass = total_mm3 * MM3 * rho;
+
+                let reading = |f: &dualis_world::Frame, label: &str| {
+                    f.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label} reading"))
+                        .value
+                };
+
+                // **The plateau is at the declared melting point**, and that number appears nowhere
+                // except the file. Ice's plateau is 0.000 and every catalogue material has none at
+                // all, so this single assertion is what says the declaration reached the domain
+                // rather than being parsed and dropped in favour of the aluminium default.
+                let held = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("wax")
+                    .expect("the wax is still there")
+                    .mean_temperature()
+                    .to_si()
+                    - 273.15;
+                assert!(
+                    (held - melting_c).abs() < 1e-9,
+                    "{name}: the plateau should sit at the declared {melting_c} C, is {held}"
+                );
+
+                // Half melted and stopped there, because the reserve ran out. Both halves matter:
+                // a block that melts entirely would not show the plateau ending, and one that melts
+                // nothing would look identical to a declaration that never took.
+                let melted = reading(last, "melted");
+                let fraction = melted / total_mm3;
+                assert!(
+                    (0.45..0.55).contains(&fraction),
+                    "{name}: about half should be liquid, {fraction:.4} is"
+                );
+
+                // The rate is `P/rho L` with the density and the latent heat coming out of the file.
+                // Read between two frames well inside the plateau and after the sensible warming is
+                // done, where every joule arriving goes to melting and none to warming.
+                let slope = (reading(&frames[5], "melted") - reading(&frames[2], "melted"))
+                    / (frames[5].time_s - frames[2].time_s);
+                let closed = 20.0 / (rho * latent * MM3);
+                println!(
+                    "  {name}: melted at {slope:.4} mm3/s against P/rho L = {closed:.4} — off {:.2e}",
+                    (slope / closed - 1.0).abs()
+                );
+                // **Machine precision, for the reason `20` states.** Inside the plateau every joule
+                // the heater pays goes to melting and none to warming, so the discrete slope *is*
+                // `P/rho L` and the scheme has no discretisation error here at all. Measured 8.3e-15.
+                // A tolerance of 1e-4 would have been eleven orders too loose and would have passed a
+                // density read from the wrong column.
+                assert!(
+                    (slope / closed - 1.0).abs() < 1e-12,
+                    "{name}: {slope:.4} mm3/s against a closed-form {closed:.4}"
+                );
+
+                // The energy accounts, and this is the check a wrong specific heat could not pass:
+                // the sensible term uses `c_p` and the latent term does not, so the two are only
+                // consistent with the reserve if both declared numbers are right.
+                let sensible = mass * cp * (melting_c - 20.0);
+                let fusion = melted * MM3 * rho * latent;
+                let absorbed = reading(last, "absorbed");
+                println!(
+                    "  and {absorbed:.4} J absorbed = {sensible:.4} warming + {fusion:.4} melting                      = {:.4}, off {:.2e}",
+                    sensible + fusion,
+                    ((sensible + fusion) / absorbed - 1.0).abs()
+                );
+                // 1.13e-14, and exact for the same reason: in the enthalpy method energy *is* the
+                // state, so the split between sensible and latent is bookkeeping rather than
+                // approximation. `1e-12` and not `1e-3`, because the looser number would pass a
+                // specific heat that was 8% wrong — the sensible term is a ninth of the total.
+                assert!(
+                    ((sensible + fusion) / absorbed - 1.0).abs() < 1e-12,
+                    "{name}: {absorbed:.4} J absorbed against {:.4} accounted for",
+                    sensible + fusion
+                );
+
+                // And once the reserve is empty nothing moves. A block still melting after its
+                // heater is exhausted is inventing energy, which the audit would catch on the sum
+                // and not on this domain — so it is worth saying here where it is unambiguous.
+                let empty: Vec<f64> = frames
+                    .iter()
+                    .filter(|f| reading(f, "melted") > 0.0 && f.time_s > 70.0)
+                    .map(|f| reading(f, "melted"))
+                    .collect();
+                assert!(
+                    empty.len() >= 4,
+                    "{name}: not enough frames after the reserve ran dry"
+                );
+                for v in &empty {
+                    assert_eq!(
+                        *v, melted,
+                        "{name}: melting continued after the heater was empty"
+                    );
+                }
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

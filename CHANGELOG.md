@@ -3,7 +3,7 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found twenty-three places it is awkward, seventeen of which have been changed — see
+has already found twenty-four places it is awkward, eighteen of which have been changed — see
 `crates/dualis-world/FRICTION.md`.
 
 Entries record what was *found* as well as what was added, because several of the more useful
@@ -16,6 +16,46 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 ## [Unreleased]
 
 ### Added
+
+- **A scene can declare its own substances, so the catalogue stops being the limit.** `Scene.materials`,
+  `Palette`, `Substance::CATALOGUE` and `Substance::from_name`.
+  `crates/dualis/tests/substances_from_a_file.rs`, `crates/dualis-world/tests/declared_materials.rs`,
+  `scenes/21-a-wax-thermal-buffer.json`.
+
+  Nine catalogue entries against hundreds of thousands of materials: enumeration was never going to
+  close that gap, and a format that can only *name* a substance can only describe nine kinds of thing.
+  A `Substance` is data, so a scene writes one out and uses it exactly as it uses `"ice"`.
+
+  **Checked against Neumann's exact solution, with ice marched beside it through the identical
+  harness** — which is the only form in which "as accurate as one we ship" means anything. Gallium and
+  n-octadecane, 82× apart in diffusivity, declared as JSON text: worst 0.039% over a 21× range of
+  Stefan number, against the catalogue's own ice at 0.035%. Ice sits *inside* the declared range at
+  every undercooling, so the error is a function of Stefan number and not of where the substance came
+  from.
+
+  Three things found on the way, two of them mistakes of mine:
+
+  `MATERIALS` was a hand-written copy of the catalogue's spelling — eight names beside nine
+  constructors — and the missing one was `water`. Unnameable from a scene for **eleven releases**, since
+  the format learned to name a material at all. A name absent from a lookup is not a wrong answer, it is
+  a substance that never appears, so nothing could have noticed. The lookup lives beside the catalogue
+  now and a test checks both directions.
+
+  The first tolerance was `dx/X` — one cell of interface resolution, 8.3%. Measured error: 0.039%,
+  **two hundred times smaller**, because the front is read from an integral of a conserved quantity and
+  the enthalpy scheme conserves that exactly, so the interface's first-order error never reaches the
+  answer. A bound can trace to real physics and still be so loose it checks nothing: that one would have
+  passed a conductivity 13% wrong. At 0.06% it catches 0.1%, and that is asserted rather than claimed —
+  a test perturbs the conductivity and measures what the front does.
+
+  The teeth test then failed to have teeth. It asked for the same front *depth* from the perturbed
+  substance, which recomputes its own target from the wrong conductivity, so the two errors cancelled to
+  the last digit and a 1% error reported as 0.0000%. The comment above it had named that exact trap.
+
+  A declaration nothing uses is **refused**, and that is the non-obvious one: `material` on a block is
+  optional and defaults to aluminium, so declaring a wax and forgetting to name it gives a block of metal
+  that runs, audits and renders while answering about the wrong substance. Same shape as a region
+  selecting no cells, one level up.
 
 - **Two-phase conduction, against the two-phase Neumann solution.** `FusionProps::liquid`, `new` and
   `with_liquid`. `crates/dualis-thermal/tests/two_phase_stefan.rs`.

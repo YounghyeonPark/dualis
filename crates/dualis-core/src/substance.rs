@@ -268,6 +268,69 @@ impl Substance {
         Some(stress < limit)
     }
 
+    /// Every substance this crate ships, by the short name a *file* writes.
+    ///
+    /// The constructors below are the Rust door and are enough for a caller who knows at compile
+    /// time what the thing is made of. This is the other door: a name that arrived as text, from
+    /// JSON, a command line, or a spreadsheet column.
+    ///
+    /// # Why a slug and not [`Substance::name`]
+    ///
+    /// `name` is free text meant for a human reading a violation message — `"Al 6061"`,
+    /// `"N-BK7"`. A key that a file is matched against has to be stable, lowercase and
+    /// unpunctuated, and the two are different jobs: renaming `"Al 6061"` to `"Aluminium 6061-T6"`
+    /// improves one and breaks every file that used the other.
+    ///
+    /// # This list and [`Substance::from_name`] are checked against each other
+    ///
+    /// Both directions, in `any_material.rs`: every slug here resolves, and every constructor is
+    /// reachable through some slug here. A pair of hand-written lists that agree until they do not
+    /// is how a catalogue grows an entry that exists and cannot be named — which is what had
+    /// happened to `water`, present in this crate for nine releases and unreachable from a scene
+    /// file the whole time, because the scene format kept its own eight-name copy of this.
+    pub const CATALOGUE: [&'static str; 9] = [
+        "aluminium",
+        "borosilicate",
+        "copper",
+        "electrical_steel",
+        "fr4",
+        "ice",
+        "pla",
+        "stainless_304",
+        "water",
+    ];
+
+    /// Look one up by the name in [`Substance::CATALOGUE`], or `None`.
+    ///
+    /// `None` rather than a panic or a default: a name that arrived as text is a name that can be
+    /// wrong, and the caller is the one who knows what to say about it and where the text came from.
+    /// Substituting a plausible material for an unrecognised name is the failure this whole file is
+    /// arranged against.
+    ///
+    /// **A catalogue is not the answer to "any material".** Nine entries cannot be, and adding a
+    /// tenth does not change that. The answer is that a `Substance` is data — `Deserialize` and
+    /// [`Substance::check`] — so anything with a datasheet can be declared without this crate
+    /// learning it exists. This function is for the common case where the material is one of nine
+    /// and typing out its properties would be worse.
+    pub fn from_name(name: &str) -> Option<Substance> {
+        Some(match name {
+            "aluminium" => Substance::aluminium_6061(),
+            "borosilicate" => Substance::borosilicate_crown(),
+            "copper" => Substance::copper(),
+            "electrical_steel" => Substance::electrical_steel(),
+            "fr4" => Substance::fr4(),
+            // `ice` is the only entry that changes phase, and so the only one for which a domain
+            // reports a melted volume. `water` is the *liquid* — no `fusion`, because a substance
+            // whose fusion is present is one being modelled as freezable, and a coolant mass in a
+            // network is not. The pair is deliberate and they are not interchangeable.
+            "ice" => Substance::ice(),
+            "water" => Substance::water(),
+            "pla" => Substance::pla(),
+            "stainless_304" => Substance::stainless_304(),
+            _ => return None,
+        })
+    }
+
     /// N-BK7, the borosilicate crown that most of an optical bench is made of.
     pub fn borosilicate_crown() -> Substance {
         Substance {

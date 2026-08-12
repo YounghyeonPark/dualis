@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Seventeen of the twenty-three are fixed**, and six are recorded rather than actioned. The reasons
+**Eighteen of the twenty-four are fixed**, and six are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -575,6 +575,51 @@ checking a *rate*.
 
 That is the case for building a consumer early, and it is stronger than the ergonomic half.
 None of this was visible from inside.
+
+## 24. A world made of nine substances
+
+The scene format could name nine materials and no others, and this is the fifth finding of the same
+shape: **the library is comfortable when the set of parts is known at compile time and awkward the
+moment it is not.** Findings 1, 2, 3 and 7 were domains; this one is matter.
+
+It was not obvious from inside, because from inside the answer looked done. `Substance` has derived
+`Serialize` and `Deserialize` since the crate split, `check` validates one, and `any_material.rs`
+demonstrates a datasheet material working in three domains. Every piece was there. What was missing was
+a *place in the file to put one*, and nobody writing the library needed one — a test says
+`Substance::bulk(...).with_thermal(...)` and the question never comes up.
+
+Two things went wrong quietly on the way to noticing, and the second is the reason this is a finding
+rather than a feature request.
+
+`MATERIALS` was a hand-written copy of the catalogue's spelling, eight names beside nine constructors,
+and the missing one was `water`. It had been unnameable from a scene since the format learned to name a
+material at all — v0.3.0 through v0.13.0, **eleven releases**. Nothing could have noticed: a name absent
+from a lookup is not a wrong answer, it is a substance that never appears. The lookup lives beside the
+catalogue now and `MATERIALS` is an alias, and a test checks both directions, because a constructor with
+no name is a defect no error message can ever report.
+
+The other is what happens when a declaration is a mistake, and it took writing the tests to see it.
+`material` on a block is **optional and defaults to aluminium**, so a scene that declares a wax and then
+does not name it — a key left off, or spelled right in the declaration and wrong at the use site — runs
+as a block of metal. It runs, it audits, it renders, and it answers about the wrong substance with
+nothing anywhere saying so. Two hundred times the conductivity, and a picture that looks like a working
+simulation throughout.
+
+**Fixed.** `Substance::CATALOGUE` and `Substance::from_name` put the spelling beside the material, where
+a consumer writing their own data-driven front end can reach it instead of retyping a nine-arm match.
+`Scene.materials` is a `BTreeMap<String, Substance>` — a map so a name resolves, ordered so an error
+message is the same on every platform. `Palette` refuses three things: an impossible substance,
+by `check`, before any domain is built; a name that shadows the catalogue, because two files saying
+`"copper"` have to mean the same copper or no comparison between two runs means anything; and a
+declaration nothing used, for the reason above. "Used" has exactly one definition — it went through the
+resolver — so there is no second list of the places a material name can appear, which is the defect
+`MATERIALS` was just cured of one level up.
+
+The physics is checked where the physics is. `substances_from_a_file.rs` marches gallium and
+n-octadecane, declared as JSON text, against Neumann's exact solution, **and marches ice beside them
+through the identical harness**: 0.039% worst for the two declared, 0.035% for the catalogue's own, over
+a 21× range of Stefan number. Ice sits inside the declared range at every undercooling, which is the
+only form in which the claim means anything.
 
 ## What this report does not cover
 

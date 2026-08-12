@@ -1,0 +1,24 @@
+{
+  "title": "a wax thermal buffer holding a plateau, in a substance the library does not ship",
+  "schedule": "multirate",
+  "duration_s": 120.0,
+  "frames": 11,
+  "conservation_tolerance": 1e-9,
+  "materials": {
+    "octadecane": {
+      "name": "n-octadecane",
+      "density": 814.0,
+      "thermal": { "conductivity": 0.358, "specific_heat": 1934.0,
+                   "expansion": 8.0e-4, "emissivity": 0.9 },
+      "fusion": { "melting_point": 301.3, "latent_heat": 244000.0,
+                  "liquid": { "conductivity": 0.152, "specific_heat": 2196.0,
+                              "expansion": 9.0e-4, "emissivity": 0.9 } }
+    }
+  },
+  "domains": [
+    { "kind": "heater", "name": "element", "watts": 20.0, "reserve_j": 1200.0 },
+    { "kind": "block", "name": "wax", "cells": [11, 11, 11], "cell_mm": 2.0,
+      "initial_c": 20.0,
+      "material": "octadecane" }
+  ]
+}
