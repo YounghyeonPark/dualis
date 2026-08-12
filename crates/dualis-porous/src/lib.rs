@@ -144,7 +144,12 @@ pub struct Bed {
     pub solid_density: Density,
     /// Specific heat of the solid.
     pub specific_heat: SpecificHeat,
-    /// Thermal conductivity of the solid.
+    /// Thermal conductivity of the solid **grain**, not of the bed.
+    ///
+    /// The bed's is [`Puck::bed_conductivity`], which combines this with the liquid's by Maxwell–Eucken
+    /// with the liquid as the continuous phase. Read that before changing this one: it used to be an
+    /// arithmetic mean, which is the Voigt bound and was 11.0% high, and the reason nobody noticed is
+    /// that a bed under flow is isothermal so conduction carries nothing at all.
     pub conductivity: ThermalConductivity,
     /// The fraction of the dry solid mass that can dissolve at all.
     ///

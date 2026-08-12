@@ -3,8 +3,8 @@
 use dualis_core::conserved::quantity;
 use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, ScalarField, Substance, Violation};
 use dualis_units::{
-    Density, Energy, Length, LengthVec, Mass, MassFlow, Power, Pressure, Temperature, Time,
-    Velocity,
+    Density, Energy, Length, LengthVec, Mass, MassFlow, Power, Pressure, Temperature,
+    ThermalConductivity, Time, Velocity,
 };
 use glam::DVec3;
 
@@ -420,13 +420,77 @@ impl Puck {
                 let e = self.porosity[idx];
                 self.capacity[idx] =
                     volume * (e * self.liquid.rho_c() + (1.0 - e) * self.bed.rho_c());
-                self.lambda[idx] = e * self.liquid.conductivity.to_si()
-                    + (1.0 - e) * self.bed.conductivity.to_si();
+                self.lambda[idx] = Self::bed_conductivity(
+                    self.liquid.conductivity.to_si(),
+                    self.bed.conductivity.to_si(),
+                    e,
+                );
             } else {
                 self.capacity[idx] = volume * self.wall.density.to_si() * wall_c;
                 self.lambda[idx] = wall_k;
             }
         }
+    }
+
+    /// The effective thermal conductivity of a saturated bed, by **Maxwell–Eucken with the liquid as
+    /// the continuous phase**.
+    ///
+    /// ```text
+    ///   k = k_l · (2k_l + k_s − 2(1−ε)(k_l − k_s)) / (2k_l + k_s + (1−ε)(k_l − k_s))
+    /// ```
+    ///
+    /// # Why this one, and what it replaced
+    ///
+    /// It was `ε k_l + (1−ε) k_s` — the arithmetic mean, which is the **Voigt bound**. That is not a
+    /// model of a packed bed; it is what you get if you do not think about it, and it is an *upper*
+    /// bound: it is exact only when the two phases lie in parallel with the flux, which in a bed of
+    /// spheres nothing does.
+    ///
+    /// The structural fact about a saturated bed is that **the liquid is the continuous phase** and the
+    /// grains are dispersed in it. That is precisely what Maxwell–Eucken describes, and it is attained by
+    /// a coated-sphere assemblage — a closed form, not a correlation. For coffee at 45% porosity the two
+    /// differ by 11.0%: 0.38625 against 0.34811 W/m·K.
+    ///
+    /// Note that "liquid as host" is a statement about the geometry and not about which number is
+    /// larger. For water in coffee it happens to coincide with the Hashin–Shtrikman *upper* bound,
+    /// because the water conducts better than the grounds; for a metal powder it would be the lower one.
+    /// `the_beds_conductivity.rs` asserts both the coincidence for these numbers and the bracketing in
+    /// general, against `dualis_core::mixture::Mix`, which is checked against Maxwell–Garnett to
+    /// `6.7e-16`. Two independently written forms of the same physics, in crates that do not depend on
+    /// each other for it.
+    ///
+    /// # What the choice is worth, measured
+    ///
+    /// **Nothing, in every scenario this crate ships**, and that is why it went unexamined. Under flow
+    /// the bed is isothermal, so conduction carries no heat and `λ` is multiplied by zero: swinging it
+    /// over a factor of ten leaves the extraction yield identical to `1e-15`.
+    ///
+    /// It stops being free the moment there is a gradient. In a 20 °C basket the yield moves **3.9% per
+    /// unit `ln λ`**, so the honest range the old rule left — Voigt to Reuss, a factor of 1.674 — was
+    /// worth **2.0% in extraction yield**, which is a taste-level difference in a cup. Maxwell–Eucken
+    /// narrows the range that remains to 1.184 and costs 0.40% against the old value.
+    pub fn bed_conductivity(liquid: f64, solid: f64, porosity: f64) -> f64 {
+        let d = liquid - solid;
+        let solids = 1.0 - porosity;
+        let denominator = 2.0 * liquid + solid + solids * d;
+        if denominator <= 0.0 {
+            // A liquid of zero conductivity in a solid of zero conductivity. Not reachable from a
+            // validated substance, and zero is the right answer rather than a `NaN`.
+            return 0.0;
+        }
+        liquid * (2.0 * liquid + solid - 2.0 * solids * d) / denominator
+    }
+
+    /// The effective conductivity this cell is conducting with, in W/m·K.
+    ///
+    /// Exposed because it is a **modelling choice** rather than an implementation detail — see
+    /// [`Puck::bed_conductivity`] for which choice and what the alternatives cost. A number that decides
+    /// an answer and cannot be read from outside is a number nobody can check.
+    ///
+    /// A wall cell reports the wall's own conductivity, unmixed.
+    pub fn conductivity_at(&self, i: usize, j: usize, k: usize) -> ThermalConductivity {
+        let (nx, ny, _) = self.counts;
+        ThermalConductivity::from_si(self.lambda[i + nx * (j + ny * k)])
     }
 
     /// How many cells the grid has, as `(nx, ny, nz)`. `y` is the flow axis.
