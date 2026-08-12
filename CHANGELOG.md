@@ -15,6 +15,59 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ## [Unreleased]
 
+### Added
+
+- **Per-element material in `dualis-elastic`, and stiffness bounds that something can check.**
+  `Waves::fill`, `Waves::materials`, `Waves::material_at`, `Elastic: PartialEq`, `Mix::shear_bounds`,
+  `Mix::p_wave_modulus_bounds`. `crates/dualis-elastic/tests/a_layered_wave.rs`.
+
+  `Mix` shipped without stiffness bounds a release ago, and the reason was stated at the time: `Waves`
+  took one material per block, so there was nothing here a bound on stiffness could be *checked* against,
+  and a bound nothing can falsify is a comment rather than an API. This closes that.
+
+  The closed form is **Backus averaging** — the exact long-wavelength moduli of a layered elastic medium,
+  Backus 1962 — and `Waves::hold` is what makes each one separately measurable, because freezing two
+  displacement components leaves a one-dimensional problem with one modulus in it. Aluminium and PLA, half
+  and half, a 20-fold contrast in shear modulus:
+
+  ```text
+                                            16/32/64 elements        improvement
+    C44  harmonic mu   2.4517 GPa      0.558% / 0.143% / 0.036%        15.7x
+    C66  arithmetic mu 13.5945 GPa     1.003% / 0.229% / 0.058%        17.2x
+    C33  harmonic M    11.1237 GPa     0.533% / 0.143% / 0.035%        15.4x
+    M    arithmetic    53.9839 GPa     0.817% / 0.189% / 0.048%        17.1x   (32/64/128)
+  ```
+
+  Second order throughout, where a fourfold refinement predicts 16. **Both ends of the shear pair come
+  from one block**, 5.5× apart, decided by which way the shear goes — and the *ratio* of the two speeds
+  lands within 0.023% of `√5.545`, tighter than either measurement because the mesh error cancels out of
+  it.
+
+  **A composite of two isotropic materials is generally anisotropic**, so `Mix` deliberately reports no
+  effective `(E, ν)` and `as_substance` leaves the mechanical block absent. A laminate 5.5× stiffer in
+  shear one way than the other has no single isotropic pair, and a function returning one would be
+  inventing an isotropy the material does not have.
+
+  Two things the measurements corrected:
+
+  I documented the Voigt end of the P-wave modulus pair as a bound that is **not** attained. It is
+  attained — holding the lateral strain at zero *pointwise* is exactly the equal-strain condition Voigt
+  assumes, and it converges to `⟨M⟩` at second order. What is not measurable here is `C11`, the *free*
+  laminate compressed along its layers, which needs the lateral strain zero on average but free locally;
+  `Waves::hold` holds a component on every node or none, so this API cannot pose it. Tried anyway and got
+  40.87 GPa, which is neither `⟨M⟩` nor `C11`'s 43.77 — a block four elements thick with free faces
+  carries plate modes, so that number answers a third question. No claim is made about it.
+
+  And the arithmetic mean is a **long-wavelength** result in a way the harmonic ones are not, which the
+  resolution sweep alone cannot see: refining the span shrinks the element *and* stretches the wavelength
+  against the layer at the same time, two second-order errors falling together and reported as one. Held
+  the element size fixed and varied only the layer thickness: 0.234%, 1.055%, 4.877%, 23.296% at 64, 32,
+  16 and 8 layers per wavelength. **At eight layers per wavelength a caller is 23% out, and that is the
+  closed form's limit rather than the solver's.**
+
+  The file costs 68 s in debug, and that is written into it, because the first draft cost 5.4× more for
+  the same claims.
+
 ### Changed
 
 - **A packed bed's conductivity is Maxwell–Eucken now, not an arithmetic mean.** `Puck::bed_conductivity`

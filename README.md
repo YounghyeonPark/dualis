@@ -25,7 +25,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 623 tests, all against closed forms
+cargo test --workspace                       # 629 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are twelve of those; three more

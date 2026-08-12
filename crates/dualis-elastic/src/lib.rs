@@ -74,7 +74,12 @@ pub use block::{Block, Face};
 pub use waves::{Axis, Waves};
 
 /// A linear elastic material.
-#[derive(Clone, Copy, Debug)]
+///
+/// `PartialEq` so [`Waves::fill`] can tell whether a material is already in its palette. Comparing
+/// floats for equality is right here and only here: the question is not "are these two materials
+/// physically alike" but "is this the same value the caller already handed me", and for that bit-for-bit
+/// is exactly the test. A near-miss legitimately becomes a second palette entry.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Elastic {
     /// Young's modulus.
     pub youngs_modulus: Pressure,

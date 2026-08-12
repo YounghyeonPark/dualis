@@ -42,13 +42,21 @@
 //! a 150-fold contrast between the phases no bound is going to be comfortable, and that is the honest
 //! state of the problem rather than a deficiency of the bound.
 //!
-//! # What is not here, and why not
+//! # Stiffness, and the reason there is no effective `(E, ν)`
 //!
-//! No elastic or acoustic bounds. Voigt–Reuss on the bulk and shear moduli is the same theorem and
-//! the algebra is no harder — but `dualis-elastic` takes one substance per body and has no per-cell
-//! material, so there is nothing in this workspace a bound on stiffness could be *checked* against.
-//! A bound nothing can falsify is a comment, and this workspace does not ship those as API. It becomes
-//! available the moment `Elastic` grows a `fill`.
+//! [`Mix::shear_bounds`] and [`Mix::p_wave_modulus_bounds`] arrived once `Waves::fill` existed, because
+//! until there was per-element material in `dualis-elastic` there was nothing in this workspace a bound
+//! on stiffness could be *checked* against, and a bound nothing can falsify is a comment rather than an
+//! API. Both are now checked against **Backus averaging** — the exact long-wavelength moduli of a layered
+//! elastic medium — in `crates/dualis-elastic/tests/a_layered_wave.rs`.
+//!
+//! What is deliberately absent is a Young's modulus and a Poisson ratio for the mixture, and that
+//! absence is the physics rather than a gap. **A composite of two isotropic materials is generally
+//! anisotropic.** A laminate has a different stiffness along its layers than across them — measured, the
+//! shear modulus differs by a factor of **5.5** for aluminium against PLA — so there is no single pair
+//! `(E, ν)` that describes it, and a function returning one would be inventing an isotropy the material
+//! does not have. `Mix` therefore does not produce an [`crate::substance::MechanicalProps`] and
+//! [`Mix::as_substance`] leaves the mechanical block absent.
 //!
 //! No yield strength either, and that one is not a missing feature. A composite's yield is governed by
 //! the weaker phase and by the interface between them, so it is not a mixture of the two yields in any
@@ -57,8 +65,8 @@
 
 use crate::substance::{FusionProps, Substance, ThermalProps};
 use dualis_units::{
-    Density, HeatCapacity, LatentHeat, Mass, SpecificHeat, Temperature, ThermalConductivity,
-    ThermalExpansion, Volume,
+    Density, HeatCapacity, LatentHeat, Mass, Pressure, SpecificHeat, Temperature,
+    ThermalConductivity, ThermalExpansion, Volume,
 };
 
 /// A composite: substances and the fraction of the **volume** each occupies.
@@ -249,6 +257,75 @@ impl Mix {
         Some((
             ThermalConductivity::from_si(bound(hi_guest, hi_gf, hi_host, hi_f)),
             ThermalConductivity::from_si(bound(hi_host, hi_f, hi_guest, hi_gf)),
+        ))
+    }
+
+    /// **Voigt and Reuss on the shear modulus**, low first: `(⟨1/G⟩⁻¹, ⟨G⟩)`.
+    ///
+    /// `G = E/(2(1+ν))` for each part, weighted by volume fraction. Both ends are **attained**, and by
+    /// the same witness in two directions — which is what makes this a range of achievable values rather
+    /// than a hedge:
+    ///
+    /// - a laminate sheared **in** its layer planes carries a uniform shear strain, so the stresses add
+    ///   and the effective modulus is `⟨G⟩` exactly. That is `C66` in the layered-medium literature;
+    /// - the same laminate sheared **across** its layers carries a uniform shear stress, so the strains
+    ///   add and it is `⟨1/G⟩⁻¹` exactly. That is `C44`.
+    ///
+    /// Both are Backus's 1962 results for a finely layered elastic medium, and both are measured against
+    /// marched wave speeds in `a_layered_wave.rs` — **5.5× apart** for aluminium against PLA, from one
+    /// block, with each end converging at second order to 0.06% or better.
+    ///
+    /// `None` if any part does not state its mechanical properties.
+    pub fn shear_bounds(&self) -> Option<(Pressure, Pressure)> {
+        self.moduli_bounds(|e, nu| e / (2.0 * (1.0 + nu)))
+    }
+
+    /// **Voigt and Reuss on the P-wave modulus** `M = λ + 2μ`, low first: `(⟨1/M⟩⁻¹, ⟨M⟩)`.
+    ///
+    /// `M = E(1−ν)/((1+ν)(1−2ν))`, the modulus that relates stress to strain when the lateral strain is
+    /// held at zero — so it is the one a compression wave travels on and the one a thin layer bonded
+    /// between stiff neighbours actually feels.
+    ///
+    /// **Both ends are attained**, and a first draft of this documentation said the high end was not —
+    /// the measurement is what corrected it.
+    ///
+    /// - a laminate compressed **across** its layers carries a uniform normal stress, so the compliances
+    ///   add and `⟨1/M⟩⁻¹` is exact. Backus's `C33`, and the speed of a compression wave through the
+    ///   stack;
+    /// - the same laminate compressed **along** its layers, with the lateral strain held at zero
+    ///   *pointwise*, carries a uniform strain, so the stresses add and `⟨M⟩` is exact.
+    ///
+    /// The second needs that constraint said out loud, because it is what the Voigt bound *is*. A laminate
+    /// whose lateral contraction is free gives neither bound: the layers each want to contract differently
+    /// and the ones beside them prevent it, and the answer is Backus's `C11`, which carries a correction
+    /// term in `⟨λ/M⟩` and for aluminium against PLA is 43.77 GPa against `⟨M⟩`'s 53.98 — **18.9% below**.
+    /// `a_layered_wave.rs` says why it does not measure that one: it needs the lateral strain zero on
+    /// average but free locally, and `Waves::hold` holds a component everywhere or nowhere.
+    ///
+    /// `None` if any part does not state its mechanical properties.
+    pub fn p_wave_modulus_bounds(&self) -> Option<(Pressure, Pressure)> {
+        self.moduli_bounds(|e, nu| e * (1.0 - nu) / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    }
+
+    /// The Voigt and Reuss pair for any modulus derivable from `(E, ν)`, low first.
+    ///
+    /// One helper because the two public pairs differ only in which modulus, and writing the weighting
+    /// twice is how two bounds come to disagree about what a volume fraction is.
+    fn moduli_bounds(&self, modulus: impl Fn(f64, f64) -> f64) -> Option<(Pressure, Pressure)> {
+        let mut voigt = 0.0;
+        let mut reciprocal = 0.0;
+        for (s, f) in &self.parts {
+            let m = s.mechanical?;
+            let value = modulus(m.youngs_modulus.to_si(), m.poisson_ratio);
+            if !(value.is_finite() && value > 0.0) {
+                return None;
+            }
+            voigt += f * value;
+            reciprocal += f / value;
+        }
+        Some((
+            Pressure::from_si(1.0 / reciprocal),
+            Pressure::from_si(voigt),
         ))
     }
 
