@@ -13,7 +13,7 @@ Everything below describes the Rust API.
 
 ```toml
 [dependencies]
-dualis = "0.12"
+dualis = "0.13"
 ```
 
 API docs: <https://docs.rs/dualis>. Source: <https://github.com/YounghyeonPark/dualis>.
@@ -256,5 +256,8 @@ also pass it, then go and check *that*.
 - **[README.md](README.md)** — the long version, including what is deliberately *not* here.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the conventions, and the gate CI runs.
 - **[CLAUDE.md](CLAUDE.md)** — working on dualis rather than with it.
-- **[RELEASING.md](RELEASING.md)** — the fifteen crates, the wheel, and the seven places a version
-  lives. Read once per release and not otherwise, which is why it is not in `CLAUDE.md`.
+- **[RELEASING.md](RELEASING.md)** — the fifteen crates, the wheel, the seven places a version
+  lives, and the DOI switch nobody has thrown yet. Read once per release and not otherwise, which is
+  why it is not in `CLAUDE.md`.
+- **[CITATION.cff](CITATION.cff)** — how to cite this. Co-authorship is not requested and could not be
+  required; `README.md`'s Citation section says why, and what is invited instead.

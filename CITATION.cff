@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: >-
+  If this software contributes to work you publish, please cite it. A citation is the
+  thing that helps; co-authorship is not requested and could not be required — see the
+  Citation section of README.md for why, and for the standing invitation to collaborate
+  where a joint contribution is genuinely earned.
+title: "dualis: physics for simulated worlds, checked against closed forms"
+abstract: >-
+  A Rust workspace of sixteen crates: a kernel that knows conservation, integration,
+  scheduling and sampling but no physics, ten domain crates built on it, and scene and
+  view layers above. Every claim is checked against a closed form, an exact limit, a
+  conservation law or a convergence rate rather than against a second implementation.
+  Results are bit-for-bit reproducible across platforms, optimisation levels,
+  WebAssembly and thread counts, with a pinned digest that says so.
+type: software
+authors:
+  # Add `orcid: "https://orcid.org/0000-0000-0000-0000"` here once you have one. The field
+  # is omitted rather than filled with a placeholder, because an invalid ORCID makes this
+  # file fail validation and GitHub then renders no citation at all.
+  - family-names: Park
+    given-names: Younghyeon
+license: MIT OR Apache-2.0
+repository-code: "https://github.com/YounghyeonPark/dualis"
+version: 0.13.0
+date-released: "2026-08-12"
+keywords:
+  - physics simulation
+  - verification
+  - closed-form solutions
+  - conservation laws
+  - reproducibility
+  - Rust

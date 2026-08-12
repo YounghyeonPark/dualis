@@ -758,6 +758,47 @@ CI passes `--locked` deliberately, so its constraint is the lockfile format. The
 declared `rust-version` follows CI, because it is the stronger of the two and a
 declared MSRV should be a promise about what has been compiled.
 
+## Citation
+
+If this software contributes to work you publish, please cite it. `CITATION.cff` is beside this file
+and GitHub renders it as a **Cite this repository** button; the same content as BibTeX:
+
+```bibtex
+@software{park_dualis,
+  author  = {Park, Younghyeon},
+  title   = {dualis: physics for simulated worlds, checked against closed forms},
+  version = {0.13.0},
+  year    = {2026},
+  url     = {https://github.com/YounghyeonPark/dualis},
+  license = {MIT OR Apache-2.0}
+}
+```
+
+### Co-authorship is not requested, and here is why that is the honest answer
+
+It would be easy to write "please add me as an author" here, and it would be wrong on three counts.
+
+It **could not be required**. `MIT OR Apache-2.0` is already granted irrevocably, and a licence with an
+authorship condition attached would no longer be an open-source licence under the OSI definition — it
+would impose a restriction the two licences people already rely on do not have.
+
+It is **contrary to how authorship works**. ICMJE and COPE both rest authorship on an intellectual
+contribution to the *specific work* being published. Supplying a tool is not that, however much work
+the tool was. Authorship asked for on those grounds is what the literature calls gift or honorary
+authorship, and an editor who saw it as a condition of use would strike it.
+
+And it would **cost the thing it was reaching for**. A tool with a tax on it loses users, and users are
+where citations come from.
+
+### What is invited instead
+
+If you build something with this, I would like to hear about it — and if there is a question the
+library cannot answer yet, open an issue. Where that turns into real involvement in your work — a
+domain built for your problem, an analysis argued through together — a joint contribution is earned in
+the ordinary way, and I am glad to do it. That is an invitation and not a condition.
+
+An acknowledgement, if the work does not warrant more, is always welcome and never expected.
+
 ## Licence
 
 Dual-licensed under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your

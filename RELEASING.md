@@ -21,15 +21,25 @@ is where the batch accumulates.
 
 All of them, or the release is broken in a way only one CI job can see:
 
-| | |
+| | occurrences |
 | --- | --- |
-| `Cargo.toml` | the workspace version and all fifteen path pins — sixteen occurrences |
-| `bindings/python/Cargo.toml` | the crate's own version **and** the exact `dualis` pin |
-| `bindings/python/pyproject.toml` | the wheel's version |
-| `CLAUDE.md` | the `pip install ... .whl` line in the python gate |
-| `AGENTS.md` | `dualis = "0.x"`, which `documented_version.rs` checks |
-| `crates/dualis/src/lib.rs` | the same series, in the facade's own docs |
-| `.claude/agents/invariant-guard.md` | which version is published against which is in the tree |
+| `Cargo.toml` | 16 — the workspace version and all fifteen path pins |
+| `bindings/python/Cargo.toml` | 2 — the crate's own version **and** the exact `dualis` pin |
+| `bindings/python/pyproject.toml` | 1 — the wheel's version |
+| `AGENTS.md` | 1 — `dualis = "0.x"`, which `documented_version.rs` checks |
+| `crates/dualis/src/lib.rs` | 1 — the same series, in the facade's own docs |
+| `.claude/agents/invariant-guard.md` | 1 — which version is published against which is in the tree |
+| `CITATION.cff` | 1 — `version`. Also update `date-released`, which is not a version string and so is not caught by the grep below |
+
+Count them rather than trusting this table, because it has already been wrong in both directions. It
+lost a row when the docs were split — `CLAUDE.md` carried the `pip install ... .whl` line and the
+python gate moved to `bindings/python/README.md`, which installs `dualis-*.whl` by glob and needs no
+bump at all — and gained one the same day when `CITATION.cff` arrived. Check each row against the file:
+
+```sh
+grep -c '0\.13' Cargo.toml bindings/python/Cargo.toml bindings/python/pyproject.toml \
+    AGENTS.md crates/dualis/src/lib.rs .claude/agents/invariant-guard.md CITATION.cff
+```
 
 Then `cargo update --workspace --offline` in the root **and** in `bindings/python`, because
 `--locked` refuses a stale lockfile and the bindings' lock has gone stale unnoticed before — nothing
@@ -111,6 +121,29 @@ A release pipeline you have not run is a guess.
 | dispatch, `publish=true` | 0.3.0 to PyPI | five wheels and an sdist, installed from PyPI and tested |
 | tag, version mismatch | `v9.9.9` | refused at `check-version`; nothing built, nothing uploaded |
 | tag, version match | `v0.4.0` to PyPI | all four paths now run. `check-version` passed for the first time; five wheels, an sdist, and `pip install dualis==0.4.0` verified from a clean venv |
+
+## The DOI, which is not turned on yet
+
+`CITATION.cff` makes the repository citable by name and version. A **DOI** makes it citable by a
+permanent identifier that resolves after the repository moves or disappears, which is what a reference
+list actually wants. It is one switch and nobody has thrown it:
+
+1. Sign in to [zenodo.org](https://zenodo.org) with the GitHub account.
+2. Under *GitHub*, find `YounghyeonPark/dualis` and turn the toggle **on**.
+3. Then publish a release **through GitHub's Releases page**, not by pushing a bare tag. Zenodo
+   listens for the release webhook and a pushed tag alone does not fire it — the twelve tags already
+   on the repository will therefore get no DOI, and the first release published after the toggle is
+   the first one that does.
+
+Zenodo mints two: a **version DOI** for that release and a **concept DOI** that always resolves to the
+newest. Cite the concept DOI in prose and the version DOI when the result depends on which version ran
+— which for this library it does, because the numbers in the changelog move.
+
+Once the first one exists, add it to `CITATION.cff` as `doi:` and to the BibTeX block in `README.md`.
+Neither can be written before there is a DOI to write, which is why they are not there now.
+
+**The order matters for the next release.** Throw the switch *before* tagging, or 0.13.0 is another tag
+with no DOI and the first citable version waits for 0.14.0.
 
 ## Reading the result
 

@@ -15,6 +15,57 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-08-12
+
+**Elastic waves, any material, and one behaviour change that will bite a deserialiser.**
+
+`dualis-elastic` had a `density` field its own documentation called unused; it sets the wave speeds,
+and `Waves` marches `ρü = ∇·σ` on the element `Block` solves statics with. That closed
+`ARCHITECTURE.md`'s depth list — the last entry turned out not to be finite strain but **inertia**.
+
+And `Substance` can describe a material this crate never chose. Four `with_*` builders and a `check`
+that says whether a number is *possible*, because enumeration does not reach "every material" and data
+does. `Substance::bulk` set all four property blocks to `None` and there was no way to fill any of them
+except a struct literal — which 0.12.0 broke when it added `fusion`.
+
+### Breaking
+
+- **`Substance` and its four property blocks now refuse unknown keys.** `deny_unknown_fields`, so a
+  JSON material with a mistyped `"thermalz"` is an error instead of a substance whose whole thermal
+  block is silently absent. If you deserialise `Substance` from a file that carries extra keys, that
+  file stops loading — which is the point: it was previously loading as a *different* material.
+
+- **`Waves::new` takes `(name, counts, cell, material)`**, matching `Block::new`. It shipped in no
+  release; noted because the two disagreed for a day on `main`.
+
+### Added
+
+- `dualis_elastic::Waves` — `ρü = ∇·σ`, central differences, lumped mass. `hold`, `clamp_ends`,
+  `release_mode`, `mode_amplitude`, `mode_frequency`, `kinetic_energy`, `strain_energy`,
+  `total_energy`, `displacement_at`. Second order in both speeds — 0.161%, 0.040%, 0.010% over 16, 32
+  and 64 elements — and the **ratio** holds to `1e-8` because `E` and `ρ` cancel algebraically while
+  the mesh error cancels numerically.
+- `dualis_elastic::Axis`, replacing five `usize` axis arguments that disagreed about a fourth one.
+- `Elastic::p_wave_speed`, `s_wave_speed`, `speed_ratio`, `from_substance`.
+- `Block::as_field` and `Waves::as_field` — the displacement magnitude. Neither half of this crate
+  could be drawn before, for as long as the crate has existed.
+- `Face::on`, returning an `Axis` where `Face::axis` returns an index.
+- `Substance::with_thermal`, `with_mechanical`, `with_acoustic`, `with_fusion`, `check`.
+
+### Fixed
+
+- `bindings/python/Cargo.lock` was stale at 0.10.0 through the whole of 0.12.0. Nothing in that job
+  passes `--locked`, so cargo rewrote it silently on every build and the committed copy drifted.
+
+### Documentation
+
+- `RELEASING.md` is new: the release procedure was inside `CLAUDE.md`, which is loaded every session
+  for a thing you do once per release. `CLAUDE.md` went from 246 lines to 115.
+- `CONTRIBUTING.md` records **six** times the gate reported a pass it had not earned, one of which
+  reached `main`, and the measured fact that `set -euo pipefail` does not prevent it in a pasted block.
+- No `Co-Authored-By` trailer on commits from `05ed74e` onward.
+
+
 ### Added
 
 - **Any material, not the nine in the catalogue.** `Substance::with_thermal`, `with_mechanical`,

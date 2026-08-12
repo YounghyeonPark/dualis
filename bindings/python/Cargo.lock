@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "dualis"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-acoustic",
  "dualis-core",
@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-acoustic"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-units",
  "glam",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-elastic"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-electrical"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-em"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-fluid"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-mechanics"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-molecular"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-optics"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -107,7 +107,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-porous"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -116,7 +116,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-py"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis",
  "pyo3",
@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-scene"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-thermal"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-units"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "glam",
  "serde",
@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-view"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "dualis-scene",
 ]
