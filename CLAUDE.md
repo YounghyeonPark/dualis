@@ -10,11 +10,17 @@ physics" cost one crate.
 
 ## The gate, before any commit
 
-Run it as a script, not as lines to paste. The first line is load-bearing and the last is how you
-know — see [CONTRIBUTING.md](CONTRIBUTING.md#run-what-ci-runs), which is the authority and records
-the five disguises in which this gate has reported a pass it had not earned.
+**Save it and run the file, or chain every step with `&&`.** `set -euo pipefail` in a pasted block
+does **not** protect here, measured: `( set -e; false; echo reached )` prints `reached` and exits 0. It
+works in a fresh `bash -c`, so the option is right and the paste is what defeats it.
+
+The surest thing is one check per command with its exit code read. That is what caught the sixth time
+this gate reported a pass it had not earned — three shell guards had not.
+[CONTRIBUTING.md](CONTRIBUTING.md#run-what-ci-runs) is the authority and has all six with what each
+cost.
 
 ```sh
+# Correct in a file, inert when pasted -- see above.
 set -euo pipefail
 
 cargo fmt --all --check
@@ -37,8 +43,11 @@ echo "the gate passed"     # and if this line does not appear, it did not
 CI also builds `wasm32-unknown-unknown` and runs the suite under `wasm32-wasip1`. It does **not**
 cover `bindings/python` from this gate — that has its own job and its own procedure.
 
-**Read a result from the thing that produced it.** A CI run's roll-up has said `success` with a job
-still `queued`; ask each job for its own `conclusion`.
+**Read a result from the thing that produced it, and read whether the check *ran* rather than what it
+printed.** Six times this gate has said `ok` while failing, and once that reached `main`. A CI run's
+roll-up has said `success` with a job still `queued`; ask each job for its own `conclusion`. A script
+that edits several files can write the first and raise on the next, so check every anchor before
+writing any of them.
 
 ## The five conventions worth knowing before you start
 

@@ -26,7 +26,7 @@ done
 echo "the gate passed"     # and if this line does not appear, it did not
 ```
 
-### This gate has reported a pass it had not earned, five times
+### This gate has reported a pass it had not earned, six times
 
 Every one of them the same mistake — reading the *output* of a check as evidence the check **ran**:
 
@@ -37,14 +37,39 @@ Every one of them the same mistake — reading the *output* of a check as eviden
 | `cargo clippy ... ; echo OK` | a version bump had invalidated `Cargo.lock`, so `--locked` refused to start and `OK` printed anyway |
 | `cargo clippy ... \| tail -1` under `set -e` | a pipeline's exit status is its **last** command's, and `tail` succeeded. This is what `pipefail` is for |
 | `cargo publish` twice per crate, once through `grep` and once to read `$?` | the first call published, the second failed with "already exists", and the release loop stopped on its first crate |
+| a script that edited two files, then `cargo fmt --all --check`, then committed | the script wrote the first file, raised on the second file's anchor, and **the commit still ran** — unformatted code and half a changelog, red on `main` |
 
-`set -euo pipefail` closes four. The fifth was a doubled command and no shell option catches that;
-running each check **once** and reading its status is the only fix.
+### `set -euo pipefail` is not the fix it looks like, and that is measured
 
-Two more of the same shape, outside the shell. `gh run watch --exit-status` has returned zero with a
-job still `queued`, so a run was read as green before a job had started — ask each job for its own
-`conclusion`. And a script that edits several files can raise on its last target and write **nothing**
-after printing success for the earlier ones; check every anchor before writing any of them.
+The sixth entry above happened **with `set -eo pipefail` on the first line**, which is why this is
+longer than a one-line warning. Measured in the shell these commands actually run in:
+
+```sh
+( set -e; false; echo "reached" )                    # prints "reached", exits 0
+python -c "raise SystemExit(1)" && echo "reached"    # exits 1
+python -c "raise SystemExit(1)" || exit 1            # exits 1
+bash -c 'set -e; false; echo "reached"'              # exits 1
+```
+
+`set -e` does not take effect in a pasted block here — not even for a builtin. It works in a fresh
+`bash -c`, so the option is right and the **paste** is what defeats it.
+
+So: save the gate as a file and run the file, chain every step with `&&`, or run each check as its own
+command and read its exit code. The last is what caught the sixth one after three shell guards had
+not. And a doubled command is caught by none of them — running each check **once** is the only fix for
+that.
+
+Two more of the same shape, outside the shell.
+
+`gh run watch --exit-status` has returned zero with a job still `queued`, so a run was read as green
+before a job had started — ask each job for its own `conclusion`.
+
+And a script that edits several files fails **halfway**, not cleanly. The mild version writes nothing
+while having already printed success for the edits it thought it made; the version that reached `main`
+wrote the first file and raised on the second's anchor — a `130x` where the file says `130×` — leaving
+a tree that was neither the old state nor the new one. Check every anchor **before** writing any file.
+That costs one pass over the inputs and is the difference between an edit that did not happen and an
+edit that half did.
 
 CI additionally builds on Rust 1.78, builds for `wasm32-unknown-unknown`, and runs the whole
 suite under `wasm32-wasip1` with wasmtime. Those three catch different things and none of them
