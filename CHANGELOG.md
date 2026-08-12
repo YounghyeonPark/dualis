@@ -17,6 +17,56 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Added
 
+- **Hashin–Shtrikman bounds for stiffness, and a witness that says how tight they are.**
+  `Mix::bulk_bounds`, `Mix::shear_hashin_shtrikman`, `Mix::bulk_hashin_shtrikman`.
+  `crates/dualis-elastic/tests/a_checkerboard.rs`, and two tests added to
+  `crates/dualis-core/tests/a_mixture.rs`.
+
+  The tighter elastic pair, assuming the microstructure is statistically isotropic. For aluminium against
+  PLA at half and half it takes the shear range from 5.545-fold to 2.821-fold and the bulk range from
+  4.57 to 2.37.
+
+  **Checked against Mori–Tanaka**, which is the same equivalence the conductivity pair has with
+  Maxwell–Garnett: HS with the matrix as reference *is* the Mori–Tanaka estimate for spherical inclusions,
+  a separately derived result written as a different rational function, and the two agree to `2.2e-16`
+  across two decades of inclusion fraction. Several plausible wrong versions of the HS expressions are also
+  rational functions with the right limits at zero and one, so a dilute check would not have told them
+  apart.
+
+  Three things found, and two of them were mine:
+
+  **The textbook prescription for which phase is the reference does not always mean anything.** "Stiffest
+  for the upper bound" needs a well-ordered pair, and aluminium against borosilicate is not one — aluminium
+  has the larger bulk modulus, 67.5 GPa against 46.5, and the *smaller* shear modulus, 25.9 against 34.0. A
+  first version tested which phase had the larger value of the modulus being bounded, and for that pair at
+  a tenth aluminium it returned a lower bound of 48.2312 GPa above an upper bound of 48.1922 — **the pair
+  inverted**, by 0.08%, which only a sweep over fractions and pairs would see. Both evaluations are
+  computed and then ordered now, which is what "interchange which phase is subscripted one" actually
+  prescribes.
+
+  **An affine boundary displacement bounds the effective modulus, not the bound.** The docs asserted that a
+  kinematic estimate could not fall below HS+, reasoning that an upper estimate cannot cross an upper
+  bound. It does not follow — the apparent stiffness bounds the *effective* stiffness, which is itself
+  below HS+ — and the bulk modulus is the counterexample that fired the assertion. What is a theorem is
+  `HS− ≤ C_effective ≤ C_apparent ≤ Voigt`, and only that is asserted.
+
+  Read correctly, that makes the measurement a **ceiling on the truth**, and the two moduli answer
+  differently: for shear the ceiling lands 0.505% above HS+, so the bound is tight to half a percent at
+  worst; for bulk it lands 2.83% *below* HS+, so the bound is at least that loose. **The same pair is
+  tight for one modulus of one geometry and loose for the other**, which the algebra does not say and a
+  caller picking a number inside it would want to know.
+
+  **A checkerboard one cell per phase is aliased to Voigt exactly**, arriving by a different route than the
+  thermal one. There the cause was every face being an interface; here it is kinematic — with an affine
+  boundary and a microstructure at the element scale a trilinear element has no freedom to relax into, so
+  the affine field is the discrete solution and its energy is the volume average. Asserted, as it is in
+  `a_composite.rs`.
+
+  Two convergence parameters, separated deliberately: the period count is the fast knob and moves the
+  answer 2.7% before plateauing, and cells-per-block is the slow one that moves *where* it plateaus — two
+  cells sit 17.5% above HS+ and four get to 0.5%. A sweep changing both at once would report their sum as
+  one rate, which is the mistake `a_layered_wave.rs` records making.
+
 - **`Block::fill`, so the static solver takes per-element material too — and gets the same modulus nine
   orders sharper.** `Block::fill`, `Block::materials`, `Block::material_at`.
   `crates/dualis-elastic/tests/a_layered_block.rs`.

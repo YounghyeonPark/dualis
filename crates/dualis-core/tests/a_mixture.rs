@@ -499,3 +499,143 @@ fn mixing_in_two_steps_matches_mixing_in_one() {
         nested_lo.to_si()
     );
 }
+
+/// **The elastic Hashin–Shtrikman bounds are Mori–Tanaka with the matrix as reference, exactly.**
+///
+/// The independent check on the elastic algebra, and the same shape as the conductivity one: several
+/// plausible wrong versions of the HS expressions are also rational functions with the right limits at
+/// zero and one, so a dilute check would not tell them apart. Mori–Tanaka is a separately derived
+/// estimate for spherical inclusions in a matrix, written as a completely different rational function,
+///
+/// ```text
+///   K_MT = K_m + f(K_i − K_m) / [1 + (1−f)(K_i − K_m)/(K_m + 4G_m/3)]
+///   G_MT = G_m + f(G_i − G_m) / [1 + (1−f)(G_i − G_m)/(G_m + H_m)]
+///   H_m  = G_m(9K_m + 8G_m) / (6(K_m + 2G_m))
+/// ```
+///
+/// and the HS bound with the matrix as reference has to *be* it, because the bound is attained by a
+/// coated-sphere assemblage and that is what Mori–Tanaka describes. An equality at every fraction rather
+/// than a limit, and it holds to `2.2e-16` over two decades of inclusion fraction.
+#[test]
+fn the_elastic_bounds_are_mori_tanaka_with_the_matrix_as_reference() {
+    let matrix = Substance::pla();
+    let filler = Substance::aluminium_6061();
+    let moduli = |s: &Substance| {
+        let m = s.mechanical.expect("both state mechanical properties");
+        let (e, nu) = (m.youngs_modulus.to_si(), m.poisson_ratio);
+        (e / (3.0 * (1.0 - 2.0 * nu)), e / (2.0 * (1.0 + nu)))
+    };
+    let (km, gm) = moduli(&matrix);
+    let (ki, gi) = moduli(&filler);
+    // The matrix is the softer phase here, so the matrix-as-reference bound is the *lower* one of each
+    // pair. Which one it is depends on the pair and not on the formula, which is why it is read off the
+    // moduli rather than assumed.
+    assert!(km < ki && gm < gi, "PLA is softer than aluminium in both");
+
+    let mut worst = 0.0f64;
+    for f in [0.01, 0.05, 0.1, 0.3, 0.5, 0.7, 0.9] {
+        let mix = Mix::of(&[(matrix.clone(), 1.0 - f), (filler.clone(), f)]).expect("sums to one");
+        let (hs_k, _) = mix.bulk_hashin_shtrikman().expect("two phases");
+        let (hs_g, _) = mix.shear_hashin_shtrikman().expect("two phases");
+
+        let mt_k = km + f * (ki - km) / (1.0 + (1.0 - f) * (ki - km) / (km + 4.0 * gm / 3.0));
+        let h = gm * (9.0 * km + 8.0 * gm) / (6.0 * (km + 2.0 * gm));
+        let mt_g = gm + f * (gi - gm) / (1.0 + (1.0 - f) * (gi - gm) / (gm + h));
+
+        let (off_k, off_g) = (
+            (hs_k.to_si() / mt_k - 1.0).abs(),
+            (hs_g.to_si() / mt_g - 1.0).abs(),
+        );
+        println!(
+            "  f {f:<5} K {:.6} GPa against Mori-Tanaka {:.6} — off {off_k:.2e};  G {:.6} against \
+             {:.6} — off {off_g:.2e}",
+            hs_k.to_si() / 1e9,
+            mt_k / 1e9,
+            hs_g.to_si() / 1e9,
+            mt_g / 1e9
+        );
+        assert!(
+            off_k < 1e-14 && off_g < 1e-14,
+            "f {f}: HS is not Mori-Tanaka"
+        );
+        worst = worst.max(off_k).max(off_g);
+    }
+    println!("  worst {worst:.2e} over two decades of inclusion fraction");
+}
+
+/// **The elastic bounds are ordered at every fraction, and the HS pair is strictly inside Voigt–Reuss.**
+///
+/// The theorem, across nine fractions and three pairs whose contrasts span 1.7-fold to 60-fold. Nine
+/// fractions because a bound that is ordered at a half and crosses over at a tenth has a sign error in
+/// it, and a symmetric test cannot see that.
+///
+/// Both moduli, and separately, because the reference phase for a bound on `K` need not be the reference
+/// for a bound on `G` — a pair with the larger bulk modulus and the smaller shear modulus would have the
+/// two upper bounds built around different phases, and a single "stiffer material" shortcut would be
+/// right for well-ordered pairs and quietly wrong for the rest.
+#[test]
+fn the_elastic_bounds_are_ordered_at_every_fraction() {
+    let pairs = [
+        (Substance::aluminium_6061(), Substance::pla()),
+        (Substance::aluminium_6061(), Substance::borosilicate_crown()),
+        (Substance::stainless_304(), Substance::ice()),
+    ];
+    for (a, b) in pairs {
+        for tenths in 1..10 {
+            let f = tenths as f64 / 10.0;
+            let m = Mix::of(&[(a.clone(), f), (b.clone(), 1.0 - f)]).expect("sums to one");
+            for (what, outer, inner) in [
+                ("bulk", m.bulk_bounds(), m.bulk_hashin_shtrikman()),
+                ("shear", m.shear_bounds(), m.shear_hashin_shtrikman()),
+            ] {
+                let (reuss, voigt) = outer.expect("both state mechanical properties");
+                let (hs_lo, hs_hi) = inner.expect("two phases");
+                assert!(
+                    reuss.to_si() < hs_lo.to_si()
+                        && hs_lo.to_si() < hs_hi.to_si()
+                        && hs_hi.to_si() < voigt.to_si(),
+                    "{} + {} at {f}, {what}: {:.4} <= {:.4} <= {:.4} <= {:.4} GPa is out of order",
+                    a.name,
+                    b.name,
+                    reuss.to_si() / 1e9,
+                    hs_lo.to_si() / 1e9,
+                    hs_hi.to_si() / 1e9,
+                    voigt.to_si() / 1e9
+                );
+            }
+        }
+    }
+
+    // How much the assumption buys, for the pair the elastic tests use.
+    let m = Mix::of(&[(Substance::aluminium_6061(), 0.5), (Substance::pla(), 0.5)])
+        .expect("sums to one");
+    let (reuss, voigt) = m.shear_bounds().expect("bounds");
+    let (hs_lo, hs_hi) = m.shear_hashin_shtrikman().expect("two phases");
+    println!(
+        "  aluminium + PLA shear: Voigt-Reuss {:.3}x, Hashin-Shtrikman {:.3}x",
+        voigt.to_si() / reuss.to_si(),
+        hs_hi.to_si() / hs_lo.to_si()
+    );
+    assert!(
+        (voigt.to_si() / reuss.to_si() - 5.545).abs() < 0.01
+            && (hs_hi.to_si() / hs_lo.to_si() - 2.820).abs() < 0.01,
+        "the two ranges are 5.545 and 2.820"
+    );
+
+    // Two of the same thing is that thing, in all four numbers.
+    let al = Substance::aluminium_6061();
+    let same = Mix::of(&[(al.clone(), 0.3), (al, 0.7)]).expect("sums to one");
+    for (lo, hi) in [
+        same.bulk_bounds().expect("k"),
+        same.bulk_hashin_shtrikman().expect("k hs"),
+        same.shear_bounds().expect("g"),
+        same.shear_hashin_shtrikman().expect("g hs"),
+    ] {
+        assert!(
+            (lo.to_si() / hi.to_si() - 1.0).abs() < 1e-15,
+            "a mixture of one material with itself has no range: {:.6} to {:.6}",
+            lo.to_si(),
+            hi.to_si()
+        );
+    }
+}

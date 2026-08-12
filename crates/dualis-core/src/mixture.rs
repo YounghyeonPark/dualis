@@ -42,6 +42,12 @@
 //! a 150-fold contrast between the phases no bound is going to be comfortable, and that is the honest
 //! state of the problem rather than a deficiency of the bound.
 //!
+//! There is an HS pair for stiffness too — [`Mix::shear_hashin_shtrikman`] and
+//! [`Mix::bulk_hashin_shtrikman`] — and how *tight* it is turns out to depend on which modulus you ask
+//! about. For a three-dimensional checkerboard, measured, the upper bound on the shear modulus is tight to
+//! within 0.5% and the one on the bulk modulus is at least 2.8% loose. That is not something the algebra
+//! says, and `a_checkerboard.rs` is where it is measured.
+//!
 //! # Stiffness, and the reason there is no effective `(E, ν)`
 //!
 //! [`Mix::shear_bounds`] and [`Mix::p_wave_modulus_bounds`] arrived once `Waves::fill` existed, because
@@ -280,6 +286,123 @@ impl Mix {
     /// `None` if any part does not state its mechanical properties.
     pub fn shear_bounds(&self) -> Option<(Pressure, Pressure)> {
         self.moduli_bounds(|e, nu| e / (2.0 * (1.0 + nu)))
+    }
+
+    /// **Voigt and Reuss on the bulk modulus**, low first: `(⟨1/K⟩⁻¹, ⟨K⟩)`.
+    ///
+    /// `K = E/(3(1−2ν))`. Neither end is attained by a laminate, and no witness in this workspace attains
+    /// either — a laminate under hydrostatic stress has lateral constraint between its layers, so it
+    /// reaches neither the uniform-stress nor the uniform-strain state. They are correct bounds all the
+    /// same, and [`Mix::bulk_hashin_shtrikman`] is the pair to prefer for anything isotropic.
+    ///
+    /// Stated because it is the difference between this pair and [`Mix::shear_bounds`], whose ends both
+    /// *are* attained and measured. A bound that is reachable and a bound that merely holds are different
+    /// things to a caller choosing a number inside them.
+    pub fn bulk_bounds(&self) -> Option<(Pressure, Pressure)> {
+        self.moduli_bounds(|e, nu| e / (3.0 * (1.0 - 2.0 * nu)))
+    }
+
+    /// **Hashin–Shtrikman on the shear modulus** for exactly two phases, low first.
+    ///
+    /// ```text
+    ///   G± = G_r + f_o / [ 1/(G_o − G_r) + 6 f_r (K_r + 2G_r) / (5 G_r (3K_r + 4G_r)) ]
+    /// ```
+    ///
+    /// with `r` the reference phase — the stiffer one for the upper bound, the softer for the lower — and
+    /// `o` the other. Hashin and Shtrikman 1963, and the same trade the conductivity pair makes: tighter
+    /// than Voigt–Reuss, at the price of assuming the microstructure is statistically **isotropic**. For
+    /// aluminium against PLA at half and half it takes the range from 5.5-fold to 2.8-fold.
+    ///
+    /// # The check that says this is the right algebra
+    ///
+    /// Taken with the **matrix** as reference it is identically the **Mori–Tanaka** estimate for spherical
+    /// inclusions — a separately derived result written as a different rational function — and
+    /// `a_mixture.rs` measures the two agreeing to `2.2e-16` across two decades of inclusion fraction.
+    /// That equivalence is a theorem rather than a coincidence: the bound is attained by a coated-sphere
+    /// assemblage, which is what Mori–Tanaka describes.
+    ///
+    /// # What no witness here attains
+    ///
+    /// Unlike the conductivity pair, the elastic HS bounds are **not** bracketed from below by a
+    /// measurement in this workspace, and the reason is worth knowing. A resolved isotropic geometry has
+    /// to be driven by something, and an affine displacement on the boundary is a *kinematically
+    /// admissible* field — so its energy is an **upper** estimate of the effective modulus, above the true
+    /// value however fine the mesh. `a_checkerboard.rs` measures that estimate converging down to
+    /// **1.005×** the upper bound for a well-resolved board and states plainly that it cannot cross it.
+    /// That is evidence the bound is nearly tight and it is not the same as bracketing.
+    ///
+    /// `None` unless there are exactly two parts with mechanical properties.
+    pub fn shear_hashin_shtrikman(&self) -> Option<(Pressure, Pressure)> {
+        self.hashin_shtrikman_pair(false)
+    }
+
+    /// **Hashin–Shtrikman on the bulk modulus** for exactly two phases, low first.
+    ///
+    /// ```text
+    ///   K± = K_r + f_o / [ 1/(K_o − K_r) + 3 f_r / (3K_r + 4G_r) ]
+    /// ```
+    ///
+    /// Everything [`Mix::shear_hashin_shtrikman`] says applies, including the Mori–Tanaka equivalence,
+    /// which for `K` is the more familiar of the two. Note the shear modulus of the *reference* phase
+    /// appears in a bound on `K`: a stiff inclusion resists the hydrostatic compression of its
+    /// surroundings partly in shear, so the two moduli do not separate.
+    pub fn bulk_hashin_shtrikman(&self) -> Option<(Pressure, Pressure)> {
+        self.hashin_shtrikman_pair(true)
+    }
+
+    /// Both elastic Hashin–Shtrikman pairs, since they differ only in one term.
+    ///
+    /// # The reference phase is not chosen, it is tried both ways
+    ///
+    /// The textbook prescription is "put the stiffest phase in the reference position for the upper bound
+    /// and the softest for the lower", and that instruction only means something for a **well-ordered**
+    /// pair — one phase larger in both `K` and `G`. Aluminium against borosilicate is not: aluminium has
+    /// the larger bulk modulus, 67.5 GPa against 46.5, and the *smaller* shear modulus, 25.9 against 34.0.
+    ///
+    /// A first version tested which phase had the larger value of the modulus being bounded and used that
+    /// one as the upper reference. For that pair at a tenth aluminium it returned a lower bound of 48.2312
+    /// GPa above an upper bound of 48.1922 — **the pair inverted**, by 0.08%, which is small enough that
+    /// only a test sweeping fractions and pairs would see it.
+    ///
+    /// So both evaluations are computed and then **ordered**. That is what "interchange which phase is
+    /// subscripted one" actually prescribes, it needs no notion of stiffer, and it is right for a
+    /// well-ordered pair and for the other kind alike.
+    fn hashin_shtrikman_pair(&self, bulk: bool) -> Option<(Pressure, Pressure)> {
+        if self.parts.len() != 2 {
+            return None;
+        }
+        let of = |i: usize| -> Option<(f64, f64, f64)> {
+            let m = self.parts[i].0.mechanical?;
+            let (e, nu) = (m.youngs_modulus.to_si(), m.poisson_ratio);
+            Some((
+                e / (3.0 * (1.0 - 2.0 * nu)),
+                e / (2.0 * (1.0 + nu)),
+                self.parts[i].1,
+            ))
+        };
+        let (a, b) = (of(0)?, of(1)?);
+        let bound = |r: (f64, f64, f64), o: (f64, f64, f64)| {
+            let (kr, gr, fr) = r;
+            let (ko, go, fo) = o;
+            if bulk {
+                kr + fo / (1.0 / (ko - kr) + 3.0 * fr / (3.0 * kr + 4.0 * gr))
+            } else {
+                gr + fo
+                    / (1.0 / (go - gr)
+                        + 6.0 * fr * (kr + 2.0 * gr) / (5.0 * gr * (3.0 * kr + 4.0 * gr)))
+            }
+        };
+        // Equal moduli make the pair degenerate, which is correct — a mixture of two things with the same
+        // `G` has that `G` — and the expression divides by their difference, so it has to come first.
+        let (ma, mb) = if bulk { (a.0, b.0) } else { (a.1, b.1) };
+        if ma == mb {
+            return Some((Pressure::from_si(ma), Pressure::from_si(ma)));
+        }
+        let (one, other) = (bound(a, b), bound(b, a));
+        Some((
+            Pressure::from_si(one.min(other)),
+            Pressure::from_si(one.max(other)),
+        ))
     }
 
     /// **Voigt and Reuss on the P-wave modulus** `M = λ + 2μ`, low first: `(⟨1/M⟩⁻¹, ⟨M⟩)`.
