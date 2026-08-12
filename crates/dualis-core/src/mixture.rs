@@ -48,7 +48,9 @@
 //! until there was per-element material in `dualis-elastic` there was nothing in this workspace a bound
 //! on stiffness could be *checked* against, and a bound nothing can falsify is a comment rather than an
 //! API. Both are now checked against **Backus averaging** — the exact long-wavelength moduli of a layered
-//! elastic medium — in `crates/dualis-elastic/tests/a_layered_wave.rs`.
+//! elastic medium — in `crates/dualis-elastic/tests/a_layered_wave.rs`, and the harmonic end again
+//! statically in `a_layered_block.rs`, which gets it nine orders sharper because an elliptic solve has no
+//! time in it: `4.8e-13` against the wave's `3.5e-4`.
 //!
 //! What is deliberately absent is a Young's modulus and a Poisson ratio for the mixture, and that
 //! absence is the physics rather than a gap. **A composite of two isotropic materials is generally

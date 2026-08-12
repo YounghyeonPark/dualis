@@ -17,6 +17,46 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Added
 
+- **`Block::fill`, so the static solver takes per-element material too — and gets the same modulus nine
+  orders sharper.** `Block::fill`, `Block::materials`, `Block::material_at`.
+  `crates/dualis-elastic/tests/a_layered_block.rs`.
+
+  `Waves` got per-element material first because the closed form that checks a composite's stiffness —
+  Backus averaging — is about wave speeds, and there was somewhere to point it. That left one crate with
+  per-element material in the wave solver and not the static one, which is an asymmetry with no reason
+  behind it.
+
+  Statics turns out to give the **sharper** measurement of the overlapping claim. A traction-driven column
+  is an elliptic solve with no time in it — no dispersion relation, no period to fit, no second-order mesh
+  error — so a laminate's harmonic constrained modulus comes out to solver tolerance:
+
+  ```text
+                                 worst error      debug cost
+    a_layered_wave.rs   C33        3.5e-4            67.5 s
+    a_layered_block.rs             4.8e-13            0.13 s
+  ```
+
+  Nine orders sharper and 520× cheaper. The error there is the conjugate gradient's tolerance accumulating
+  over degrees of freedom — `5.9e-15` at eight elements against `4.8e-13` at sixty-four — and not a mesh
+  error, which would not care how many iterations it took.
+
+  **The layer thickness does not change the static answer**, and that contrast is a statement neither file
+  could make alone. The wave measurement of the *arithmetic* mean is 23% out at eight layers per
+  wavelength, because it needs the layers to move together and only a long wave makes them. A static
+  uniform stress needs nothing of the kind — equilibrium makes the stress uniform whatever the layers look
+  like — so the same column at one, two, four and eight elements per layer gives the same modulus to
+  `4.8e-13` with no trend. Backus averaging is a limit for one of those quantities and an identity for the
+  other.
+
+  A `fill` on a solved block marks it **unconverged**. The displacement on record solves the previous
+  assembly, and left alone it would still read as converged and still return a strain — an answer that is
+  present and wrong rather than absent, which is the failure this workspace keeps finding.
+
+  What statics cannot do is the arithmetic end, for the same reason the wave file cannot do `C11`:
+  realising it needs the lateral strain zero on average while free locally, and `roller` constrains a face
+  rather than a plane through the interior. Statics gets the sharp half; the wave gets both halves less
+  sharply. Neither covers it alone.
+
 - **Per-element material in `dualis-elastic`, and stiffness bounds that something can check.**
   `Waves::fill`, `Waves::materials`, `Waves::material_at`, `Elastic: PartialEq`, `Mix::shear_bounds`,
   `Mix::p_wave_modulus_bounds`. `crates/dualis-elastic/tests/a_layered_wave.rs`.

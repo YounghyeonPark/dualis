@@ -5,7 +5,7 @@ use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, ScalarField, Violatio
 use dualis_units::{Energy, Force, Length, LengthVec, Pressure, Time};
 use glam::DVec3;
 
-use crate::element::{stiffness, CORNERS, DOF};
+use crate::element::{lame, stiffness, CORNERS, DOF};
 use crate::Elastic;
 
 /// Conjugate gradients gets this many iterations per degree of freedom before it gives up.
@@ -89,9 +89,16 @@ pub struct Block {
     /// Nodes along each axis, one more than the elements.
     nodes: (usize, usize, usize),
     dx: f64,
+    /// What the block was built from, and element zero's material. See [`Block::material`].
     material: Elastic,
-    /// The 24×24 element stiffness, once.
-    ke: Vec<f64>,
+    /// The materials any element may be, in the order they were introduced. One entry for a block
+    /// nobody filled. The same palette [`crate::Waves`] keeps, for the same reason: a 24×24 element
+    /// stiffness is 4.6 kB and a laminate has two of them however many elements it has.
+    materials: Vec<Elastic>,
+    /// Which palette entry each element is.
+    which: Vec<u16>,
+    /// The 24×24 element stiffness of each palette entry.
+    kes: Vec<Vec<f64>>,
     /// Displacement, three per node.
     u: Vec<f64>,
     /// Whether each degree of freedom is held.
@@ -136,7 +143,9 @@ impl Block {
             nodes,
             dx,
             material,
-            ke: stiffness(dx, lambda, mu),
+            materials: vec![material],
+            which: vec![0; counts.0 * counts.1 * counts.2],
+            kes: vec![stiffness(dx, lambda, mu)],
             u: vec![0.0; n],
             held: vec![false; n],
             value: vec![0.0; n],
@@ -176,6 +185,89 @@ impl Block {
     /// What it is made of.
     pub fn material(&self) -> Elastic {
         self.material
+    }
+
+    /// Every material this block is made of, in the order they were introduced. Length one unless
+    /// [`Block::fill`] has been called.
+    pub fn materials(&self) -> &[Elastic] {
+        &self.materials
+    }
+
+    /// What one **element** is made of. Elements, not nodes: a material is a property of the volume and
+    /// a node sits between up to eight of them.
+    pub fn material_at(&self, e_x: usize, e_y: usize, e_z: usize) -> Elastic {
+        let (ex, ey, _) = self.counts;
+        self.materials[self.which[e_x + ex * (e_y + ey * e_z)] as usize]
+    }
+
+    /// Make every element the predicate accepts out of `material`, and report how many changed.
+    ///
+    /// The predicate takes **element** indices, and a `Block` of `(n, n, n)` has `n³` elements against
+    /// `(n+1)³` nodes — the off-by-one this signature is shaped to stop anybody making silently.
+    ///
+    /// ```
+    /// # use dualis_elastic::{Block, Elastic};
+    /// # use dualis_units::Length;
+    /// let mut b = Block::new("laminate", (1, 1, 8), Length::mm(1.0), Elastic::aluminium_6061());
+    /// let changed = b.fill(Elastic::steel(), |_, _, e_z| e_z % 2 == 1);
+    /// assert_eq!(changed, 4);
+    /// assert_eq!(b.materials().len(), 2);
+    /// ```
+    ///
+    /// # It arrived after `Waves::fill`, and that order was the wrong way round
+    ///
+    /// The wave solver got per-element material first, because the closed form that checks a composite's
+    /// stiffness — Backus averaging — is about wave speeds and there was somewhere to point it. Statics
+    /// gives the **sharper** measurement of the same thing: a traction-driven column is an elliptic solve
+    /// with no time in it, so a laminate's harmonic modulus comes out to solver tolerance rather than to
+    /// the second-order accuracy of a marched wave. `a_layered_block.rs` measures `4.8e-13` against
+    /// `a_layered_wave.rs`'s `3.5e-4` — nine orders — and costs 0.13 s in debug against 67.5.
+    ///
+    /// Nothing was wrong with doing the wave first; it is just that the cheap exact check was available
+    /// all along and went unwritten because the interesting closed form was elsewhere.
+    ///
+    /// A fill that changes nothing is not an error — unlike a scene's region, which is refused when it
+    /// selects no cells, because a region is a bound somebody typed into a file and `fill` is called from
+    /// code with a predicate the caller can read. The **count is returned** so a caller who wants the
+    /// stricter behaviour can have it.
+    pub fn fill(
+        &mut self,
+        material: Elastic,
+        which: impl Fn(usize, usize, usize) -> bool,
+    ) -> usize {
+        let index = match self.materials.iter().position(|m| *m == material) {
+            Some(i) => i as u16,
+            None => {
+                let (lambda, mu) = lame(material.youngs_modulus.to_si(), material.poisson_ratio);
+                self.materials.push(material);
+                self.kes.push(stiffness(self.dx, lambda, mu));
+                (self.materials.len() - 1) as u16
+            }
+        };
+        let (ex, ey, ez) = self.counts;
+        let mut changed = 0;
+        for e_z in 0..ez {
+            for e_y in 0..ey {
+                for e_x in 0..ex {
+                    if !which(e_x, e_y, e_z) {
+                        continue;
+                    }
+                    let e = e_x + ex * (e_y + ey * e_z);
+                    if self.which[e] != index {
+                        self.which[e] = index;
+                        changed += 1;
+                    }
+                }
+            }
+        }
+        if changed > 0 {
+            // The solution is for the old assembly and is not the solution for this one. Marking it
+            // unconverged rather than leaving a stale displacement field is the difference between a
+            // caller getting an error and a caller getting the previous answer.
+            self.residual = f64::INFINITY;
+            self.converged = false;
+        }
+        changed
     }
 
     fn node(&self, i: usize, j: usize, k: usize) -> usize {
@@ -561,11 +653,12 @@ impl Block {
                     for (c, corner) in CORNERS.iter().enumerate() {
                         map[c] = self.node(e_x + corner[0], e_y + corner[1], e_z + corner[2]);
                     }
+                    let ke = &self.kes[self.which[e_x + ex * (e_y + ey * e_z)] as usize];
                     for a in 0..DOF {
                         let row = 3 * map[a / 3] + a % 3;
                         let mut acc = 0.0;
                         for b in 0..DOF {
-                            acc += self.ke[a * DOF + b] * x[3 * map[b / 3] + b % 3];
+                            acc += ke[a * DOF + b] * x[3 * map[b / 3] + b % 3];
                         }
                         y[row] += acc;
                     }
