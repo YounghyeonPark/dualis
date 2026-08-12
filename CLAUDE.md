@@ -73,6 +73,13 @@ Several of the more useful commits here are corrections to a mistaken assumption
 is the part worth keeping. Backticks in a message break `git commit -m` under some shells — write the
 message to a file and use `git commit -F`.
 
+**Commit as `ypark.dev@gmail.com`.** Set per repository with
+`git config user.email ypark.dev@gmail.com`, which is already done here and does not touch any global
+identity. It matters more than a preference: the first 146 commits were authored with a company
+address on a personally owned, permissively licensed public repository, and that is the record anybody
+checking provenance reads first — it bears on who owns the work and on whether outside income has to be
+disclosed. If a fresh clone is ever made, set it again before the first commit.
+
 **No `Co-Authored-By` trailer.** An agent's default is to add one and this repository does not want it:
 the commits are the maintainer's, and a tool that wrote some of the text is not a contributor. The
 seventy commits that already carry one are left alone — removing them would rewrite every SHA from the
