@@ -130,6 +130,7 @@ pub mod conserved;
 pub mod ensemble;
 pub mod field;
 pub mod integrator;
+pub mod mixture;
 pub mod motion;
 pub mod pose;
 pub mod rng;

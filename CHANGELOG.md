@@ -17,6 +17,57 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Added
 
+- **Composites: two substances made into one, with the bounded properties returned as bounds.**
+  `dualis_core::mixture::Mix`, re-exported as `dualis::prelude::Mix`.
+  `crates/dualis-core/tests/a_mixture.rs`, `crates/dualis-thermal/tests/a_composite.rs`.
+
+  A motor is copper, steel, magnets and air; a board is FR-4, copper and solder; a buffer is wax in an
+  aluminium matrix. Each wants to be **one** `Substance` so a lumped model can hold it, and
+  `with_specific_heat` has been saying since 0.4.0 that the bulk `c_p` of such a thing is worth a factor
+  of two — while leaving the caller to compute it by hand.
+
+  The properties divide into three kinds and conflating them is the whole failure mode. Density,
+  volumetric heat capacity and latent heat are **exact**, from conservation alone. Conductivity is
+  **bounded** — Voigt and Reuss for any microstructure, Hashin–Shtrikman if it is isotropic. Emissivity is
+  **nothing**: it is a property of the surface and a mixture has no surface, so `as_substance` takes it as
+  an argument. A conductivity outside the bounds is **refused**, because no microstructure realises it.
+
+  **One block gives both bounds, to machine precision.** A laminate of alternating aluminium and
+  borosilicate measures Reuss `2.213236` across its layers and Voigt `84.057000` along them — same
+  material, same fractions, a factor of 38 apart, decided by the direction of the flux. That is why `Mix`
+  returns a pair and refuses to pick: a single number would be the upper bound of a 38-fold range
+  presented as a measurement. On a half-copper, half-FR-4 board the range is 335-fold.
+
+  Checked against a resolved geometry rather than against itself, and against Maxwell–Garnett for the
+  algebra: the Hashin–Shtrikman lower bound with the matrix as host **is** Maxwell–Garnett, to `6.7e-16`
+  across three decades of filler fraction.
+
+  Three things found, all of them mine:
+
+  A three-dimensional checkerboard one cell per phase is **not a checkerboard**. Every cell then has all
+  six neighbours of the other material, so every face carries the same harmonic mean and the discrete
+  operator is that of a *uniform* medium at `harmonic(167, 1.114) = 2.213236` — which at equal fractions
+  is Reuss to the last digit. Two drafts reproduced the lower bound and read it as a striking result; the
+  microstructure was aliased, not resolved. Asserted now, so it is not rediscovered a third time.
+
+  A coarsely resolved high-contrast composite is under-conductive by enough to **break a bound**: at four
+  blocks per axis the measured conductivity goes 3.4926, 5.1396, 6.8213 as the grid is refined, and the
+  first of those is below the Hashin–Shtrikman lower bound of 4.3266. Not because a checkerboard violates
+  HS, but because two cells cannot represent one. The same pattern in stainless against aluminium does the
+  same thing, which is what says it is the discretisation and not the pair.
+
+  A steady-state stopping rule of "the flux stopped changing over N steps" is **not resolution
+  independent**: as `dx` shrinks, N steps is a shorter physical time, so the criterion becomes trivially
+  true. It reported a 32³ block as converged after 7.5 microseconds of a 5-second process. The rule is an
+  absolute residual now — flux in equals flux out, because at steady state nothing is stored — and every
+  tolerance in that file traces to a named constant rather than to what made the run pass.
+
+  Elastic and acoustic bounds are deliberately absent: Voigt–Reuss on the bulk and shear moduli is the
+  same theorem, but `dualis-elastic` has no per-cell material, so there is nothing here a stiffness bound
+  could be checked against. Yield strength is absent for a different reason — a composite's yield is
+  governed by the weaker phase and the interface, so a rule of mixtures for it would be wrong rather than
+  imprecise.
+
 - **A scene can declare its own substances, so the catalogue stops being the limit.** `Scene.materials`,
   `Palette`, `Substance::CATALOGUE` and `Substance::from_name`.
   `crates/dualis/tests/substances_from_a_file.rs`, `crates/dualis-world/tests/declared_materials.rs`,
