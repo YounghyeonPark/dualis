@@ -17,6 +17,37 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Added
 
+- **Any material, not the nine in the catalogue.** `Substance::with_thermal`, `with_mechanical`,
+  `with_acoustic`, `with_fusion` and `check`, plus `deny_unknown_fields` on `Substance` and all four
+  property blocks. `crates/dualis/tests/any_material.rs`.
+
+  Enumeration does not reach "every material" and data does. `Substance::bulk` set all four property
+  blocks to `None` and there was **no way to fill any of them** except a struct literal naming every
+  field — and that path broke earlier in this release when `fusion` was added, at the expense of
+  exactly the callers the catalogue is least able to help. A chain of `with_*` is immune to a new
+  field appearing.
+
+  `check` is what the library can do for a number it did not choose: not whether it is *right*, but
+  whether it is **possible**, reporting every problem at once because a material read off the wrong
+  column is usually wrong in several places. Plus one check that is not a bound on a single field — a
+  substance stating both a sound speed and elastic constants has three independent numbers describing
+  one thing, and the speed must sit within **15%** of the rod or bulk speed those give. Measured
+  rather than chosen: every catalogue entry is within 6.2% of whichever it means, and that gap exists
+  because a tensile test and an ultrasonic measurement are not the same measurement.
+
+  What it catches: a shear speed in the longitudinal slot (39% out), a modulus from the row below
+  (27%), an emissivity written as a percentage, a negative conductivity, an incompressible Poisson
+  ratio, and four wrong at once reported as four.
+
+  **The test written to demonstrate the capability found the capability was unsafe.** `Substance` had
+  no `deny_unknown_fields`, so a mistyped `"thermalz"` was silently dropped and the material ran as
+  one whose conductivity is *unknown* rather than one whose file has a typo. The scene format already
+  had that rule written down with its reasoning; `Substance` has it now, on all five types.
+
+  Ti-6Al-4V and paraffin wax run through conduction, elastic waves and a melting plateau against the
+  same closed forms a catalogue material does — `dx²/6α` to `1e-12`, `√(2(1−ν)/(1−2ν))` at `ν = 0.342`
+  which no catalogue entry has, and `ρLV/P` to within one delivery.
+
 - **`Elastic::from_substance`, and "small strain" spans 130× across the catalogue.** The conversion
   from `dualis-core`'s material catalogue to `dualis-elastic`'s material existed **in a test** —
   `two_wave_speeds.rs` built one by hand — which means every consumer wanting to solve an elastic

@@ -248,8 +248,12 @@ fn a_datasheet_material_works_in_every_domain_that_takes_one() {
     w.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
     for n in 0..200 {
-        w.step(Time::from_si(n as f64 * dt.to_si()), dt, &mut Exchange::new())
-            .expect("a datasheet material is as stable as a catalogue one");
+        w.step(
+            Time::from_si(n as f64 * dt.to_si()),
+            dt,
+            &mut Exchange::new(),
+        )
+        .expect("a datasheet material is as stable as a catalogue one");
     }
     assert!(
         w.strain_energy().to_si() > 0.0,
@@ -279,7 +283,10 @@ fn a_datasheet_material_works_in_every_domain_that_takes_one() {
         }
     }
     let left = left_at.expect("it warms eventually");
-    println!("  paraffin: held at 44 C for {left:.2} s against rho L V / P = {:.2}", latent / power);
+    println!(
+        "  paraffin: held at 44 C for {left:.2} s against rho L V / P = {:.2}",
+        latent / power
+    );
     assert!(
         (left - latent / power).abs() <= dt * 1.001,
         "the plateau is the latent heat over the power, for a wax as much as for ice"
