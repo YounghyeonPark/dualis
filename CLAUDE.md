@@ -1,13 +1,18 @@
 # Working on dualis
 
-For *using* the library, read [AGENTS.md](AGENTS.md) — this file is about changing it. For where
-it is all going, read [ARCHITECTURE.md](ARCHITECTURE.md): three layers, the state of each, and the
-rules that make "add a physics" cost one crate.
+This file is loaded every session, so it holds only what is needed *every* session. Everything read
+once — a release, a change to the bindings, a look at the viewer — lives beside its subject, and the
+table at the bottom says when to go there.
+
+For *using* the library, read [AGENTS.md](AGENTS.md). For where it is all going, read
+[ARCHITECTURE.md](ARCHITECTURE.md): three layers, the state of each, and the rules that make "add a
+physics" cost one crate.
 
 ## The gate, before any commit
 
-**Run it as a script, not as lines to paste.** The first line is the load-bearing one and it is
-there because this gate has reported a pass it had not earned — see below.
+Run it as a script, not as lines to paste. The first line is load-bearing and the last is how you
+know — see [CONTRIBUTING.md](CONTRIBUTING.md#run-what-ci-runs), which is the authority and records
+the five disguises in which this gate has reported a pass it had not earned.
 
 ```sh
 set -euo pipefail
@@ -17,7 +22,9 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo deny check
-for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench espresso_shot portafilter_flow agents_quickstart readme_check; do
+for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots \
+         heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench \
+         espresso_shot portafilter_flow agents_quickstart readme_check; do
   cargo run --locked --release --example "$e"
 done
 # MSRV, library only: `--exclude` needs `--workspace` beside it, and the app is not
@@ -27,29 +34,11 @@ cargo +1.78 build --locked --workspace --exclude dualis-world
 echo "the gate passed"     # and if this line does not appear, it did not
 ```
 
-### The gate has said `ok` while failing, in five different disguises
+CI also builds `wasm32-unknown-unknown` and runs the suite under `wasm32-wasip1`. It does **not**
+cover `bindings/python` from this gate — that has its own job and its own procedure.
 
-All of them the same mistake — reading the *output* of a check as evidence the check *ran*:
-
-| what was done | what happened |
-| --- | --- |
-| seven unchained lines | a failure in the middle scrolled past and the last line's status was read as the gate's |
-| `... \|\| break` in the examples loop | one example failed, the loop stopped, and the only symptom was output that was not there |
-| `cargo clippy ... ; echo OK` | a version bump had invalidated `Cargo.lock`, so `--locked` refused to start and `OK` printed anyway |
-| `cargo clippy ... \| tail -1` under `set -e` | a pipeline's status is its **last** command's, and `tail` succeeded. This is why `pipefail` is in the line above |
-| `cargo publish` twice per crate, once through `grep` and once for `$?` | the first call published, the second failed with "already exists", and the release loop stopped on its first crate |
-
-`set -euo pipefail` closes four of the five. The fifth was a doubled command and no shell option
-catches that; running each thing **once** and reading its status is the only fix.
-
-Two more of the same shape, outside the shell. `gh run watch --exit-status` returned zero with a job
-still queued, so a CI run was read as green when a job had not started — ask each job for its own
-`conclusion` rather than the run's. And a `python` script that edits several files can raise on its
-last anchor and write **nothing**, after printing `ok` for the earlier edits; check every anchor
-before writing any of them.
-
-CI also builds `wasm32-unknown-unknown` and runs the suite under `wasm32-wasip1`. All of it is
-in [CONTRIBUTING.md](CONTRIBUTING.md), which is the authority; this is the short form.
+**Read a result from the thing that produced it.** A CI run's roll-up has said `success` with a job
+still `queued`; ask each job for its own `conclusion`.
 
 ## The five conventions worth knowing before you start
 
@@ -68,11 +57,17 @@ Stated in full in CONTRIBUTING.md. The compressed version:
    claim is the reason for the crate split and has now been held through ten domains.
 5. **Every public item is documented.** `#![deny(missing_docs)]` in all sixteen crates.
 
+## Commit messages
+
+Say what was **wrong**, not only what changed, and give the measurement rather than the adjective.
+Several of the more useful commits here are corrections to a mistaken assumption, and the reasoning
+is the part worth keeping. Backticks in a message break `git commit -m` under some shells — write the
+message to a file and use `git commit -F`.
+
 ## The subagent team
 
-`.claude/agents/` holds seven reviewers, each built from a defect this repository actually
-shipped rather than from a generic role. They are for developing dualis and are useless to a
-consumer.
+`.claude/agents/` holds seven reviewers, each built from a defect this repository actually shipped
+rather than from a generic role. They are for developing dualis and are useless to a consumer.
 
 | agent | asks |
 | --- | --- |
@@ -85,162 +80,36 @@ consumer.
 | `prose-auditor` | Do the numbers in the README and doc comments still match the code? |
 
 Run `numerics-reviewer` and `physics-checker` on anything touching physics or tolerances, and
-`invariant-guard` before a commit that adds a crate, a dependency, or anything with randomness
-in it. `prose-auditor` before a release — this repository has shipped stale counts more than
-once, most recently claiming six examples when the table listed five.
+`invariant-guard` before a commit that adds a crate, a dependency, or anything with randomness in it.
+`prose-auditor` before a release.
 
-**Verify what they report by reproducing it.** Their findings have been wrong in both
-directions: a seed-spread reported as 0.66% measured 0.96%, which would have produced a
-tolerance that looked earned and was not.
+**Verify what they report by reproducing it.** Their findings have been wrong in both directions: a
+seed-spread reported as 0.66% measured 0.96%, which would have produced a tolerance that looked
+earned and was not.
 
-## Commit messages
+## Where the rest of it is, and when to go there
 
-Say what was **wrong**, not only what changed, and give the measurement rather than the
-adjective. Several of the more useful commits here are corrections to a mistaken assumption,
-and the reasoning is the part worth keeping. Backticks in a message break `git commit -m` under
-some shells — write the message to a file and use `git commit -F`.
+| read | before |
+| --- | --- |
+| [RELEASING.md](RELEASING.md) | any release. Cadence, the seven places a version lives, the crate order, the wheel, and what the pipeline has actually been run through |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | changing a test or a tolerance. The authority on the gate and on the five conventions in full |
+| [crates/dualis-world/FRICTION.md](crates/dualis-world/FRICTION.md) | changing the public API. Twenty-three findings from using the SDK as a stranger, five of them the same underlying decision |
+| [bindings/python/README.md](bindings/python/README.md) | touching the bindings. Its own cargo workspace, its own gate, and the two boundary decisions not to relitigate |
+| [runtime/viewer/README.md](runtime/viewer/README.md) | touching the viewer. Why it is a separate workspace and why it does not link `dualis` |
+| [.claude/agents/README.md](.claude/agents/README.md) | adding a reviewer |
 
-## The consumer
+Three of those exist because a dependency tree does not belong in the library's lockfile. Measured:
+the library resolves **12** external crates, `bindings/python` **15**, and the viewer's wgpu stack
+**86**. `deny.toml` gates every one of the library's twelve, CI builds with `--locked`, and the same
+crates go to `wasm32` and Rust 1.78 — none of which can carry a GPU stack or a libpython link.
 
-`crates/dualis-world` is an application, not a library: `publish = false`, and excluded from
-the wasm, determinism and 1.78 jobs, because those are promises the *library* makes to people
-who depend on it from crates.io. It is covered by `lint`, `test`, `release`, `examples` — which is where every scene is run
-through the real binary — and `deny`.
-
-Its purpose is to use the SDK the way a stranger would and report back. Read
-`crates/dualis-world/FRICTION.md` before changing the public API — it is the only record of
-what the library feels like from outside, and five of its twenty-three findings are the same
-underlying decision: **the API is comfortable when the set of parts is known at compile time
-and awkward the moment it is not.**
-
-It is no longer where the scene and view layers live. Both are libraries now — `dualis-scene`
-and `dualis-view` — and what is left here is what an application actually is: a JSON format, the
-domain types that format names, and one place saying how far each field extends. Anything you
-find yourself adding to this crate that a *consumer* would want is in the wrong crate.
-
-Finding 6 was a live defect in `Room` and in `Tube`, and it is fixed: the first velocity update
-of the staggered leapfrog now travels half a step. Two tests in `dualis-acoustic` and one in
-`dualis-world` pin the second-order rate. The startup no longer conserves energy exactly at the
-first step, by design — `Room::startup_adjustment` reports the `O(h²)` difference, measured
-0.42% at 31 cells and quartering on refinement.
-
-## The native viewer
-
-`runtime/viewer` is a separate cargo workspace for the same reason `bindings/python` is, and the
-numbers are measured: the library resolves **12** external crates, the python bindings 15, and a
-wgpu stack **86**. `deny.toml` gates every one of the library's twelve, CI builds with `--locked`,
-and the same crates go to `wasm32` and Rust 1.78. None of that can carry a GPU stack.
-
-It has its own CI job — `native viewer` — which lints it, runs `viewer-core`'s tests against real
-run files, and builds the shell. The window and `--snapshot` are **not** run there: a runner has
-no display, and a software adapter would be checking a renderer nobody uses.
-
-**It does not depend on `dualis`, deliberately.** It reads the JSON a run wrote and nothing else,
-so "the wire format carries enough to draw a run" is demonstrated. If it ever needs to link the
-library for something the file lacks, the format is the thing to fix.
-
-## The Python bindings
-
-`bindings/python` is a **separate cargo workspace**, excluded from the root one. That is the
-escalation this repository wrote down for itself, and pyo3 is what triggered it. Measured rather
-than estimated: that workspace resolves **fifteen** external crates where the library resolves
-twelve, and **seven** of them — `pyo3`, `pyo3-ffi`, `pyo3-macros`, `pyo3-macros-backend`, `heck`,
-`libc`, `once_cell` — appear nowhere in the library, which has every one of its twelve gated by
-`deny.toml`. Plus a libpython link. Folding it in would put pyo3's tree in the library's lockfile and make
-`cargo build --workspace` need a Python development environment.
-
-The gate above therefore does not touch it. It has its own CI job, which builds a wheel,
-**installs it**, and runs `tests/test_dualis.py` — because "the cdylib compiles" proves neither
-half of "pip install then import". Its own gate:
-
-**A version bump has to reach it.** `bindings/python/Cargo.toml` pins `dualis` by exact version
-as well as by path, so bumping the root workspace and not this leaves it resolving a version that
-no longer exists. That failed the 0.9.0 release, and only the `python bindings` job could have
-caught it — nothing in the gate above reads that directory at all.
-
-```sh
-cd bindings/python
-cargo fmt --check && cargo clippy --release --all-targets -- -D warnings
-python -m maturin build --release
-python -m pip install --force-reinstall target/wheels/dualis-0.12.0-*.whl
-python tests/test_dualis.py
-```
-
-Two decisions worth not relitigating. The boundary is **SI floats with the unit in the parameter
-name**, because the dimensional types are compile-time and a runtime wrapper would cost per
-operation to catch an error a Python caller does not make. And **a `Domain` cannot be written in
-Python**: that needs callbacks into the interpreter from inside the step loop, the GIL held
-across it, and an answer for what an exception raised mid-sweep does to a half-advanced
-simulation.
-
-### How often to release, and the order
-
-Fifteen crates are published together and share one version. A published version is permanent —
-it can be yanked, never replaced — so the cost of a release is fifteen permanent version numbers
-on crates.io, one on PyPI, and a prose sweep.
-
-The prose sweep is not optional and is the part that gets skipped. A release moves the test
-count, the crate count, the FRICTION totals and the install line in four documents that no
-compiler reads. Three of those *are* under test — `documented_version.rs` and
-`friction_counts.rs` — and the rest have shipped stale more than once.
-
-**Release on new public API that somebody outside would reach for.** A new crate, a new type, a
-new method on an existing one. Not on a docs fix, not on a CI change, not to exercise the release
-pipeline — batch those and let them ride along with the next real one. `main` being ahead of the
-registries is the normal state, and the changelog's `[Unreleased]` section is where the batch
-accumulates.
-
-The order matters: each crate must be live on the index before the next one resolves it.
-
-```sh
-set -euo pipefail
-for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-elastic dualis-em dualis-fluid dualis-porous dualis-scene dualis-view dualis; do
-  cargo publish -p "$c" --locked      # once per crate. Twice publishes the first and stops on it
-done
-git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel
-```
-
-A *new* crate hits crates.io's new-crate rate limit — a burst of five, then roughly one per ten
-minutes. Existing crates do not, so a release that adds no crate goes through in one pass.
-
-### Releasing the wheel
-
-**Never `maturin publish` from a workstation.** A local build produces a wheel for *one*
-platform, and uploading only that makes `pip install dualis` fail everywhere else — a failure
-shaped like the project not supporting Linux rather than like a release mistake.
-
-`.github/workflows/release-python.yml` builds Linux x86_64 and aarch64, macOS x86_64 and
-aarch64, Windows x64 and an sdist, installs and runs the tests on every wheel it can execute,
-and warns on the cross-compiled ones rather than skipping them silently. It fires on a `v*` tag,
-or on a manual dispatch with the `publish` box ticked.
-
-It uses **PyPI trusted publishing**, so there is no token in the repository. Configured on PyPI
-as owner `YounghyeonPark`, repository `dualis`, workflow `release-python.yml`, environment
-`pypi`.
-
-What has actually been exercised, since a release pipeline you have not run is a guess:
-
-| path | run | result |
-| --- | --- | --- |
-| dispatch, `publish=false` | build only | six artefacts, both gates skipped |
-| dispatch, `publish=true` | 0.3.0 to PyPI | five wheels and an sdist, installed from PyPI and tested |
-| tag, version mismatch | `v9.9.9` | refused at `check-version`; nothing built, nothing uploaded |
-| tag, version match | `v0.4.0` to PyPI | all four paths now run. `check-version` passed for the first time; five wheels, an sdist, and `pip install dualis==0.4.0` verified from a clean venv |
-
-The publish job's `if` needs `always()` and the two results named. A skipped job propagates
-**transitively**, and `wheels`/`sdist` opting out with their own `always()` does not opt out for
-anything downstream of them — which cost two runs that built all six artefacts and then skipped
-the upload with a condition that was correct.
-
-The sdist is why `bindings/python/Cargo.toml` pins `dualis` with **both** a path and a version.
-An sdist is a tarball rooted at that directory, so `../../crates/dualis` points outside it;
-maturin vendors the whole crate tree in, and the version is what makes the manifest resolvable.
-Verified by building the sdist, installing it into a clean venv with `--no-binary :all:`, and
-running the test file against what came out.
+`crates/dualis-world` is the fourth: an application, `publish = false`, whose purpose is to use the
+SDK the way a stranger would and report back. Anything you find yourself adding to it that a
+*consumer* would want is in the wrong crate.
 
 ## What is deliberately not here
 
-No GPU, no implicit solvers, no mesh generation, no unstructured grids, no FEM. Adding physics
-means a new crate on the kernel, not a new branch inside an existing one. If a change would
-make the kernel know about a domain, stop and reconsider — see `domain-builder`, which is
-instructed to stop and report in exactly that case.
+No GPU in the library, no implicit solvers, no mesh generation, no unstructured grids, no FEM beyond
+the trilinear element `dualis-elastic` uses. Adding physics means a new crate on the kernel, not a new
+branch inside an existing one. If a change would make the kernel know about a domain, stop and
+reconsider — see `domain-builder`, which is instructed to stop and report in exactly that case.

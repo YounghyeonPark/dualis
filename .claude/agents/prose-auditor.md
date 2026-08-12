@@ -42,7 +42,7 @@ examples print their values precisely so this is cheap.
   `gh repo view --json description`.
 - **Counts in prose.** "A facade over the six" when there were seven. "None of the four" when
   there were five. Every added crate touches several sentences — 0.9.0 added two crates and moved
-  a count in nine files, including the repository description, the publish loop in `CLAUDE.md`,
+  a count in nine files, including the repository description, the publish loop in `RELEASING.md`,
   and this agent's sibling `invariant-guard`.
 - **A count in a shell command's comment.** `invariant-guard` carried
   `grep -c deny(missing_docs) crates/*/src/lib.rs   # ten ones` — the command was right and the

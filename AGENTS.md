@@ -256,3 +256,5 @@ also pass it, then go and check *that*.
 - **[README.md](README.md)** — the long version, including what is deliberately *not* here.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the conventions, and the gate CI runs.
 - **[CLAUDE.md](CLAUDE.md)** — working on dualis rather than with it.
+- **[RELEASING.md](RELEASING.md)** — the fifteen crates, the wheel, and the seven places a version
+  lives. Read once per release and not otherwise, which is why it is not in `CLAUDE.md`.

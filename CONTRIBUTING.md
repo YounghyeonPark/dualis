@@ -6,22 +6,45 @@ having a change sent back.
 
 ## Run what CI runs
 
+**Run it as a script.** The first line is load-bearing and the last line is how you know:
+
 ```sh
+set -euo pipefail
+
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo test --locked --workspace --release
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo deny check                       # needs `cargo install cargo-deny`
-```
 
-And the examples, which are tests that print:
-
-```sh
-for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench agents_quickstart readme_check; do
-  cargo run --locked --release --example "$e" || break
+# The examples are tests that print.
+for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots          heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench          espresso_shot portafilter_flow agents_quickstart readme_check; do
+  cargo run --locked --release --example "$e"
 done
+
+echo "the gate passed"     # and if this line does not appear, it did not
 ```
+
+### This gate has reported a pass it had not earned, five times
+
+Every one of them the same mistake — reading the *output* of a check as evidence the check **ran**:
+
+| what was done | what happened |
+| --- | --- |
+| unchained lines | a failure in the middle scrolled past and the last line's status was read as the gate's |
+| `... \|\| break` in the examples loop | one example failed, the loop stopped, and the only symptom was output that was not there |
+| `cargo clippy ... ; echo OK` | a version bump had invalidated `Cargo.lock`, so `--locked` refused to start and `OK` printed anyway |
+| `cargo clippy ... \| tail -1` under `set -e` | a pipeline's exit status is its **last** command's, and `tail` succeeded. This is what `pipefail` is for |
+| `cargo publish` twice per crate, once through `grep` and once to read `$?` | the first call published, the second failed with "already exists", and the release loop stopped on its first crate |
+
+`set -euo pipefail` closes four. The fifth was a doubled command and no shell option catches that;
+running each check **once** and reading its status is the only fix.
+
+Two more of the same shape, outside the shell. `gh run watch --exit-status` has returned zero with a
+job still `queued`, so a run was read as green before a job had started — ask each job for its own
+`conclusion`. And a script that edits several files can raise on its last target and write **nothing**
+after printing success for the earlier ones; check every anchor before writing any of them.
 
 CI additionally builds on Rust 1.78, builds for `wasm32-unknown-unknown`, and runs the whole
 suite under `wasm32-wasip1` with wasmtime. Those three catch different things and none of them

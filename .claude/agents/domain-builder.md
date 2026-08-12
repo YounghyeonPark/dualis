@@ -89,7 +89,7 @@ prelude if the types are ones a caller reaches for.
 `README.md` (crate table, dependency diagram, domain count, "what is not here"), `AGENTS.md`
 (the "what is in the box" table), `ARCHITECTURE.md` (the dimensional coverage matrix — say
 honestly whether the new domain is 1D, 2D or 3D), `CONTRIBUTING.md` and `CLAUDE.md` where they
-list what the kernel knows nothing about, the publish loop in `CLAUDE.md`, and the repository
+list what the kernel knows nothing about, the publish loop in `RELEASING.md`, and the repository
 description. Run `prose-auditor` afterwards rather than trusting the list.
 
 **10. A scene, if `dualis-world` can express it.** Fourteen ship, all run by CI through the real
