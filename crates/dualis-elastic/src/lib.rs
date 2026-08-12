@@ -70,7 +70,7 @@ mod element;
 mod waves;
 
 pub use block::{Block, Face};
-pub use waves::Waves;
+pub use waves::{Axis, Waves};
 
 /// A linear elastic material.
 #[derive(Clone, Copy, Debug)]

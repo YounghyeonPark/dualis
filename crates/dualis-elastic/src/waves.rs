@@ -48,16 +48,73 @@
 //! of the elasticity. So the tests measure `Ω`, invert that relation to recover `ω`, and compare
 //! *that* — leaving only the spatial discretisation, which is second order. A test that compared the
 //! raw period would be measuring the two errors added together and calling the sum an accuracy.
+//!
+//! # What a step costs, measured
+//!
+//! The 24×24 element loop, and nothing else is close:
+//!
+//! ```text
+//!   16³ elements   4,913 nodes    2.47 ms/step
+//!   32³ elements  35,937 nodes   19.69 ms/step
+//! ```
+//!
+//! Linear in nodes, so the two `Vec` allocations a step makes are **under 1%** and are left alone —
+//! measured before deciding, because a scratch buffer threaded through `&mut self` would have cost
+//! clarity for nothing.
+//!
+//! What that buys is worth knowing before sizing a run. At a millimetre in aluminium the limit is
+//! `1.15e-7 s`, so a wave crossing a 32 mm body takes about **90 steps** — under two seconds of
+//! compute, which is the case this is for. A body left *ringing* for a millisecond is 8,700 steps and
+//! **three minutes**, which is the case to reach for a modal analysis instead.
 
 use dualis_core::conserved::quantity;
 use dualis_core::{
-    units::{Energy, Length, Time, Velocity},
-    Domain, Exchange, Kind, Ledger, Reading, Violation,
+    units::{Energy, Length, LengthVec, Time, Velocity},
+    Domain, Exchange, Kind, Ledger, Reading, ScalarField, Violation,
 };
 use dualis_units::Frequency;
 
 use crate::element::{lame, stiffness, CORNERS, DOF};
 use crate::Elastic;
+
+/// One of the three axes.
+///
+/// # Why a type and not a `usize`
+///
+/// Because the alternative was measured and it was worse. Five methods on [`Waves`] took an axis as
+/// an index, and they disagreed about what to do with a fourth one: four returned silently — leaving
+/// a body with three free components where the caller believed it had one, and therefore a wave speed
+/// that is not the one being asked about — and `mode_frequency` clamped to 2, which is a different
+/// wrong answer to the same mistake.
+///
+/// Three responses to one bad input in one type is not a policy. An enum makes the input
+/// unrepresentable, which is better than any of the three.
+///
+/// [`Face::axis`](crate::Face::axis) predates this and still returns an index; it is on a published
+/// type and changing it is a separate decision from getting this one right.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Axis {
+    /// x.
+    X,
+    /// y.
+    Y,
+    /// z.
+    Z,
+}
+
+impl Axis {
+    /// 0, 1 or 2 — for indexing the three components of a displacement.
+    pub fn index(self) -> usize {
+        match self {
+            Axis::X => 0,
+            Axis::Y => 1,
+            Axis::Z => 2,
+        }
+    }
+
+    /// All three, in order.
+    pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+}
 
 /// A rectangular body of elastic material, carrying waves.
 ///
@@ -155,11 +212,8 @@ impl Waves {
     /// which is why it is `λ+2μ` and not `E`. That distinction is the commonest way to get a wave
     /// speed wrong by 20%.
     ///
-    /// `axis` is 0, 1 or 2; anything else is ignored.
-    pub fn hold(&mut self, axis: usize) -> &mut Waves {
-        if axis > 2 {
-            return self;
-        }
+    pub fn hold(&mut self, axis: Axis) -> &mut Waves {
+        let axis = axis.index();
         let n = self.nodes.0 * self.nodes.1 * self.nodes.2;
         for node in 0..n {
             self.held[3 * node + axis] = true;
@@ -174,10 +228,8 @@ impl Waves {
     ///
     /// What makes a standing mode standing. A free end is a different boundary with a different
     /// closed form — quarter-wave rather than half-wave — and this type offers the one the tests use.
-    pub fn clamp_ends(&mut self, axis: usize) -> &mut Waves {
-        if axis > 2 {
-            return self;
-        }
+    pub fn clamp_ends(&mut self, axis: Axis) -> &mut Waves {
+        let axis = axis.index();
         let (nx, ny, nz) = self.nodes;
         let last = [nx - 1, ny - 1, nz - 1][axis];
         for k in 0..nz {
@@ -207,10 +259,8 @@ impl Waves {
     /// introduced.
     ///
     /// `mode` counts half-waves, so `1` is the fundamental of a clamped-clamped span.
-    pub fn release_mode(&mut self, mode: usize, vary: usize, along: usize, amplitude: Length) {
-        if vary > 2 || along > 2 {
-            return;
-        }
+    pub fn release_mode(&mut self, mode: usize, vary: Axis, along: Axis, amplitude: Length) {
+        let (vary, along) = (vary.index(), along.index());
         let (nx, ny, nz) = self.nodes;
         let span = self.counts_of(vary) as f64 * self.dx;
         for k in 0..nz {
@@ -234,10 +284,8 @@ impl Waves {
     /// The counterpart to [`release_mode`](Waves::release_mode), and what makes a frequency
     /// measurable rather than merely visible: a sine is orthogonal to the others on this grid, so for
     /// a body holding one mode this is exact and for one holding several it is the right coefficient.
-    pub fn mode_amplitude(&self, mode: usize, vary: usize, along: usize) -> f64 {
-        if vary > 2 || along > 2 {
-            return 0.0;
-        }
+    pub fn mode_amplitude(&self, mode: usize, vary: Axis, along: Axis) -> f64 {
+        let (vary, along) = (vary.index(), along.index());
         let (nx, ny, nz) = self.nodes;
         let span = self.counts_of(vary) as f64 * self.dx;
         let (mut num, mut den) = (0.0, 0.0);
@@ -272,8 +320,8 @@ impl Waves {
     /// `speed` is the caller's choice of [`Elastic::p_wave_speed`] or
     /// [`Elastic::s_wave_speed`](Elastic::s_wave_speed) — the type cannot know which wave a given
     /// [`hold`](Waves::hold) has left free.
-    pub fn mode_frequency(&self, mode: usize, vary: usize, speed: Velocity) -> Frequency {
-        let span = self.counts_of(vary.min(2)) as f64 * self.dx;
+    pub fn mode_frequency(&self, mode: usize, vary: Axis, speed: Velocity) -> Frequency {
+        let span = self.counts_of(vary.index()) as f64 * self.dx;
         Frequency::from_si(mode as f64 * speed.to_si() / (2.0 * span))
     }
 
@@ -474,6 +522,24 @@ impl Domain for Waves {
         Some(self)
     }
 
+    /// The **magnitude** of the displacement, so the analysis layer can draw a wave.
+    ///
+    /// `Domain::as_field` nominates one scalar and a displacement is a vector, so this is `|u|`:
+    /// the one scalar that is nonzero wherever the body is moving, whichever way it is moving. A
+    /// component would have been a choice — and the wrong one for a shear wave drawn on the axis it
+    /// travels along, which is zero everywhere.
+    ///
+    /// It costs the sign. A compression and an extension look the same, which for a standing mode
+    /// makes a node dark and both antinodes bright — twice the spatial frequency of the mode. That is
+    /// the honest trade for one scalar and it is stated rather than discovered from a picture.
+    ///
+    /// [`Block`](crate::Block) still offers nothing here, which is a real gap and older than this
+    /// type: a static solve's displacement is just as drawable. It is on a published type, so
+    /// adding it is a separate decision.
+    fn as_field(&self) -> Option<&dyn ScalarField> {
+        Some(self)
+    }
+
     fn checkpoint(&mut self) {
         self.saved = Some(Box::new((self.u.clone(), self.prev.clone())));
     }
@@ -487,5 +553,64 @@ impl Domain for Waves {
 
     fn supports_restore(&self) -> bool {
         true
+    }
+}
+
+impl ScalarField for Waves {
+    /// **Metres**, because that is what a displacement is. A view converting to nanometres is making
+    /// a presentation choice and this is not the place for it — `readings` reports nanometres because
+    /// a number in a table has to be readable, and a field has a legend.
+    fn unit(&self) -> &'static str {
+        "m"
+    }
+
+    /// `|u|` trilinearly interpolated between nodes, clamped at the faces.
+    ///
+    /// Clamped rather than extrapolated: outside the body there is no displacement defined, and
+    /// continuing the gradient would draw material moving where there is none.
+    fn at(&self, p: LengthVec, _t: Time) -> f64 {
+        let (nx, ny, nz) = self.nodes;
+        let q = p.to_si() / self.dx;
+        // NaN spelled out rather than folded into a comparison: a visualiser can hand one over and it
+        // must not reach the cast below.
+        if q.is_nan() {
+            return 0.0;
+        }
+        let axis = |v: f64, n: usize| -> (usize, f64) {
+            let last = n.saturating_sub(1);
+            if v <= 0.0 {
+                return (0, 0.0);
+            }
+            if v >= last as f64 {
+                return (last, 0.0);
+            }
+            let i = v.floor();
+            (i as usize, v - i)
+        };
+        let (i, fx) = axis(q.x, nx);
+        let (j, fy) = axis(q.y, ny);
+        let (k, fz) = axis(q.z, nz);
+        let (i1, j1, k1) = (
+            (i + 1).min(nx - 1),
+            (j + 1).min(ny - 1),
+            (k + 1).min(nz - 1),
+        );
+        let mag = |a: usize, b: usize, c: usize| {
+            let n = 3 * (a + nx * (b + ny * c));
+            (self.u[n] * self.u[n] + self.u[n + 1] * self.u[n + 1] + self.u[n + 2] * self.u[n + 2])
+                .sqrt()
+        };
+        let lerp = |lo: f64, hi: f64, t: f64| lo * (1.0 - t) + hi * t;
+        let z0 = lerp(
+            lerp(mag(i, j, k), mag(i1, j, k), fx),
+            lerp(mag(i, j1, k), mag(i1, j1, k), fx),
+            fy,
+        );
+        let z1 = lerp(
+            lerp(mag(i, j, k1), mag(i1, j, k1), fx),
+            lerp(mag(i, j1, k1), mag(i1, j1, k1), fx),
+            fy,
+        );
+        lerp(z0, z1, fz)
     }
 }

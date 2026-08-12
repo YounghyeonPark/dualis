@@ -39,11 +39,11 @@ use dualis_core::{
     units::{Length, Time},
     Domain, Exchange,
 };
-use dualis_elastic::{Elastic, Waves};
+use dualis_elastic::{Axis, Elastic, Waves};
 
 /// Elements along the span; one across the other two axes, which makes it the one-dimensional
 /// problem the closed forms are about and costs nothing to resolve.
-fn column(elements: usize, hold: [usize; 2]) -> Waves {
+fn column(elements: usize, hold: [Axis; 2]) -> Waves {
     let mut w = Waves::new(
         "column",
         Elastic::aluminium_6061(),
@@ -53,16 +53,16 @@ fn column(elements: usize, hold: [usize; 2]) -> Waves {
     for axis in hold {
         w.hold(axis);
     }
-    w.clamp_ends(2);
+    w.clamp_ends(Axis::Z);
     w
 }
 
 /// March and return the frequency of the released mode, in hertz, with the leapfrog's dispersion
 /// taken out.
-fn measured_frequency(w: &mut Waves, mode: usize, along: usize, dt: Time, steps: usize) -> f64 {
+fn measured_frequency(w: &mut Waves, mode: usize, along: Axis, dt: Time, steps: usize) -> f64 {
     let h = dt.to_si();
     let mut crossings = Vec::new();
-    let mut previous = w.mode_amplitude(mode, 2, along);
+    let mut previous = w.mode_amplitude(mode, Axis::Z, along);
     assert!(
         previous.abs() > 0.0,
         "the mode has to be present before it can be measured"
@@ -70,7 +70,7 @@ fn measured_frequency(w: &mut Waves, mode: usize, along: usize, dt: Time, steps:
     for n in 0..steps {
         w.step(Time::from_si(n as f64 * h), dt, &mut Exchange::new())
             .expect("stable");
-        let now = w.mode_amplitude(mode, 2, along);
+        let now = w.mode_amplitude(mode, Axis::Z, along);
         if (previous <= 0.0) != (now <= 0.0) {
             // Linear interpolation between the two samples, so the period is not quantised to a step.
             let frac = previous / (previous - now);
@@ -111,13 +111,13 @@ fn a_constrained_compression_travels_at_the_p_wave_speed() {
     println!("  c_p = {:.1} m/s", closed_speed.to_si());
     let mut errors = Vec::new();
     for elements in [16, 32, 64] {
-        let mut w = column(elements, [0, 1]);
-        w.release_mode(1, 2, 2, Length::from_si(1e-9));
+        let mut w = column(elements, [Axis::X, Axis::Y]);
+        w.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
         let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
-        let want = w.mode_frequency(1, 2, closed_speed).to_si();
+        let want = w.mode_frequency(1, Axis::Z, closed_speed).to_si();
         // Enough steps for a dozen or so half periods.
         let steps = (12.0 / (want * dt.to_si())) as usize;
-        let got = measured_frequency(&mut w, 1, 2, dt, steps);
+        let got = measured_frequency(&mut w, 1, Axis::Z, dt, steps);
         let off = (got / want - 1.0).abs();
         println!(
             "  {elements:3} elements: {got:.4e} Hz against n c/2L {want:.4e} — off {:.3}%",
@@ -155,12 +155,12 @@ fn a_shear_wave_travels_at_the_s_wave_speed() {
     );
     let mut errors = Vec::new();
     for elements in [16, 32, 64] {
-        let mut w = column(elements, [1, 2]);
-        w.release_mode(1, 2, 0, Length::from_si(1e-9));
+        let mut w = column(elements, [Axis::Y, Axis::Z]);
+        w.release_mode(1, Axis::Z, Axis::X, Length::from_si(1e-9));
         let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
-        let want = w.mode_frequency(1, 2, closed_speed).to_si();
+        let want = w.mode_frequency(1, Axis::Z, closed_speed).to_si();
         let steps = (12.0 / (want * dt.to_si())) as usize;
-        let got = measured_frequency(&mut w, 1, 0, dt, steps);
+        let got = measured_frequency(&mut w, 1, Axis::X, dt, steps);
         let off = (got / want - 1.0).abs();
         println!(
             "  {elements:3} elements: {got:.4e} Hz against n c/2L {want:.4e} — off {:.3}%",
@@ -198,23 +198,24 @@ fn the_marched_ratio_is_poissons_ratio_and_the_mesh_error_cancels() {
         let mut ratios = Vec::new();
         for elements in [16, 32] {
             let mut got = [0.0; 2];
-            for (which, (hold, along)) in [([0usize, 1usize], 2usize), ([1, 2], 0)]
-                .into_iter()
-                .enumerate()
+            for (which, (hold, along)) in
+                [([Axis::X, Axis::Y], Axis::Z), ([Axis::Y, Axis::Z], Axis::X)]
+                    .into_iter()
+                    .enumerate()
             {
                 let mut w = Waves::new("c", material, (1, 1, elements), Length::mm(1.0));
                 for axis in hold {
                     w.hold(axis);
                 }
-                w.clamp_ends(2);
-                w.release_mode(1, 2, along, Length::from_si(1e-9));
+                w.clamp_ends(Axis::Z);
+                w.release_mode(1, Axis::Z, along, Length::from_si(1e-9));
                 let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
                 let speed = if which == 0 {
                     material.p_wave_speed()
                 } else {
                     material.s_wave_speed()
                 };
-                let want = w.mode_frequency(1, 2, speed).to_si();
+                let want = w.mode_frequency(1, Axis::Z, speed).to_si();
                 let steps = (12.0 / (want * dt.to_si())) as usize;
                 got[which] = measured_frequency(&mut w, 1, along, dt, steps);
             }
@@ -249,10 +250,12 @@ fn the_marched_ratio_is_poissons_ratio_and_the_mesh_error_cancels() {
 #[test]
 fn the_energy_swings_by_the_leapfrog_factor_and_does_not_drift() {
     let material = Elastic::aluminium_6061();
-    let mut w = column(32, [0, 1]);
-    w.release_mode(1, 2, 2, Length::from_si(1e-9));
+    let mut w = column(32, [Axis::X, Axis::Y]);
+    w.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
-    let want = w.mode_frequency(1, 2, material.p_wave_speed()).to_si();
+    let want = w
+        .mode_frequency(1, Axis::Z, material.p_wave_speed())
+        .to_si();
     let omega = 2.0 * std::f64::consts::PI * want;
     let predicted = 2.0 * (omega * dt.to_si() / 2.0).sin();
 
@@ -322,7 +325,7 @@ fn the_stability_limit_is_the_operators_and_it_is_enforced() {
     assert!(limit.is_finite() && limit > 0.0);
 
     let mut over = Waves::new("cube", material, (4, 4, 4), Length::mm(1.0));
-    over.release_mode(1, 2, 2, Length::from_si(1e-9));
+    over.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     let err = over
         .step(
             Time::from_si(0.0),
@@ -334,7 +337,7 @@ fn the_stability_limit_is_the_operators_and_it_is_enforced() {
 
     // And just inside it runs, so the check is a limit and not a blanket refusal.
     let mut at = Waves::new("cube", material, (4, 4, 4), Length::mm(1.0));
-    at.release_mode(1, 2, 2, Length::from_si(1e-9));
+    at.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     at.step(
         Time::from_si(0.0),
         Time::from_si(limit),
@@ -364,8 +367,8 @@ fn an_undisturbed_body_sits_still_and_a_checkpoint_carries_the_velocity() {
     assert_eq!(w.strain_energy().to_si(), 0.0, "nothing should have moved");
     assert_eq!(w.displacement_at(1, 1, 1), [0.0, 0.0, 0.0]);
 
-    let mut w = column(16, [0, 1]);
-    w.release_mode(1, 2, 2, Length::from_si(1e-9));
+    let mut w = column(16, [Axis::X, Axis::Y]);
+    w.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.5);
     // Get it moving, so that `u` and `prev` differ and a half-saved state would be detectable.
     for n in 0..40 {
@@ -378,7 +381,7 @@ fn an_undisturbed_body_sits_still_and_a_checkpoint_carries_the_velocity() {
     }
     w.checkpoint();
     let mark = w.total_energy(dt).to_si();
-    let moving = w.mode_amplitude(1, 2, 2);
+    let moving = w.mode_amplitude(1, Axis::Z, Axis::Z);
     for n in 0..40 {
         w.step(
             Time::from_si(n as f64 * dt.to_si()),
@@ -388,12 +391,12 @@ fn an_undisturbed_body_sits_still_and_a_checkpoint_carries_the_velocity() {
         .expect("stable");
     }
     assert!(
-        (w.mode_amplitude(1, 2, 2) - moving).abs() > 1e-14,
+        (w.mode_amplitude(1, Axis::Z, Axis::Z) - moving).abs() > 1e-14,
         "it should have moved on before being restored"
     );
     w.restore();
     assert_eq!(
-        w.mode_amplitude(1, 2, 2),
+        w.mode_amplitude(1, Axis::Z, Axis::Z),
         moving,
         "a restore returns the displacement exactly"
     );
@@ -402,4 +405,78 @@ fn an_undisturbed_body_sits_still_and_a_checkpoint_carries_the_velocity() {
         mark,
         "and the velocity with it, which is what the second array is for"
     );
+}
+
+/// **The field the analysis layer draws is the displacement magnitude, and it is not empty.**
+///
+/// A domain that offers `as_field` and returns nothing useful is the failure this workspace hunts by
+/// name: the panel renders, the scale reads "in 1 shades", and nothing anywhere says the picture is of
+/// no data. So the field is checked at the nodes it is built from, at the clamped ends where it must
+/// be zero, and outside the body where it must clamp rather than extrapolate.
+///
+/// `|u|` costs the sign, which is stated in the method's own docs and is visible here: a standing
+/// half-wave has one antinode and the magnitude has one maximum, but a *full* wave has two antinodes
+/// of opposite sign and the magnitude shows both as bright. That is the trade for one scalar.
+#[test]
+fn the_drawn_field_is_the_displacement_magnitude_and_it_is_populated() {
+    use dualis_core::units::LengthVec;
+
+    let elements = 16;
+    let mut w = column(elements, [Axis::X, Axis::Y]);
+    w.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
+    let field = w
+        .as_field()
+        .expect("a body carrying waves has a field to draw");
+    assert_eq!(field.unit(), "m", "a displacement is in metres");
+
+    let dx = 1e-3;
+    let at = |k: usize| {
+        field.at(
+            LengthVec::from_si(glam::DVec3::new(0.0, 0.0, k as f64 * dx)),
+            Time::from_si(0.0),
+        )
+    };
+    // Zero at both clamped ends, largest in the middle, and every node in between nonzero.
+    assert_eq!(at(0), 0.0, "the clamped end has not moved");
+    assert_eq!(at(elements), 0.0, "nor the other one");
+    let middle = at(elements / 2);
+    assert!(
+        (middle - 1e-9).abs() < 1e-21,
+        "the antinode is the amplitude: {middle:.6e} against 1e-9"
+    );
+    let populated = (1..elements).filter(|k| at(*k) > 0.0).count();
+    assert_eq!(
+        populated,
+        elements - 1,
+        "every interior node should be displaced, not just the one that was looked at"
+    );
+
+    // Halfway between two nodes it interpolates rather than snapping, which is what makes a picture
+    // smooth and is the part a nearest-neighbour sampler would get wrong without ever looking empty.
+    let between = field.at(
+        LengthVec::from_si(glam::DVec3::new(0.0, 0.0, 3.5 * dx)),
+        Time::from_si(0.0),
+    );
+    let (lo, hi) = (at(3), at(4));
+    assert!(
+        (between - 0.5 * (lo + hi)).abs() < 1e-24,
+        "trilinear between nodes: {between:.9e} against {:.9e}",
+        0.5 * (lo + hi)
+    );
+
+    // Outside the body it clamps. Extrapolating would draw material moving where there is none.
+    let past = field.at(
+        LengthVec::from_si(glam::DVec3::new(0.0, 0.0, 5.0 * elements as f64 * dx)),
+        Time::from_si(0.0),
+    );
+    assert_eq!(
+        past,
+        at(elements),
+        "past the face it clamps rather than continuing"
+    );
+    let before = field.at(
+        LengthVec::from_si(glam::DVec3::new(0.0, 0.0, -3.0 * dx)),
+        Time::from_si(0.0),
+    );
+    assert_eq!(before, at(0), "and before it, too");
 }

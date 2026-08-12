@@ -14,6 +14,27 @@ messages carry the full account.
 
 ### Added
 
+- **`dualis_elastic::Axis`, and `Waves` is drawable.** A stabilisation pass over what landed
+  unreleased, which is the moment to change an API rather than after somebody depends on it.
+
+  Five methods on `Waves` took an axis as a `usize` and **disagreed about a fourth one**: four returned
+  silently — leaving a body with three free components where the caller believed it had one, and so a
+  wave speed that is not the one being asked about — and `mode_frequency` clamped to 2, which is a
+  different wrong answer to the same mistake. Three responses to one bad input in one type is not a
+  policy, so the input is now unrepresentable.
+
+  And `Waves` offers `as_field` — the displacement **magnitude**, trilinearly interpolated — so the
+  analysis layer can draw it. Every other 3D field domain offers one, and a domain that offers none
+  gets no picture from a layer whose whole rule is to dispatch on the shape of the data. `|u|` costs
+  the sign, which is stated: a full standing wave shows both antinodes bright. `Block` still offers
+  nothing here, which is a real gap and older than `Waves`; it is on a published type, so that is a
+  separate decision.
+
+  The per-step cost was **measured before deciding** anything about it: 2.47 ms/step at 16³ elements
+  and 19.69 ms at 32³, linear in nodes, so the two `Vec` allocations a step makes are under 1% and are
+  left alone. A wave crossing a 32 mm body is about 90 steps; a body left ringing for a millisecond is
+  8,700 and three minutes.
+
 - **Elastic waves: `dualis_elastic::Waves`, and `ARCHITECTURE.md`'s depth list is closed.**
   `ρü = ∇·σ` on the same trilinear element `Block` solves statics with, marched with central
   differences and a lumped mass. `Waves::hold`, `clamp_ends`, `release_mode`, `mode_amplitude`,
