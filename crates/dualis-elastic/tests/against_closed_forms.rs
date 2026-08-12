@@ -626,3 +626,107 @@ fn an_unsolvable_body_refuses_its_step() {
     .expect("a mounted one can");
     assert!(b.strain_energy().to_si() > 0.0);
 }
+
+/// **A solved body offers a field to draw, and it is the displacement it solved for.**
+///
+/// This crate offered nothing to the analysis layer for as long as it has existed — both halves of it,
+/// statics and waves. A layer whose rule is to dispatch on the shape of the data gives no picture to a
+/// domain that offers no shape, so an elastic run drew nothing and nothing said so.
+///
+/// Checked against the displacement the solver reports, not against a picture: the field at a node is
+/// that node's `|u|` to the last bit, it interpolates between nodes rather than snapping, and it clamps
+/// outside the body rather than extrapolating material that is not there.
+#[test]
+fn a_solved_body_offers_its_displacement_as_a_field() {
+    use dualis_core::units::{LengthVec, Time};
+
+    let cell = 2e-3;
+    let mut b = Block::new(
+        "pulled",
+        (2, 2, 4),
+        Length::from_si(cell),
+        Elastic::aluminium_6061(),
+    );
+    b.clamp(Face::ZLow);
+    b.pull(Face::ZHigh, Pressure::from_si(1.0e6));
+    assert!(b.solve(1e-12), "it has to be solved before it is drawn");
+
+    let field = b
+        .as_field()
+        .expect("a solved body has a displacement to draw");
+    assert_eq!(field.unit(), "m");
+
+    let at = |i: usize, j: usize, k: usize| {
+        field.at(
+            LengthVec::from_si(glam::DVec3::new(
+                i as f64 * cell,
+                j as f64 * cell,
+                k as f64 * cell,
+            )),
+            Time::from_si(0.0),
+        )
+    };
+    // At a node the field is that node's magnitude, exactly — no interpolation is involved there.
+    for (i, j, k) in [(0, 0, 0), (1, 1, 2), (2, 2, 4)] {
+        let u = b.displacement_at(i, j, k).to_si();
+        let want = (u.x * u.x + u.y * u.y + u.z * u.z).sqrt();
+        assert!(
+            (at(i, j, k) - want).abs() < 1e-18,
+            "node ({i},{j},{k}): field {:.9e} against |u| {want:.9e}",
+            at(i, j, k)
+        );
+    }
+    // The clamped face has not moved and the pulled one has, so the field is not uniformly zero —
+    // which is the failure a field that returned nothing would look like.
+    assert_eq!(at(1, 1, 0), 0.0, "the clamped face is held");
+    assert!(
+        at(1, 1, 4) > 0.0,
+        "the pulled face has moved: {:.3e}",
+        at(1, 1, 4)
+    );
+
+    // Halfway between two nodes it interpolates.
+    let between = field.at(
+        LengthVec::from_si(glam::DVec3::new(cell, cell, 2.5 * cell)),
+        Time::from_si(0.0),
+    );
+    let (lo, hi) = (at(1, 1, 2), at(1, 1, 3));
+    assert!(
+        (between - 0.5 * (lo + hi)).abs() < 1e-20,
+        "trilinear: {between:.9e} against {:.9e}",
+        0.5 * (lo + hi)
+    );
+    // And past the face it clamps rather than continuing the gradient.
+    let past = field.at(
+        LengthVec::from_si(glam::DVec3::new(cell, cell, 40.0 * cell)),
+        Time::from_si(0.0),
+    );
+    assert_eq!(past, at(1, 1, 4), "outside the body it clamps");
+}
+
+/// **A face knows its axis as a type, and the two spellings agree.**
+///
+/// `Face::axis` returns an index and predates `Axis`; `Face::on` returns the type. Two spellings of one
+/// idea inside one crate is the sort of thing that drifts, so this pins them together — and it is
+/// cheap, because there are only six faces to check exhaustively.
+#[test]
+fn a_face_names_its_axis_the_same_way_twice() {
+    use dualis_elastic::Axis;
+    for (face, index, typed) in [
+        (Face::XLow, 0, Axis::X),
+        (Face::XHigh, 0, Axis::X),
+        (Face::YLow, 1, Axis::Y),
+        (Face::YHigh, 1, Axis::Y),
+        (Face::ZLow, 2, Axis::Z),
+        (Face::ZHigh, 2, Axis::Z),
+    ] {
+        assert_eq!(face.axis(), index, "{face:?} is normal to axis {index}");
+        assert_eq!(face.on(), typed, "{face:?} typed");
+        assert_eq!(
+            face.on().index(),
+            face.axis(),
+            "{face:?}: the typed axis and the index must not drift apart"
+        );
+    }
+    assert_eq!(Axis::ALL.map(|a| a.index()), [0, 1, 2], "ALL is in order");
+}

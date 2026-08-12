@@ -149,11 +149,14 @@ pub struct Waves {
 
 impl Waves {
     /// A body of `counts` cubic elements of side `cell`.
+    /// Arguments in the same order as [`Block::new`](crate::Block::new) — name, shape, spacing,
+    /// material. They disagreed until a stabilisation pass noticed, which is the sort of thing only a
+    /// caller writing both in one file ever sees.
     pub fn new(
         name: impl Into<String>,
-        material: Elastic,
         counts: (usize, usize, usize),
         cell: Length,
+        material: Elastic,
     ) -> Waves {
         let counts = (counts.0.max(1), counts.1.max(1), counts.2.max(1));
         let nodes = (counts.0 + 1, counts.1 + 1, counts.2 + 1);

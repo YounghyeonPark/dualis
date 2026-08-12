@@ -10,9 +10,27 @@ Entries record what was *found* as well as what was added, because several of th
 changes here were corrections to a mistaken assumption rather than new features. The commit
 messages carry the full account.
 
+`CLAUDE.md`'s gate is a `set -euo pipefail` script now, and carries a table of the five disguises in
+which it has reported a pass it had not earned. Four of them are closed by that one line.
+
 ## [Unreleased]
 
 ### Added
+
+- **Neither half of `dualis-elastic` could be drawn, and its two constructors disagreed.** A
+  stabilisation pass, continued: `Block::as_field`, `Face::on`, and `Waves::new`'s arguments in
+  `Block::new`'s order.
+
+  `Block` offered no field either, and had not since the crate existed — so an elastic run drew nothing
+  and nothing said so, for statics as well as waves. Both now offer `|u|`, trilinearly interpolated,
+  checked against the displacement the solver reports rather than against a picture.
+
+  `Waves::new` took `(name, material, counts, cell)` where `Block::new` takes
+  `(name, counts, cell, material)`. One crate, two orders, and only a caller writing both in one file
+  would ever have noticed. Aligned while `Waves` is unreleased.
+
+  `Face::axis` returns an index and predates `Axis`; `Face::on` returns the type. Two spellings of one
+  idea inside one crate drift, so a test pins all six faces to both.
 
 - **`dualis_elastic::Axis`, and `Waves` is drawable.** A stabilisation pass over what landed
   unreleased, which is the moment to change an API rather than after somebody depends on it.

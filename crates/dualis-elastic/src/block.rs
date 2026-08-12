@@ -1,7 +1,7 @@
 //! A block of elastic material, held and loaded, solved for its displacement.
 
 use dualis_core::conserved::quantity;
-use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, Violation};
+use dualis_core::{Domain, Exchange, Kind, Ledger, Reading, ScalarField, Violation};
 use dualis_units::{Energy, Force, Length, LengthVec, Pressure, Time};
 use glam::DVec3;
 
@@ -32,6 +32,20 @@ pub enum Face {
 }
 
 impl Face {
+    /// Which axis this face is normal to, as an [`Axis`](crate::Axis).
+    ///
+    /// The same thing [`axis`](Face::axis) returns, typed. `axis` predates `Axis` and returns an index
+    /// because it is on a published type; having two spellings of one idea inside one crate is worse
+    /// than having a second method, so this is the one to reach for and that one is kept for callers
+    /// who already use it.
+    pub fn on(self) -> crate::Axis {
+        match self.axis() {
+            0 => crate::Axis::X,
+            1 => crate::Axis::Y,
+            _ => crate::Axis::Z,
+        }
+    }
+
     /// Which axis the face's normal is along: 0, 1 or 2.
     pub fn axis(self) -> usize {
         match self {
@@ -609,6 +623,20 @@ impl Domain for Block {
         Some(self)
     }
 
+    /// The **magnitude** of the displacement, the same scalar [`Waves`](crate::Waves) offers.
+    ///
+    /// Added later than it should have been. A static solve's displacement is exactly as drawable as a
+    /// dynamic one's, and without this the whole analysis layer could see neither — a layer whose rule
+    /// is to dispatch on the shape of the data gives no picture to a domain that offers no shape. Both
+    /// halves of this crate were invisible for as long as the crate has existed.
+    ///
+    /// `|u|` costs the sign: a bar in tension and one in compression draw the same. That is the trade
+    /// for the one scalar `as_field` nominates, and it is the right one — a component would be zero
+    /// everywhere for a shear case viewed along the wrong axis.
+    fn as_field(&self) -> Option<&dyn ScalarField> {
+        Some(self)
+    }
+
     fn checkpoint(&mut self) {
         self.saved = Some(Box::new(Saved {
             u: self.u.clone(),
@@ -625,5 +653,62 @@ impl Domain for Block {
             self.value = s.value;
             self.load = s.load;
         }
+    }
+}
+
+impl ScalarField for Block {
+    /// **Metres** — what a displacement is.
+    fn unit(&self) -> &'static str {
+        "m"
+    }
+
+    /// `|u|` trilinearly interpolated between nodes, clamped at the faces.
+    ///
+    /// Clamped rather than extrapolated: outside the body no displacement is defined, and continuing
+    /// the gradient would draw material moving where there is none.
+    fn at(&self, p: dualis_core::units::LengthVec, _t: dualis_core::units::Time) -> f64 {
+        let (nx, ny, nz) = self.nodes;
+        let q = p.to_si() / self.dx;
+        // NaN spelled out rather than folded into a comparison: a visualiser can hand one over and it
+        // must not reach the cast below.
+        if q.is_nan() {
+            return 0.0;
+        }
+        let axis = |v: f64, n: usize| -> (usize, f64) {
+            let last = n.saturating_sub(1);
+            if v <= 0.0 {
+                return (0, 0.0);
+            }
+            if v >= last as f64 {
+                return (last, 0.0);
+            }
+            let i = v.floor();
+            (i as usize, v - i)
+        };
+        let (i, fx) = axis(q.x, nx);
+        let (j, fy) = axis(q.y, ny);
+        let (k, fz) = axis(q.z, nz);
+        let (i1, j1, k1) = (
+            (i + 1).min(nx - 1),
+            (j + 1).min(ny - 1),
+            (k + 1).min(nz - 1),
+        );
+        let mag = |a: usize, b: usize, c: usize| {
+            let n = 3 * self.node(a, b, c);
+            (self.u[n] * self.u[n] + self.u[n + 1] * self.u[n + 1] + self.u[n + 2] * self.u[n + 2])
+                .sqrt()
+        };
+        let lerp = |lo: f64, hi: f64, t: f64| lo * (1.0 - t) + hi * t;
+        let z0 = lerp(
+            lerp(mag(i, j, k), mag(i1, j, k), fx),
+            lerp(mag(i, j1, k), mag(i1, j1, k), fx),
+            fy,
+        );
+        let z1 = lerp(
+            lerp(mag(i, j, k1), mag(i1, j, k1), fx),
+            lerp(mag(i, j1, k1), mag(i1, j1, k1), fx),
+            fy,
+        );
+        lerp(z0, z1, fz)
     }
 }

@@ -6,19 +6,47 @@ rules that make "add a physics" cost one crate.
 
 ## The gate, before any commit
 
+**Run it as a script, not as lines to paste.** The first line is the load-bearing one and it is
+there because this gate has reported a pass it had not earned — see below.
+
 ```sh
+set -euo pipefail
+
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo deny check
 for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots heat_in_three_dimensions room_in_three_dimensions busbar_rating optical_bench espresso_shot portafilter_flow agents_quickstart readme_check; do
-  cargo run --locked --release --example "$e" || break
+  cargo run --locked --release --example "$e"
 done
 # MSRV, library only: `--exclude` needs `--workspace` beside it, and the app is not
 # held to 1.78 because nothing depends on it.
 cargo +1.78 build --locked --workspace --exclude dualis-world
+
+echo "the gate passed"     # and if this line does not appear, it did not
 ```
+
+### The gate has said `ok` while failing, in five different disguises
+
+All of them the same mistake — reading the *output* of a check as evidence the check *ran*:
+
+| what was done | what happened |
+| --- | --- |
+| seven unchained lines | a failure in the middle scrolled past and the last line's status was read as the gate's |
+| `... \|\| break` in the examples loop | one example failed, the loop stopped, and the only symptom was output that was not there |
+| `cargo clippy ... ; echo OK` | a version bump had invalidated `Cargo.lock`, so `--locked` refused to start and `OK` printed anyway |
+| `cargo clippy ... \| tail -1` under `set -e` | a pipeline's status is its **last** command's, and `tail` succeeded. This is why `pipefail` is in the line above |
+| `cargo publish` twice per crate, once through `grep` and once for `$?` | the first call published, the second failed with "already exists", and the release loop stopped on its first crate |
+
+`set -euo pipefail` closes four of the five. The fifth was a doubled command and no shell option
+catches that; running each thing **once** and reading its status is the only fix.
+
+Two more of the same shape, outside the shell. `gh run watch --exit-status` returned zero with a job
+still queued, so a CI run was read as green when a job had not started — ask each job for its own
+`conclusion` rather than the run's. And a `python` script that edits several files can raise on its
+last anchor and write **nothing**, after printing `ok` for the earlier edits; check every anchor
+before writing any of them.
 
 CI also builds `wasm32-unknown-unknown` and runs the suite under `wasm32-wasip1`. All of it is
 in [CONTRIBUTING.md](CONTRIBUTING.md), which is the authority; this is the short form.
@@ -165,8 +193,9 @@ accumulates.
 The order matters: each crate must be live on the index before the next one resolves it.
 
 ```sh
+set -euo pipefail
 for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular          dualis-optics dualis-thermal dualis-electrical dualis-elastic dualis-em dualis-fluid dualis-porous dualis-scene dualis-view dualis; do
-  cargo publish -p "$c" --locked || break
+  cargo publish -p "$c" --locked      # once per crate. Twice publishes the first and stops on it
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel
 ```

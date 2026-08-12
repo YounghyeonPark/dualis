@@ -46,9 +46,9 @@ use dualis_elastic::{Axis, Elastic, Waves};
 fn column(elements: usize, hold: [Axis; 2]) -> Waves {
     let mut w = Waves::new(
         "column",
-        Elastic::aluminium_6061(),
         (1, 1, elements),
         Length::mm(1.0),
+        Elastic::aluminium_6061(),
     );
     for axis in hold {
         w.hold(axis);
@@ -203,7 +203,7 @@ fn the_marched_ratio_is_poissons_ratio_and_the_mesh_error_cancels() {
                     .into_iter()
                     .enumerate()
             {
-                let mut w = Waves::new("c", material, (1, 1, elements), Length::mm(1.0));
+                let mut w = Waves::new("c", (1, 1, elements), Length::mm(1.0), material);
                 for axis in hold {
                     w.hold(axis);
                 }
@@ -315,7 +315,7 @@ fn the_energy_swings_by_the_leapfrog_factor_and_does_not_drift() {
 #[test]
 fn the_stability_limit_is_the_operators_and_it_is_enforced() {
     let material = Elastic::aluminium_6061();
-    let w = Waves::new("cube", material, (4, 4, 4), Length::mm(1.0));
+    let w = Waves::new("cube", (4, 4, 4), Length::mm(1.0), material);
     let limit = w.max_stable_dt(Time::from_si(0.0)).to_si();
     let courant = 1e-3 / (material.p_wave_speed().to_si() * 3.0f64.sqrt());
     println!(
@@ -324,7 +324,7 @@ fn the_stability_limit_is_the_operators_and_it_is_enforced() {
     );
     assert!(limit.is_finite() && limit > 0.0);
 
-    let mut over = Waves::new("cube", material, (4, 4, 4), Length::mm(1.0));
+    let mut over = Waves::new("cube", (4, 4, 4), Length::mm(1.0), material);
     over.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     let err = over
         .step(
@@ -336,7 +336,7 @@ fn the_stability_limit_is_the_operators_and_it_is_enforced() {
     assert_eq!(err.quantity, "leapfrog stability");
 
     // And just inside it runs, so the check is a limit and not a blanket refusal.
-    let mut at = Waves::new("cube", material, (4, 4, 4), Length::mm(1.0));
+    let mut at = Waves::new("cube", (4, 4, 4), Length::mm(1.0), material);
     at.release_mode(1, Axis::Z, Axis::Z, Length::from_si(1e-9));
     at.step(
         Time::from_si(0.0),
@@ -354,7 +354,7 @@ fn the_stability_limit_is_the_operators_and_it_is_enforced() {
 /// one of them would restore a body with the wrong velocity and nothing would say so.
 #[test]
 fn an_undisturbed_body_sits_still_and_a_checkpoint_carries_the_velocity() {
-    let mut w = Waves::new("still", Elastic::steel(), (3, 3, 3), Length::mm(2.0));
+    let mut w = Waves::new("still", (3, 3, 3), Length::mm(2.0), Elastic::steel());
     let dt = Time::from_si(w.max_stable_dt(Time::from_si(0.0)).to_si() * 0.9);
     for n in 0..50 {
         w.step(
