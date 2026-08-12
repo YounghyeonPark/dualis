@@ -1,0 +1,42 @@
+# Nothing here is live yet. Uncomment a line and put a real account in it, and GitHub renders a
+# Sponsor button at the top of the repository. A key with an empty or placeholder value renders a
+# button that goes nowhere, which is worse than no button.
+#
+# The licence has no opinion about this. `MIT OR Apache-2.0` says nothing about money, and accepting
+# support for open-source work is compatible with both.
+
+# GitHub Sponsors. No platform fee, but it needs enrolment and payouts run through Stripe Connect,
+# whose supported regions change -- check the current list rather than assuming.
+# github: YounghyeonPark
+
+# The ones that reach the most countries with the least setup.
+# ko_fi: yourname
+# buy_me_a_coffee: yourname
+# liberapay: yourname
+
+# For a project that wants a shared account and public books rather than personal income. Open
+# Collective takes a fee and publishes every expense, which is the right shape if this ever has more
+# than one maintainer.
+# open_collective: dualis
+
+# custom takes up to four URLs, for anything the keys above do not cover.
+# custom: ["https://..."]
+
+# --- Two things worth deciding before switching one on ------------------------------------------
+#
+# WHAT THE MONEY BUYS, said out loud. A Sponsor button implies support without defining it, and the
+# implication is what causes friction: somebody who has given money reasonably expects their issue to
+# come first. If that is not the arrangement, say so where the button is -- "this supports the work
+# and buys no priority, no support commitment and no promise of a feature" costs one line and prevents
+# the whole misunderstanding.
+#
+# WHOSE INCOME IT IS. Every commit in this repository is authored as `ypark@curibio.com`. That is a
+# company address on a personally owned, permissively licensed public repository, and it is the record
+# anybody looking at provenance sees first. Employment agreements commonly assign intellectual
+# property created in the scope of employment or with employer resources, and many require outside
+# income to be disclosed. Which of those apply is a question about one contract and not about this
+# file -- but the answer should be known before money arrives, not after, and the same answer bears on
+# the patent question.
+#
+# For future commits: `git config user.email you@personal.example` in this repository sets it per
+# repository without touching the global identity or the existing history.
