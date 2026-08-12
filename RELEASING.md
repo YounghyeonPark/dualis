@@ -159,6 +159,11 @@ it did with each.
 that sends a fresh `release: published` event. The tag stays where it is and nothing on crates.io or
 PyPI is touched.
 
+**v0.13.0 was left without one, deliberately.** Re-depositing means deleting and recreating a release
+that is already public, and the fix was worth more than the DOI for a version already out. So the tag
+list has a gap at 0.13.0 and **0.14.0 is the first version with a DOI** — recorded here because
+otherwise it looks like a mistake later rather than a decision now.
+
 **The order matters for the next release.** Throw the switch *before* tagging, or 0.13.0 is another tag
 with no DOI and the first citable version waits for 0.14.0.
 

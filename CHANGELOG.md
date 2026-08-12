@@ -15,6 +15,25 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ## [Unreleased]
 
+### Fixed
+
+- **`CITATION.cff`'s licence field, which failed the 0.13.0 Zenodo deposition.** `license:
+  MIT OR Apache-2.0` is a valid SPDX *expression* and `Cargo.toml` is right to use it; CFF's schema
+  takes an identifier or a **list** of them and an expression matches neither. Validated against the
+  real schema rather than guessed, and now a two-element list.
+
+  0.13.0 therefore has **no DOI** — it went to crates.io and PyPI and Zenodo rejected the metadata,
+  reporting it only as a red *Failed* on its own web page. Nothing in the release, the tag or CI knew.
+  0.14.0 will be the first version with one; re-depositing 0.13.0 would mean deleting and recreating
+  its GitHub release, and it is not worth doing to a version that is already out.
+
+  `crates/dualis-world/tests/citation_is_valid.rs` is four checks so the next one fails in the gate
+  instead of on a web page: the licence is a list, every field a deposition is built from is present,
+  the version matches the crate version, and the author block is a list of mappings rather than a bare
+  string — that last being the silent half of this class, since a rejection is loud and a record with
+  no creator is not.
+
+
 ## [0.13.0] — 2026-08-12
 
 **Elastic waves, any material, and one behaviour change that will bite a deserialiser.**
