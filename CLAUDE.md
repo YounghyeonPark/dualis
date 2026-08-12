@@ -75,15 +75,14 @@ Several of the more useful commits here are corrections to a mistaken assumption
 is the part worth keeping. Backticks in a message break `git commit -m` under some shells — write the
 message to a file and use `git commit -F`.
 
-**Commit as `ypark.dev@gmail.com`.** Set per repository with
-`git config user.email ypark.dev@gmail.com`, which does not touch any global identity — and a fresh
-clone starts from the global one, so set it again before the first commit there.
+**Commit as `ypark.dev@gmail.com`.** This is a personal project and every commit says so. Set it per
+repository with `git config user.email ypark.dev@gmail.com`, which does not touch any global identity —
+and a fresh clone starts from the global one, so set it again before the first commit there.
 
-The whole history was rewritten to that address on 2026-08-12. Every one of the 148 commits now has it
-as both author and committer, and no commit mentions the company address it was written with. That
-matters more than a preference: a company address on a personally owned, permissively licensed public
-repository is the record anybody checking provenance reads first, and it bears on who owns the work and
-on whether outside income has to be disclosed.
+The whole history was rewritten to that address on 2026-08-12: all 150 commits carry it as author and
+committer, in the message bodies as well as the address fields. The first pass changed only the fields
+and left two messages quoting the old address in prose, which is the kind of thing to check for
+directly rather than to assume a rewrite covered.
 
 **No `Co-Authored-By` trailer.** An agent's default is to add one and this repository does not want it:
 the commits are the maintainer's, and a tool that wrote some of the text is not a contributor. The

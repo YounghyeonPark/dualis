@@ -1,25 +1,48 @@
-# Nothing here is live yet. Uncomment a line and put a real account in it, and GitHub renders a
-# Sponsor button at the top of the repository. A key with an empty or placeholder value renders a
-# button that goes nowhere, which is worse than no button.
+# One platform, and expect close to nothing from it.
 #
-# The licence has no opinion about this. `MIT OR Apache-2.0` says nothing about money, and accepting
-# support for open-source work is compatible with both.
+# A Sponsor button on a library like this is not an income stream -- research-adjacent software gets
+# funded by grants, not by donations, and the honest forecast for a solo project of this shape is a
+# handful of small sponsors at most. What the button is genuinely for is being a **door**: it tells a
+# company already depending on the library that there is a way to pay, and that occasionally turns into
+# a conversation worth far more than the button collects.
+#
+# So: enable one, set expectations, and put the effort that would have gone into a second platform into
+# the thing that actually funds work like this -- a citable paper. `CITATION.cff` is already here and
+# Zenodo is switched on; a software paper (JOSS, SoftwareX, Computer Physics Communications) turns this
+# into something a grant application can cite.
+#
+# A key with an empty or placeholder value renders a button that goes nowhere, which is worse than no
+# button -- the same failure as an invalid ORCID rendering no citation at all.
+#
+# The licence has no opinion about any of this. `MIT OR Apache-2.0` says nothing about money, and
+# accepting support for open-source work is compatible with both.
 
-# GitHub Sponsors. No platform fee, but it needs enrolment and payouts run through Stripe Connect,
-# whose supported regions change -- check the current list rather than assuming.
+# GitHub Sponsors -- the recommended one, and the only one recommended.
+#
+# No platform fee, it sits where the code is, and one platform is one set of tax records instead of
+# three. Enrolment needs a payout account through Stripe Connect, whose supported regions change, so
+# check the current list rather than assuming.
+#
+# Enrol first at github.com/sponsors, then uncomment. Enabling the key before enrolling renders a
+# button that leads to a page saying sponsorships are not accepted, which is the failure described
+# above rather than a head start on it.
 # github: YounghyeonPark
 
-# The ones that reach the most countries with the least setup.
+# Deliberately not enabled, rather than not considered:
+#
+#   ko_fi / buy_me_a_coffee   reach further with less setup, and take a cut. Worth adding only if
+#                             somebody says they could not use Sponsors.
+#   liberapay                 no fee, very little reach.
+#   open_collective           a shared account with public books and a fiscal-host fee. The right
+#                             shape when there is more than one maintainer, and there is not.
+#
+# Every extra platform is another account, another payout, another line in a tax return, for the same
+# near-zero. Add one when a would-be sponsor is actually blocked.
+#
 # ko_fi: yourname
 # buy_me_a_coffee: yourname
 # liberapay: yourname
-
-# For a project that wants a shared account and public books rather than personal income. Open
-# Collective takes a fee and publishes every expense, which is the right shape if this ever has more
-# than one maintainer.
 # open_collective: dualis
-
-# custom takes up to four URLs, for anything the keys above do not cover.
 # custom: ["https://..."]
 
 # --- Two things worth deciding before switching one on ------------------------------------------
@@ -30,10 +53,6 @@
 # and buys no priority, no support commitment and no promise of a feature" costs one line and prevents
 # the whole misunderstanding.
 #
-# WHOSE INCOME IT IS. Every commit was authored as a company address until the history was rewritten
-# on 2026-08-12; all 148 now carry `ypark.dev@gmail.com` as author and committer. That closes the
-# provenance record, and it does not answer the question underneath it: employment agreements commonly
-# assign intellectual property created in the scope of employment or with employer resources, and many
-# require outside income to be disclosed. Which of those apply is a question about one contract and not
-# about this file -- but the answer should be known before money arrives, not after, and the same
-# answer bears on the patent question.
+# WHERE THE MONEY GOES. Donations are income in most tax systems rather than gifts, so whichever
+# platform is chosen has reporting attached to it. Worth settling before a button is switched on rather
+# than at the end of a tax year.
