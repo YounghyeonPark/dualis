@@ -73,6 +73,12 @@ Several of the more useful commits here are corrections to a mistaken assumption
 is the part worth keeping. Backticks in a message break `git commit -m` under some shells — write the
 message to a file and use `git commit -F`.
 
+**No `Co-Authored-By` trailer.** An agent's default is to add one and this repository does not want it:
+the commits are the maintainer's, and a tool that wrote some of the text is not a contributor. The
+seventy commits that already carry one are left alone — removing them would rewrite every SHA from the
+initial commit and orphan twelve release tags, which is a larger price than the credit is worth. This
+line is the standing instruction so the next session does not put it back.
+
 ## The subagent team
 
 `.claude/agents/` holds seven reviewers, each built from a defect this repository actually shipped
