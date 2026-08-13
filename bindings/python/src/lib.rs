@@ -223,7 +223,11 @@ impl PySimulation {
     ///
     /// `nodes` is a list of dicts: `name`, `material`, `volume_m3`, `thickness_m`, `initial_k`,
     /// and optionally `ambient_k` **and** `area_m2` together to give the node somewhere to lose
-    /// heat to. `links` is a list of `{"from": ..., "to": ..., "w_per_k": ...}`. `absorbing`
+    /// heat to.
+    ///
+    /// `material` is any name in the kernel's catalogue — the error lists them, because a caller who
+    /// guessed has no other way to find out. It used to be a five-arm match written out here, which meant
+    /// four of the nine were unnameable from Python and nothing said so. `links` is a list of `{"from": ..., "to": ..., "w_per_k": ...}`. `absorbing`
     /// names the node heat off the bus lands in.
     ///
     /// ```python
@@ -263,19 +267,25 @@ impl PySimulation {
             let at = format!("{name:?} node {i}");
             let label = need_str(n, "name", &at)?;
             let material = need_str(n, "material", &at)?;
-            let substance = match material.as_str() {
-                "copper" => Substance::copper(),
-                "aluminium" => Substance::aluminium_6061(),
-                "electrical_steel" => Substance::electrical_steel(),
-                "fr4" => Substance::fr4(),
-                "pla" => Substance::pla(),
-                other => {
-                    return Err(PyValueError::new_err(format!(
-                        "{at}: unknown material {other:?}; known are \"copper\", \"aluminium\", \
-                         \"electrical_steel\", \"fr4\", \"pla\""
-                    )))
-                }
-            };
+            // `Substance::from_name`, not a match written out here. This was a five-arm match against a
+            // catalogue of nine, so `borosilicate`, `ice`, `stainless_304` and `water` could not be named
+            // from Python at all -- the **third** copy of the catalogue's spelling in this workspace, and
+            // the third to go stale.
+            //
+            // `dualis-world` had the same defect and it cost eleven releases: its list held eight of the
+            // nine and nobody could name `water` in a scene the entire time. A name absent from a lookup
+            // is not a wrong answer, it is a substance that never appears -- nothing fails, and nothing
+            // reports it. The spelling lives beside the catalogue now and every caller reads it there.
+            let substance = Substance::from_name(&material).ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "{at}: unknown material {material:?}; known are {}",
+                    Substance::CATALOGUE
+                        .iter()
+                        .map(|m| format!("{m:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ))
+            })?;
             let volume = Volume::from_si(need_f64(n, "volume_m3", &at)?);
             let thickness = Length::from_si(need_f64(n, "thickness_m", &at)?);
             let initial = Temperature::from_si(need_f64(n, "initial_k", &at)?);

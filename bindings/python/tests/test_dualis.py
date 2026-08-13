@@ -268,6 +268,51 @@ def test_steady_state_lands_where_marching_arrives():
     assert solved["winding"] - early["winding"] > 10.0
 
 
+
+def test_every_catalogue_material_can_be_named():
+    """Every material the kernel ships can be used from Python, and the error lists them all.
+
+    This binding held its own five-arm match against a catalogue of nine, so `borosilicate`, `ice`,
+    `stainless_304` and `water` were unnameable from Python and nothing failed -- a name absent from a
+    lookup is not a wrong answer, it is a substance that never appears. `dualis-world` had the identical
+    defect and it went eleven releases before anybody noticed.
+
+    So this asserts the nine by name rather than checking that "some materials work". A tenth added to the
+    kernel and not reachable here would still slip past, which is why the *error message* is checked too:
+    it is generated from the catalogue, so it names whatever the catalogue holds.
+    """
+    known = ["aluminium", "borosilicate", "copper", "electrical_steel", "fr4",
+             "ice", "pla", "stainless_304", "water"]
+    for material in known:
+        sim = dualis.Simulation(schedule="one-way", conservation_tolerance=1e-9)
+        sim.add_network(
+            f"net_{material}",
+            nodes=[{"name": "only", "material": material, "volume_m3": 1e-5,
+                    "thickness_m": 1e-3, "initial_k": 300.0}],
+            links=[],
+            absorbing="only",
+        )
+        got = sim.node_temperatures(f"net_{material}")[0][1]
+        assert abs(got - 300.0) < 1e-9, f"{material}: {got} K"
+
+    # And the refusal lists every one of them, because it is built from the catalogue rather than typed
+    # out -- so a tenth material added to the kernel appears here without this file being edited.
+    sim = dualis.Simulation(schedule="one-way", conservation_tolerance=1e-9)
+    try:
+        sim.add_network(
+            "bad",
+            nodes=[{"name": "only", "material": "unobtainium", "volume_m3": 1e-5,
+                    "thickness_m": 1e-3, "initial_k": 300.0}],
+            links=[],
+            absorbing="only",
+        )
+        raise AssertionError("an unknown material should have been refused")
+    except ValueError as e:
+        message = str(e)
+    for material in known:
+        assert f'"{material}"' in message, f"{material} missing from {message!r}"
+
+
 def test_a_network_with_nowhere_to_lose_heat_has_no_steady_state():
     """It warms without limit, so a finite answer would be the wrong answer to a question with
     no answer. Raised as a Violation, with the fields addressable like any other."""

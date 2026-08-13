@@ -65,6 +65,20 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Fixed
 
+- **Four of the nine catalogue materials could not be named from Python.** `bindings/python/src/lib.rs`,
+  `bindings/python/tests/test_dualis.py`.
+
+  The binding held its own five-arm match — `copper`, `aluminium`, `electrical_steel`, `fr4`, `pla` —
+  against a catalogue of nine, so `borosilicate`, `ice`, `stainless_304` and `water` were unreachable and
+  nothing said so. The **third** copy of the catalogue's spelling in this workspace, and the third to go
+  stale.
+
+  `dualis-world` had the identical defect and it cost eleven releases. The shape is the same every time: a
+  name absent from a lookup is not a wrong answer, it is a substance that never appears, so nothing fails
+  and no error is ever raised. `Substance::from_name` exists to be the one place the spelling lives, and
+  the binding reads it there now — which also means the refusal lists whatever the catalogue holds rather
+  than five names typed out beside it.
+
 - **Five error messages read with a gap in the middle.** A `\` line continuation had been lost from each,
   leaving a run of eighteen spaces mid-sentence in what a caller sees — an unknown finish, a `tracks`
   naming nothing, an unknown tolerance channel, two domains with one name, and an unused material.
