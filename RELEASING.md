@@ -236,6 +236,29 @@ that is already public, and the fix was worth more than the DOI for a version al
 list has a gap at 0.13.0 and **0.14.0 is the first version with a DOI** — recorded here because
 otherwise it looks like a mistake later rather than a decision now.
 
+### Where 0.14.0 was left, and what the next release should do
+
+**0.14.0 has no DOI and the tag was not moved.** Three depositions failed, all reporting the same
+fieldless message, and the fourth attempt would have needed force-pushing a published tag on a diagnosis
+that is not confirmed. The trade was wrong: the DOI is worth something and it is not worth rewriting a
+published ref to chase a guess.
+
+What that costs is nothing, because **the fixes are already on `main`** — one licence identifier,
+`.zenodo.json`, plain ASCII, and `citation_is_valid.rs` holding all four hazards. So the next release
+carries them without a single extra step, and **0.15.0 is the first version that could get a DOI**. Two
+versions now have a gap where one was expected; that is recorded here so it reads as a decision.
+
+**If it fails a fourth time, stop guessing and get a real error.** Zenodo's GitHub integration reports
+nothing usable, but its REST API validates a deposition field by field:
+
+```sh
+# zenodo.org -> Applications -> Personal access tokens, scope deposit:write
+curl -s -X POST "https://zenodo.org/api/deposit/depositions?access_token=$ZENODO_TOKEN"   -H "Content-Type: application/json"   -d "{\"metadata\": $(python -c 'import json,sys; print(json.dumps(json.load(open(".zenodo.json"))))')}"
+```
+
+That returns the field and the reason, which is the thing three failed releases never produced. It needs
+a token, which is why it has not been run — but it is the next step rather than a fifth guess.
+
 **The order matters for the next release.** Throw the switch *before* tagging, or 0.13.0 is another tag
 with no DOI and the first citable version waits for 0.14.0.
 

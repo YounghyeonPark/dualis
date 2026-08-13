@@ -60,12 +60,17 @@ The seventeenth arrived a third way again — by adding a domain the library did
 finding that the *new* API had the old shape. Five of them are the same underlying decision,
 which is the sort of thing only a count makes visible.
 
-The last five came from a fourth source: **splitting the application into layers**. That is the
-one worth reading if you only read one part of the file. Pulling the scene and view layers out
+Findings 18 to 22 came from a fourth source: **splitting the application into layers**. That is
+the one worth reading if you only read one part of the file. Pulling the scene and view layers out
 into crates paid finding 11, which had sat unfixed for months, and *created* finding 22 in the
 same edit — a unit conversion that was invisible while one crate did everything became something
 somebody has to declare, and the library has nowhere to declare it. A layer boundary turns
 assumptions into statements, and some of the statements turn out to be missing.
+
+Finding 23 came from the *seventh* domain, and 24 from a fifth source again: **being asked for
+something the format could not express**. A wish for every material rather than nine is not a bug
+report, and it is where the scene format turned out to be able to name nine substances and no
+others — including one, `water`, that the catalogue had held all along and no file could reach.
 
 Not one of the library's own tests could have found any of them. The ergonomic ones because a
 test is written by somebody who already knows the shape; the two real defects because nothing
