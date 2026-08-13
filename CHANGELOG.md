@@ -15,6 +15,8 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-08-13
+
 ### Added
 
 - **Hashin–Shtrikman bounds for stiffness, and a witness that says how tight they are.**
