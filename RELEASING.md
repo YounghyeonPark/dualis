@@ -159,6 +159,31 @@ it did with each.
 that sends a fresh `release: published` event. The tag stays where it is and nothing on crates.io or
 PyPI is touched.
 
+### What can and cannot be checked without a Zenodo login
+
+Tried at 0.14.0, because "check the page yourself" is a poor instruction if something cheaper works.
+Nothing cheaper does:
+
+| route | result |
+| --- | --- |
+| `zenodo.org/api/records?q=…` | **useless.** A *failed* deposition is not a record, so zero hits means "failed" or "still queued" or "the index lags" and there is no way to tell which. Fifteen minutes of polling after 0.14.0 returned nothing |
+| `zenodo.org/badge/latestdoi/<repo id>` | **useless.** 404s for a repository that has a DOI as readily as for one that does not |
+| `curl` against crates.io | 403 — it rejects the default user agent. `cargo search` works |
+
+So RELEASING.md's original instruction stands and is the only one that does: **look at the page.**
+
+One signal *is* visible from the GitHub side and is worth reading, though it is not proof:
+
+```sh
+HOOK=$(gh api repos/YounghyeonPark/dualis/hooks -q '.[] | select(.config.url | contains("zenodo")) | .id')
+gh api "repos/YounghyeonPark/dualis/hooks/$HOOK/deliveries?per_page=5"   -q '.[] | "\(.delivered_at)  \(.action)  \(.status) \(.status_code)"'
+```
+
+Three events fire per release — `created`, `published`, `released` — and Zenodo dedupes, so 409s are
+expected on some of them. At 0.14.0 the `released` delivery returned **202 Accepted**; the two
+deliveries recorded for 0.13.0 were both **409**. That is a difference and it is where to look first,
+but a 202 means "queued", not "deposited", so it does not close the question either.
+
 **v0.13.0 was left without one, deliberately.** Re-depositing means deleting and recreating a release
 that is already public, and the fix was worth more than the DOI for a version already out. So the tag
 list has a gap at 0.13.0 and **0.14.0 is the first version with a DOI** — recorded here because
