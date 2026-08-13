@@ -18,7 +18,19 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 ### Added
 
 - **A scene can declare a composite, not only a substance.** `Scene::composites`, `CompositeSpec`,
-  `CompositePart`, `Palette::with_composites`. `crates/dualis-world/tests/declared_composites.rs`.
+  `CompositePart`, `Palette::with_composites`. `crates/dualis-world/tests/declared_composites.rs`,
+  `scenes/22-wax-in-an-aluminium-matrix.json`.
+
+  **The scene is the pair to read with `21`.** The same wax, now four fifths of a composite whose other
+  fifth is aluminium, and `melted` climbs **125.8710 mm³/s against 100.6968** for the pure wax — exactly
+  `1/0.8`, a ratio with the density and the latent heat cancelled out of it. Diluting the wax makes a cubic
+  millimetre of buffer hold a fifth less latent heat, so the same twenty watts clear it a quarter faster.
+  Machine precision on both: `6.0e-15` against the closed form and `1.7e-14` on the energy sum.
+
+  The engineering reason for the metal is the other number: 5 W/m·K against the wax's 0.358, fourteen times
+  better at moving heat into the thing that stores it. And the latent heat dilutes by **mass**, so four
+  fifths of the volume is 54.67% of the mass and the composite stores 133.4 kJ/kg rather than 195.2 — the
+  trap the scene exists to make visible.
 
   The gap between the two things 0.14.0 added. A scene could bring its own `Substance` and the library
   could mix two of them, and there was no way to say the second thing in a file — so a motor that is

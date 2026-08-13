@@ -1,0 +1,32 @@
+{
+  "title": "the same wax buffer with an aluminium matrix through it, declared as a composite",
+  "schedule": "multirate",
+  "duration_s": 120.0,
+  "frames": 11,
+  "conservation_tolerance": 1e-9,
+  "materials": {
+    "octadecane": {
+      "name": "n-octadecane",
+      "density": 814.0,
+      "thermal": { "conductivity": 0.358, "specific_heat": 1934.0,
+                   "expansion": 8.0e-4, "emissivity": 0.9 },
+      "fusion": { "melting_point": 301.3, "latent_heat": 244000.0 }
+    }
+  },
+  "composites": {
+    "wax_in_aluminium": {
+      "parts": [
+        { "material": "octadecane", "volume_fraction": 0.8 },
+        { "material": "aluminium",  "volume_fraction": 0.2 }
+      ],
+      "conductivity_w_per_m_k": 5.0,
+      "emissivity": 0.9
+    }
+  },
+  "domains": [
+    { "kind": "heater", "name": "element", "watts": 20.0, "reserve_j": 1200.0 },
+    { "kind": "block", "name": "buffer", "cells": [11, 11, 11], "cell_mm": 2.0,
+      "initial_c": 20.0,
+      "material": "wax_in_aluminium" }
+  ]
+}

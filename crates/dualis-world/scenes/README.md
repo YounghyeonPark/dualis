@@ -1,6 +1,6 @@
 # Scenes
 
-Twenty-one worlds described as data, covering seven of the library's ten domains — twenty of them
+Twenty-two worlds described as data, covering seven of the library's ten domains — twenty-one of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -16,7 +16,7 @@ pointing at a node the scene defines. It reports a parse failure as `file:line:c
 keys that were expected, which is what an editor puts a squiggle under. CI runs it over every
 scene, because it would otherwise be the one entry point nothing exercises.
 
-Every file carries a `format` number, and **absence means 1** — which is what all twenty-one here
+Every file carries a `format` number, and **absence means 1** — which is what all twenty-two here
 are: nothing has yet changed what an existing key means. A version this build cannot read is refused
 rather than half-run: `deny_unknown_fields` catches a key that was *added*, but not one whose
 meaning changed, and that is what the number is for.
@@ -32,7 +32,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 | `out.gltf` | The geometry of the last frame, for Blender, three.js, Omniverse or any USD tool |
 
-`.csv` is the one that reaches the domains a picture cannot. Eleven of these twenty-one scenes have
+`.csv` is the one that reaches the domains a picture cannot. Twelve of these twenty-two scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -54,7 +54,7 @@ simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` 
 `dualis_scene::capture` produces, and everything the table above describes is available to any
 program without going near a scene file.
 
-`.gltf` is the one that leaves this workspace. Twelve of the twenty-one scenes have geometry to
+`.gltf` is the one that leaves this workspace. Thirteen of the twenty-two scenes have geometry to
 export — bodies, ray paths, a 3D field as its cell centres — and the other nine are **refused with
 a reason** rather than written as an empty scene: a 1D or 2D field is a graph, not something to put
 in a 3D viewer, and the message says which panel and why.
@@ -108,6 +108,25 @@ tells them apart.
 temperature that stops moving while energy keeps arriving. Ice is the only entry in the catalogue that
 melts, and a block that cannot melt does not report a `melted` column at all — so the column's
 presence is itself the check that `"material": "ice"` reached the domain.
+
+| `22-wax-in-an-aluminium-matrix` | The same wax as `21`, now four fifths of a **composite** whose other fifth is aluminium — the scene's `composites` block mixes a declared substance with a catalogue one. It holds the same 28.150 °C, and `melted` climbs **125.8710 mm³/s against 100.6968** for the pure wax: exactly `1/0.8`, a ratio with no material property left in it. 1200.0000 J = 151.2823 warming + 1048.7177 melting, to `1.7e-14` |
+
+`22` is the pair to read with `21`, and the ratio between them is the whole point. Diluting the wax to four
+fifths by volume makes a cubic millimetre of buffer hold a fifth less latent heat, so the same twenty watts
+clear it a quarter faster — and `1.25` is `1/0.8` with the density and the latent heat cancelled out. The
+*engineering* reason for the aluminium is the other number: 5 W/m·K against the wax's 0.358, fourteen times
+better at getting heat in and out of the thing that stores it, which is what a metal-matrix phase-change
+buffer is for.
+
+That 5 is **the caller's choice and the format checks it**. No single conductivity exists for a composite
+without knowing its microstructure, so the scene has to say which, and a value outside the Voigt and Reuss
+bounds — 0.4473 to 33.6864 for this pair — is refused with both bounds and the tighter Hashin–Shtrikman
+pair in the message, because a file has nowhere else to learn them. 5 sits inside HS's 0.6244 to 24.185,
+which is where an aluminium foam at a fifth by volume belongs.
+
+The latent heat dilutes by **mass** and not by volume, and that is the trap the scene exists to make
+visible: four fifths of the volume is 54.67% of the mass, so the composite stores 133.4 kJ/kg and not
+195.2. Using the volume fraction there would put the plateau 46% wrong.
 
 `21` is the one that needs **no catalogue entry at all**, and it is the format's first `materials` key.
 A wax is what a phase-change buffer is actually made of, no library will ever ship every material
@@ -264,7 +283,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all twenty-one on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all twenty-two on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

@@ -1507,6 +1507,102 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     );
                 }
             }
+            "22-wax-in-an-aluminium-matrix.json" => {
+                // The same wax as `21`, now four fifths of a composite whose other fifth is aluminium.
+                // Every number here comes from the two constituents; nothing is read back from the scene.
+                const MM3: f64 = 1e-9;
+                let (rho_w, c_w, l_w, phi_w) = (814.0, 1934.0, 244_000.0, 0.8);
+                let (rho_a, c_a, phi_a) = (2700.0, 896.0, 0.2);
+                let melting_c = 301.3 - 273.15;
+                let total_mm3 = 11.0 * 11.0 * 11.0 * 8.0;
+
+                let reading = |f: &dualis_world::Frame, label: &str| {
+                    f.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label} reading"))
+                        .value
+                };
+
+                // The plateau sits at the melting part's own melting point, **undiluted**. A latent heat
+                // dilutes with the mass fraction and a temperature does not, and mixing the two rules up
+                // is the mistake `Mix::fusion` exists to prevent.
+                let held = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("buffer")
+                    .expect("the buffer is still there")
+                    .mean_temperature()
+                    .to_si()
+                    - 273.15;
+                assert!(
+                    (held - melting_c).abs() < 1e-9,
+                    "{name}: the plateau should sit at the wax's own {melting_c} C, is {held}"
+                );
+
+                // **The melting rate is `P/(phi_w rho_w L_w)`**, which is the composite's volumetric latent
+                // heat and nothing else. Read between two frames well inside the plateau.
+                let slope = (reading(&frames[5], "melted") - reading(&frames[2], "melted"))
+                    / (frames[5].time_s - frames[2].time_s);
+                let closed = 20.0 / (phi_w * rho_w * l_w * MM3);
+                println!(
+                    "  {name}: melted at {slope:.4} mm3/s against P/(phi rho L) = {closed:.4} — off                      {:.2e}",
+                    (slope / closed - 1.0).abs()
+                );
+                assert!(
+                    (slope / closed - 1.0).abs() < 1e-12,
+                    "{name}: {slope:.4} mm3/s against a closed-form {closed:.4}"
+                );
+
+                // **And it is exactly `1/phi_w` times scene 21's rate**, which is the statement only
+                // having both scenes can make: the ratio of the two has no material property left in it
+                // at all. Diluting the wax by a fifth makes a cubic millimetre of composite hold a fifth
+                // less latent heat, so the same watts clear it a quarter faster.
+                let pure = 20.0 / (rho_w * l_w * MM3);
+                println!(
+                    "  and {:.6}x scene 21's {pure:.4} mm3/s, against 1/phi = {:.6}",
+                    slope / pure,
+                    1.0 / phi_w
+                );
+                assert!(
+                    (slope / pure * phi_w - 1.0).abs() < 1e-12,
+                    "{name}: the ratio to pure wax should be 1/phi_w = {:.6}, is {:.6}",
+                    1.0 / phi_w,
+                    slope / pure
+                );
+
+                // The energy accounts, and this is where the volume-and-mass rules are both exercised at
+                // once: the sensible term uses the volume-additive `rho c` and the latent term uses the
+                // mass-diluted `L`. Getting either weighting wrong breaks the sum.
+                let volumetric = phi_w * rho_w * c_w + phi_a * rho_a * c_a;
+                let sensible = volumetric * total_mm3 * MM3 * (melting_c - 20.0);
+                let melted = reading(last, "melted");
+                let fusion = melted * MM3 * phi_w * rho_w * l_w;
+                let absorbed = reading(last, "absorbed");
+                println!(
+                    "  and {absorbed:.4} J = {sensible:.4} warming + {fusion:.4} melting = {:.4}, off                      {:.2e}",
+                    sensible + fusion,
+                    ((sensible + fusion) / absorbed - 1.0).abs()
+                );
+                assert!(
+                    ((sensible + fusion) / absorbed - 1.0).abs() < 1e-12,
+                    "{name}: {absorbed:.4} J absorbed against {:.4} accounted for",
+                    sensible + fusion
+                );
+
+                // About three fifths melted, and stopped: the reserve is the limit rather than the block.
+                let fraction = melted / total_mm3;
+                assert!(
+                    (0.55..0.70).contains(&fraction),
+                    "{name}: about three fifths should be liquid, {fraction:.4} is"
+                );
+                for f in frames.iter().filter(|f| f.time_s > 70.0) {
+                    assert_eq!(
+                        reading(f, "melted"),
+                        melted,
+                        "{name}: melting continued after the heater was empty"
+                    );
+                }
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

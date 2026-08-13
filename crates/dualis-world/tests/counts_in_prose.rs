@@ -237,7 +237,16 @@ fn the_scene_count_agrees_everywhere_it_is_written() {
     let readme = "crates/dualis-world/scenes/README.md";
     phrase(readme, "{} worlds described as data", scenes);
     phrase(readme, "which is what all {} here", scenes);
-    phrase(readme, "Eleven of these {} scenes", scenes);
+    // These two sentences also carry a *numerator* — how many scenes have a fieldless domain, how many
+    // export geometry — and the templates deliberately cover only the total. A numerator is a different
+    // count with a different source, and folding it in here would make the guard fail every time one
+    // moved, which is what it did when scene 22 arrived: the template held "Eleven of these {} scenes" and
+    // twelve became correct.
+    //
+    // Both were verified against the binary rather than reasoned about — 12 scenes print a "not drawn"
+    // domain and 13 export a `.gltf` — but nothing counts them continuously, and a guard that demanded a
+    // template edit for every such move would be a guard somebody rewrites rather than reads.
+    phrase(readme, "of these {} scenes", scenes);
     phrase(readme, "of the {} scenes have geometry", scenes);
     phrase(readme, "runs all {} on every commit", scenes);
     phrase(
