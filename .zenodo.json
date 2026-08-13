@@ -1,0 +1,22 @@
+{
+  "title": "dualis: physics for simulated worlds, checked against closed forms",
+  "upload_type": "software",
+  "description": "<p>A Rust workspace of sixteen crates: a kernel that knows conservation, integration, scheduling and sampling but no physics, ten domain crates built on it, and scene and view layers above. Every claim is checked against a closed form, an exact limit, a conservation law or a convergence rate rather than against a second implementation. Results are bit-for-bit reproducible across platforms, optimisation levels, WebAssembly and thread counts, with a pinned digest that says so.</p><p><strong>Licensed MIT OR Apache-2.0, at your option.</strong> This record names Apache-2.0 because Zenodo stores exactly one licence and cannot express the choice; the authoritative statement is the <code>license</code> field of <code>Cargo.toml</code> and the two LICENSE files in the repository.</p>",
+  "creators": [
+    {
+      "name": "Park, Younghyeon",
+      "orcid": "0000-0002-4733-5049"
+    }
+  ],
+  "license": "apache-2.0",
+  "access_right": "open",
+  "keywords": [
+    "physics simulation",
+    "verification",
+    "closed-form solutions",
+    "conservation laws",
+    "reproducibility",
+    "Rust"
+  ],
+  "version": "0.14.0"
+}

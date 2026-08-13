@@ -142,6 +142,31 @@ newest. Cite the concept DOI in prose and the version DOI when the result depend
 Once the first one exists, add it to `CITATION.cff` as `doi:` and to the BibTeX block in `README.md`.
 Neither can be written before there is a DOI to write, which is why they are not there now.
 
+### It failed twice on the same field, and the second time the test was wrong
+
+**v0.13.0**: `license: MIT OR Apache-2.0`. A valid SPDX *expression*, which CFF's schema does not take.
+**v0.14.0**: the two-element *list*. Valid CFF — `cffconvert --validate` says so — and Zenodo rejected it
+too, because **Zenodo stores exactly one licence per record** and a list is not one.
+
+Valid CFF and valid Zenodo are different things, and `citation_is_valid.rs` had been asserting the first
+while the release needed the second. Worse, it asserted the *list* specifically: it was written to lock
+in the fix for 0.13.0 and it locked in the shape of the next failure. A test that encodes what the last
+change did rather than what the consumer needs is the pattern this workspace has named twice before.
+
+The fix, and the two things worth copying from it:
+
+- **`.zenodo.json`**, which Zenodo prefers over `CITATION.cff`, written in Zenodo's own vocabulary. Its
+  licence identifier is **lowercase** — `apache-2.0` — and that was read off
+  `zenodo.org/api/vocabularies/licenses?q=apache` rather than guessed, because guessing it would have
+  been a third failure on one field.
+- **Both files kept correct**, rather than relying on the precedence. "Prefers" is documented behaviour
+  and not a guarantee, and keeping both right costs one test.
+
+`CITATION.cff` now names one identifier and says in `message` that it is naming one of two. The real
+licensing is unchanged: `Cargo.toml`'s expression and the two LICENSE files are the authoritative
+statement, and a DOI record that can hold one licence should say so rather than imply the project has
+one.
+
 ### The first deposition failed, and the failure is silent from inside the repository
 
 v0.13.0 went to crates.io and PyPI and got **no DOI**. Zenodo read `CITATION.cff`, rejected it, and

@@ -3,7 +3,9 @@ message: >-
   If this software contributes to work you publish, please cite it. A citation is the
   thing that helps; co-authorship is not requested and could not be required — see the
   Citation section of README.md for why, and for the standing invitation to collaborate
-  where a joint contribution is genuinely earned.
+  where a joint contribution is genuinely earned. Licensed MIT OR Apache-2.0 at your
+  option; the `license` field below names one of the two because this format and Zenodo
+  each store exactly one, and `Cargo.toml` carries the authoritative expression.
 title: "dualis: physics for simulated worlds, checked against closed forms"
 abstract: >-
   A Rust workspace of sixteen crates: a kernel that knows conservation, integration,
@@ -17,11 +19,18 @@ authors:
   - family-names: Park
     given-names: Younghyeon
     orcid: "https://orcid.org/0000-0002-4733-5049"
-# A list, not the SPDX expression `MIT OR Apache-2.0`. CFF wants identifiers and Zenodo rejected the
-# expression outright -- the v0.13.0 deposition failed on exactly this line.
-license:
-  - MIT
-  - Apache-2.0
+# ONE identifier, and this line has now failed a deposition twice.
+#
+# The project is `MIT OR Apache-2.0`. v0.13.0 put that SPDX **expression** here; CFF's schema takes an
+# identifier or a list of them and an expression is neither, so Zenodo rejected it. v0.14.0 put the
+# **list**, which is valid CFF and validates clean -- and Zenodo rejected that too, because Zenodo stores
+# exactly one licence per record and a list is not one. Valid CFF and valid Zenodo are different things,
+# and satisfying the schema is not the same as satisfying the consumer.
+#
+# So: one identifier, Apache-2.0, matching `.zenodo.json` beside this file. The real licensing is
+# unchanged and is stated by `Cargo.toml` and the two LICENSE files; `message` below says so in prose,
+# because a citation record that names one of two licences should say that is what it is doing.
+license: Apache-2.0
 repository-code: "https://github.com/YounghyeonPark/dualis"
 version: 0.14.0
 date-released: "2026-08-13"
