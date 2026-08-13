@@ -390,6 +390,51 @@ whole temperature drop sits on one face. A region that selects **no cells** is r
 ignored: a mistyped bound otherwise gives a block of one material that runs, audits, renders and
 answers the wrong question with nothing saying the coating was never applied.
 
+### Every material, and the honest answer about a mixture of two
+
+Resolving a material *per cell* answers "this part is two things". It does not answer "this part is
+made of a thing that is itself two things", which is what a motor, a populated board, a printed part
+and a phase-change buffer all are — and answering that turned out to need something the kernel did not
+have.
+
+**A catalogue is not the answer to "any material".** Nine entries against hundreds of thousands, and
+adding a tenth does not change the shape of that. The answer is that a `Substance` is *data* —
+`Deserialize` and a validator — so anything with a datasheet can be declared without the library
+learning it exists. `Substance::from_name` puts the catalogue's spelling in one place so a consumer
+writing a data-driven front end reads it rather than retyping it; that is the same defect three times
+now, and the third copy was in the Python bindings holding five of the nine.
+
+**`Mix` is the kernel's answer to a composite, and its shape is a refusal.** A mixture's properties
+divide into three kinds and conflating them is the whole failure mode:
+
+| | what a mixture rule can say |
+| --- | --- |
+| density, volumetric heat capacity, latent heat | **exact**, from conservation alone |
+| conductivity, stiffness | **bounded**. No single value exists without the microstructure |
+| emissivity | **nothing**. It is a property of the surface, and a mixture has no surface |
+
+The middle row is why this belongs in the kernel rather than in a helper somebody writes once. Half
+aluminium and half borosilicate conducts anywhere between 2.21 and 84.06 W/m·K — a factor of **38** —
+and *both ends are attained by real arrangements of those two materials*. A library that returned
+`0.5·167 + 0.5·1.114` would hand back the top of a 38-fold range as though it were a measurement. So
+`Mix` returns the pair, and `as_substance` makes the caller choose inside it and refuses a choice
+outside.
+
+That this belongs to the kernel and not to a domain is worth stating as an instance of the rule: `Mix`
+knows conservation and algebra and no physics. Every check on it is a domain's — a laminate in
+`Solid3D` attaining Reuss across its layers and Voigt along them, a laminate in `Waves` and `Block`
+attaining the shear pair, a checkerboard landing inside Hashin–Shtrikman — and none of those required
+the kernel to know they existed.
+
+**The bounds are checked against closed forms that were derived elsewhere**, which is rule 1 applied to
+algebra rather than to a solver: Hashin–Shtrikman equals Maxwell–Garnett for conductivity to `6.7e-16`
+and Mori–Tanaka for stiffness to `2.2e-16`, and both of those are separately derived rational functions
+that agree with it at every fraction rather than in a limit.
+
+The consumer half is `materials` and `composites` in the scene format, and scenes `21` and `22`. The
+pair is the demonstration: the same wax buffer, then four fifths of it with an aluminium matrix, melting
+at exactly `1/0.8` the rate — a ratio with the density and the latent heat cancelled out of it.
+
 Two entries that used to be on this list are answered, and both the same way — not by a domain
 absorbing another's job, but by a test that fails if two of them ever stop being limits of one
 physics. There are three of those now:
