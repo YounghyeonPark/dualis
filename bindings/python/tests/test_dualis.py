@@ -42,7 +42,7 @@ def test_every_joule_arrives_and_the_rise_matches_the_closed_form():
 
     # 6 J into 20 mm x 1 cm^2 of aluminium. The constant comes from the module, the arithmetic
     # from here, so this is not the simulation checked against itself.
-    capacity = dualis.aluminium_heat_capacity_j_per_k(0.020 * 1e-4)
+    capacity = dualis.heat_capacity_j_per_k("aluminium", 0.020 * 1e-4)
     want = 6.0 / capacity
     got = sim.temperature("bar") - 293.15
     assert abs(got / want - 1.0) < 1e-9, f"wanted {want} K, got {got}"
@@ -267,6 +267,52 @@ def test_steady_state_lands_where_marching_arrives():
     early = dict(motor(watts=watts, seconds=1).node_temperatures("motor"))
     assert solved["winding"] - early["winding"] > 10.0
 
+
+
+
+def test_a_bar_and_a_lump_can_be_made_of_something_other_than_aluminium():
+    """What a bar and a lump are made of is sayable, and the default is still aluminium.
+
+    Both hardcoded `aluminium_6061`, and `add_lump`'s docstring did not even say so -- which is the worse
+    half of a hardcoded material. A caller modelling a copper busbar got an answer for a different metal,
+    with nothing anywhere saying which, and the only way to find out was to read the Rust.
+
+    The check is not that it builds. It is that the heat capacity the bar *has* is copper's, measured by
+    putting a known number of joules in and reading the rise -- and copper's capacity is 44% of
+    aluminium's for the same volume, so a bar that quietly stayed aluminium fails by far more than any
+    tolerance.
+    """
+    volume = 0.020 * 1e-4
+    joules = 6.0
+    for material in ["aluminium", "copper", "stainless_304"]:
+        # `multirate`, because a bar has an explicit stability limit and the schedule exists so a caller
+        # does not have to know it. A first draft used `one-way` with half-second steps and the domain
+        # refused -- correctly, and with the Fourier number it would have reached in the message.
+        sim = dualis.Simulation(schedule="multirate", conservation_tolerance=1e-9)
+        sim.add_heater("src", watts=1.0, reserve_j=joules)
+        sim.add_bar("bar", length_m=0.020, cells=8, area_m2=1e-4,
+                    initial_k=293.15, material=material)
+        while sim.reserve_j("src") > 0.0:
+            sim.advance(0.5)
+        want = 293.15 + joules / dualis.heat_capacity_j_per_k(material, volume)
+        got = sim.temperature("bar")
+        assert abs(got / want - 1.0) < 1e-9, f"{material}: {got} K against {want}"
+
+    # And the default is unchanged, so every caller written before this keeps its answer.
+    sim = dualis.Simulation(schedule="multirate", conservation_tolerance=1e-9)
+    sim.add_bar("plain", length_m=0.020, cells=8, area_m2=1e-4, initial_k=300.0)
+    sim.add_lump("body", volume_m3=1e-5, thickness_m=1e-3, area_m2=1e-3, initial_k=300.0)
+    assert abs(sim.temperature("plain") - 300.0) < 1e-12
+    assert abs(sim.temperature("body") - 300.0) < 1e-12
+
+    # A lump can be something else too, and an unknown name is refused rather than defaulted.
+    sim.add_lump("copper_body", volume_m3=1e-5, thickness_m=1e-3, area_m2=1e-3,
+                 initial_k=300.0, material="copper")
+    try:
+        sim.add_bar("bad", length_m=0.02, cells=4, area_m2=1e-4, material="unobtainium")
+        raise AssertionError("an unknown material should have been refused")
+    except ValueError as e:
+        assert "unknown material" in str(e)
 
 
 def test_every_catalogue_material_can_be_named():

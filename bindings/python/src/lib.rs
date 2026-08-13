@@ -159,8 +159,13 @@ impl PySimulation {
         })
     }
 
-    /// A one-dimensional conducting bar of aluminium, insulated at both ends.
-    #[pyo3(signature = (name, length_m, cells, area_m2, initial_k = 293.15))]
+    /// A one-dimensional conducting bar, insulated at both ends.
+    ///
+    /// `material` is any name in the kernel's catalogue and defaults to aluminium, which is what this
+    /// took before it could be said. A default is right here — most callers reaching for a bar want a
+    /// metal one and should not have to look up a spelling to get it — but it has to be *sayable*, and
+    /// for `add_lump` below it was not even documented.
+    #[pyo3(signature = (name, length_m, cells, area_m2, initial_k = 293.15, material = "aluminium"))]
     fn add_bar(
         &mut self,
         name: &str,
@@ -168,6 +173,7 @@ impl PySimulation {
         cells: usize,
         area_m2: f64,
         initial_k: f64,
+        material: &str,
     ) -> PyResult<()> {
         if cells < 2 {
             return Err(PyValueError::new_err("a bar needs at least two cells"));
@@ -180,10 +186,11 @@ impl PySimulation {
                 "length_m and area_m2 must be positive",
             ));
         }
+        let substance = substance_named(material, name)?;
         self.push(name, |sim| {
             sim.with(Bar1D::new(
                 name.to_string(),
-                Substance::aluminium_6061(),
+                substance,
                 cells,
                 Length::from_si(length_m / cells as f64),
                 Area::from_si(area_m2),
@@ -193,7 +200,13 @@ impl PySimulation {
     }
 
     /// A body at one temperature, losing heat to still air.
-    #[pyo3(signature = (name, volume_m3, thickness_m, area_m2, initial_k = 293.15, ambient_k = 293.15))]
+    ///
+    /// `material` is any name in the kernel's catalogue and defaults to aluminium. It **was** aluminium
+    /// and the docstring did not say so, which is the worse half of a hardcoded material: a caller
+    /// modelling a copper busbar got an answer for a different metal, and the only way to find out was to
+    /// read the Rust.
+    #[pyo3(signature = (name, volume_m3, thickness_m, area_m2, initial_k = 293.15, ambient_k = 293.15, material = "aluminium"))]
+    #[allow(clippy::too_many_arguments)]
     fn add_lump(
         &mut self,
         name: &str,
@@ -202,11 +215,13 @@ impl PySimulation {
         area_m2: f64,
         initial_k: f64,
         ambient_k: f64,
+        material: &str,
     ) -> PyResult<()> {
+        let substance = substance_named(material, name)?;
         self.push(name, |sim| {
             sim.with(LumpedMass::new(
                 name.to_string(),
-                Substance::aluminium_6061(),
+                substance,
                 Volume::from_si(volume_m3),
                 Length::from_si(thickness_m),
                 Temperature::from_si(initial_k),
@@ -267,25 +282,11 @@ impl PySimulation {
             let at = format!("{name:?} node {i}");
             let label = need_str(n, "name", &at)?;
             let material = need_str(n, "material", &at)?;
-            // `Substance::from_name`, not a match written out here. This was a five-arm match against a
+            // `substance_named`, not a match written out here. This was a five-arm match against a
             // catalogue of nine, so `borosilicate`, `ice`, `stainless_304` and `water` could not be named
-            // from Python at all -- the **third** copy of the catalogue's spelling in this workspace, and
-            // the third to go stale.
-            //
-            // `dualis-world` had the same defect and it cost eleven releases: its list held eight of the
-            // nine and nobody could name `water` in a scene the entire time. A name absent from a lookup
-            // is not a wrong answer, it is a substance that never appears -- nothing fails, and nothing
-            // reports it. The spelling lives beside the catalogue now and every caller reads it there.
-            let substance = Substance::from_name(&material).ok_or_else(|| {
-                PyValueError::new_err(format!(
-                    "{at}: unknown material {material:?}; known are {}",
-                    Substance::CATALOGUE
-                        .iter()
-                        .map(|m| format!("{m:?}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            })?;
+            // from Python at all -- the third copy of the catalogue's spelling in this workspace, and the
+            // third to go stale. `dualis-world` had the same defect and it cost eleven releases.
+            let substance = substance_named(&material, &at)?;
             let volume = Volume::from_si(need_f64(n, "volume_m3", &at)?);
             let thickness = Length::from_si(need_f64(n, "thickness_m", &at)?);
             let initial = Temperature::from_si(need_f64(n, "initial_k", &at)?);
@@ -583,6 +584,23 @@ impl PySimulation {
     }
 }
 
+/// A material name from the kernel's catalogue, or an error listing every name there is.
+///
+/// One function, because a name resolved in three places is a catalogue copied three times — which is
+/// what this binding had, and it held five of the nine.
+fn substance_named(material: &str, at: &str) -> PyResult<Substance> {
+    Substance::from_name(material).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "{at}: unknown material {material:?}; known are {}",
+            Substance::CATALOGUE
+                .iter()
+                .map(|m| format!("{m:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })
+}
+
 /// A required key, with the error naming the dict it was missing from.
 ///
 /// `PyDict::get_item` returning `None` and a key holding `None` are different things and both
@@ -625,14 +643,23 @@ fn optional_f64(d: &Bound<'_, PyDict>, key: &str, at: &str) -> PyResult<Option<f
 
 /// What a heat capacity is, for computing a closed form on the Python side.
 ///
-/// Exposed because a caller checking its own results needs the same constants the simulation
-/// used, and reading them off the simulation would be checking it against itself.
+/// Exposed because a caller checking its own results needs the same constants the simulation used, and
+/// reading them off the simulation would be checking it against itself.
+///
+/// It was `aluminium_heat_capacity_j_per_k` and took no material, which was fine while a bar and a lump
+/// were both aluminium and stopped being fine the moment they were not: a test of a copper bar would have
+/// had to compare it against aluminium's capacity or hardcode copper's, and one of those is wrong and the
+/// other is the constant this function exists to stop people copying.
 #[pyfunction]
-fn aluminium_heat_capacity_j_per_k(volume_m3: f64) -> PyResult<f64> {
-    Substance::aluminium_6061()
+fn heat_capacity_j_per_k(material: &str, volume_m3: f64) -> PyResult<f64> {
+    substance_named(material, "heat_capacity_j_per_k")?
         .heat_capacity(Volume::from_si(volume_m3))
         .map(|c| c.to_si())
-        .ok_or_else(|| PyValueError::new_err("aluminium has a specific heat; this cannot happen"))
+        .ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "{material:?} does not state a specific heat, so it has no heat capacity"
+            ))
+        })
 }
 
 /// One joule, in joules. A smoke test that the units layer crossed intact.
@@ -648,7 +675,7 @@ fn dualis_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("Violation", m.py().get_type::<Violation>())?;
     m.add_class::<PySimulation>()?;
-    m.add_function(wrap_pyfunction!(aluminium_heat_capacity_j_per_k, m)?)?;
+    m.add_function(wrap_pyfunction!(heat_capacity_j_per_k, m)?)?;
     m.add_function(wrap_pyfunction!(one_joule, m)?)?;
     Ok(())
 }

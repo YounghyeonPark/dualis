@@ -45,7 +45,10 @@ dict(sim.node_temperatures("motor"))     # {'winding': 311.2, 'case': 304.9}
 sim.heat_flow_w("motor", "winding", "case")   # 5.585 W crossing the joint
 ```
 
-Materials: `copper`, `aluminium`, `electrical_steel`, `fr4`, `pla`. A node with `ambient_k` and
+`material` is any name in the kernel's catalogue, and this line no longer lists them — it used to say
+five, the binding accepted those same five against a catalogue of nine, and listing them here made a
+**fourth** copy of a spelling that had already gone stale three times. The error message names them, and
+it is generated from the catalogue, so it is right by construction. A node with `ambient_k` and
 `area_m2` loses heat to still air; a node with neither is interior. Giving one without the other
 is refused rather than quietly producing a node that looks like it is cooling and is not.
 
@@ -79,7 +82,7 @@ except dualis.Violation as v:
 **Be clear about what it catches.** Quantities appearing or vanishing, amounts left unclaimed on
 the bus, and a domain refusing a step it cannot take. It does *not* catch a model that is
 internally consistent and physically wrong. For that, check against something the library did not
-compute — which is what `aluminium_heat_capacity_j_per_k` is exported for, and what
+compute — which is what `heat_capacity_j_per_k` is exported for, and what
 `tests/test_dualis.py` does throughout.
 
 ## What crosses the boundary, and what does not

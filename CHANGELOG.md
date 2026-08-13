@@ -65,6 +65,16 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Fixed
 
+- **A bar and a lump can be made of something other than aluminium from Python.** `add_bar` and
+  `add_lump` take a `material`, defaulting to aluminium so existing callers are unchanged, and
+  `aluminium_heat_capacity_j_per_k` is now `heat_capacity_j_per_k(material, volume_m3)`.
+
+  Both hardcoded `aluminium_6061`, and `add_lump`'s docstring did not say so — the worse half of a
+  hardcoded material, because a caller modelling a copper busbar got an answer for a different metal with
+  nothing anywhere saying which. The one-off capacity helper had to generalise with them: a test of a
+  copper bar would otherwise have to compare it against aluminium's capacity or hardcode copper's, and one
+  of those is wrong while the other is the constant that function exists to stop people copying.
+
 - **Four of the nine catalogue materials could not be named from Python.** `bindings/python/src/lib.rs`,
   `bindings/python/tests/test_dualis.py`.
 
