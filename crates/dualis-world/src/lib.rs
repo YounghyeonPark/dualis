@@ -17,7 +17,9 @@
 
 #![deny(missing_docs)]
 
+use dualis::core::mixture::Mix;
 use dualis::prelude::*;
+use dualis::units::ThermalConductivity;
 // `Reading` belongs below the layers, because it crosses one: a domain produces it and a view
 // consumes it, and neither should have to depend on this application to name the type.
 pub use dualis::core::Reading;
@@ -128,6 +130,69 @@ pub struct Scene {
     /// a declaration that nothing goes on to use.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub materials: BTreeMap<String, Substance>,
+    /// Composites this scene defines, by the name its domains will use.
+    ///
+    /// The other half of [`Scene::materials`], and the one that needed `Mix` to exist. A motor is copper,
+    /// steel, magnets and air; a board is FR-4, copper and solder; a buffer is wax in a metal matrix. Each
+    /// wants to be **one** material a coarse grid can hold, and its properties are not the properties of
+    /// its main constituent.
+    ///
+    /// ```json
+    /// "composites": {
+    ///   "buffer": {
+    ///     "parts": [
+    ///       { "material": "octadecane", "volume_fraction": 0.8 },
+    ///       { "material": "aluminium",  "volume_fraction": 0.2 }
+    ///     ],
+    ///     "conductivity_w_per_m_k": 12.5,
+    ///     "emissivity": 0.9
+    ///   }
+    /// }
+    /// ```
+    ///
+    /// **`volume_fraction`, spelled out, because volume and mass are the trap.** Volumetric heat capacity
+    /// is volume-additive and specific heat is mass-weighted, and confusing them is worth 46% on a copper
+    /// and FR-4 board — see [`Mix::specific_heat`](dualis::core::mixture::Mix::specific_heat). Wax filling
+    /// 80% of a volume is 54.7% of the mass, so its latent heat dilutes to 133 kJ/kg and not 195.
+    ///
+    /// **The conductivity is the caller's and is checked.** No single value exists for a composite without
+    /// knowing its microstructure, so this format cannot compute one — but it can refuse an impossible
+    /// one, and it does: a value outside the Voigt and Reuss bounds is rejected with both bounds and the
+    /// tighter Hashin–Shtrikman pair in the message, because those are the numbers somebody choosing needs
+    /// and no scene file has anywhere else to get them.
+    ///
+    /// **The emissivity is the caller's and cannot be checked**, because it is a property of the surface
+    /// and a mixture has no surface. A half-copper board is 0.05 bare and 0.9 under solder mask.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub composites: BTreeMap<String, CompositeSpec>,
+}
+
+/// One composite in [`Scene::composites`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositeSpec {
+    /// What it is made of, and how much of the volume each part is.
+    pub parts: Vec<CompositePart>,
+    /// The conductivity to use, in W/m·K. Refused if no microstructure of these parts could have it.
+    pub conductivity_w_per_m_k: f64,
+    /// Emissivity of whatever surface it presents, 0 to 1.
+    pub emissivity: f64,
+}
+
+/// One constituent of a [`CompositeSpec`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositePart {
+    /// A catalogue name or one of [`Scene::materials`].
+    ///
+    /// **Not another composite.** A composite of composites needs a declaration order, and a `BTreeMap`
+    /// has none by design — but the real reason is that nesting changes what the bounds mean: the
+    /// Hashin–Shtrikman pair is a *two-phase* result and a mixture of three things has none, which
+    /// `a_mixture.rs` records rather than papers over. Flatten it: list all the parts with their fractions
+    /// of the whole.
+    pub material: String,
+    /// This part's share of the **volume**, not of the mass. The fractions must sum to one.
+    pub volume_fraction: f64,
 }
 
 fn default_tolerance() -> f64 {
@@ -575,6 +640,23 @@ impl Palette {
     /// - **A declaration nothing names.** See [`Palette::unused`] — this is the one that is not
     ///   obvious and it is the important one.
     pub fn new(declared: &BTreeMap<String, Substance>) -> Result<Palette, String> {
+        Palette::with_composites(declared, &BTreeMap::new())
+    }
+
+    /// The same, plus the composites the scene declared.
+    ///
+    /// Two passes, and the order is the whole design: substances first, because a composite's parts are
+    /// resolved against them, and composites second. A composite may not name another composite — see
+    /// [`CompositePart::material`] — which is what keeps this two passes rather than a dependency graph.
+    ///
+    /// A part that resolves to a catalogue entry or a declared substance counts as **used**, so a
+    /// substance declared only to be mixed is not reported as dead weight. That is the interaction between
+    /// this and [`Palette::unused`] that a first draft got wrong: declaring a wax purely to put it in a
+    /// composite was refused as unused, which is the opposite of the rule's purpose.
+    pub fn with_composites(
+        declared: &BTreeMap<String, Substance>,
+        composites: &BTreeMap<String, CompositeSpec>,
+    ) -> Result<Palette, String> {
         for (key, substance) in declared {
             if key.is_empty() {
                 return Err("materials: a declared material needs a name".to_string());
@@ -590,10 +672,75 @@ impl Palette {
                 .check()
                 .map_err(|e| format!("materials.{key}: {e}"))?;
         }
-        Ok(Palette {
+        let mut palette = Palette {
             declared: declared.clone(),
             asked: std::collections::BTreeSet::new(),
-        })
+        };
+
+        for (key, spec) in composites {
+            if key.is_empty() {
+                return Err("composites: a declared composite needs a name".to_string());
+            }
+            if Substance::from_name(key).is_some() {
+                return Err(format!(
+                    "composites.{key}: {key:?} is already a catalogue material and a scene may not \
+                     redefine it"
+                ));
+            }
+            if declared.contains_key(key) {
+                return Err(format!(
+                    "composites.{key}: {key:?} is also declared as a material, and one name cannot mean \
+                     two things"
+                ));
+            }
+            if composites.contains_key(key)
+                && spec
+                    .parts
+                    .iter()
+                    .any(|p| composites.contains_key(&p.material))
+            {
+                return Err(format!(
+                    "composites.{key}: a part names another composite, which this format does not \
+                     support — flatten it and list every part's fraction of the whole. See the docs on \
+                     `CompositePart::material` for why nesting is not just an ordering problem"
+                ));
+            }
+            let mut parts = Vec::with_capacity(spec.parts.len());
+            for (n, part) in spec.parts.iter().enumerate() {
+                let site = format!("composites.{key}.parts[{n}]");
+                let substance = palette.get(&site, &part.material)?;
+                parts.push((substance, part.volume_fraction));
+            }
+            let mix = Mix::of(&parts).map_err(|e| format!("composites.{key}: {e}"))?;
+            let conductivity = ThermalConductivity::w_per_m_k(spec.conductivity_w_per_m_k);
+            let substance = mix
+                .as_substance(key, conductivity, spec.emissivity)
+                .map_err(|e| {
+                    // The refusal `Mix` gives names the outer bounds. A scene has nowhere else to learn
+                    // the tighter pair, and that is usually the number somebody wants, so it is added
+                    // here rather than left for them to compute.
+                    match mix.hashin_shtrikman() {
+                        Some((lo, hi)) => format!(
+                            "composites.{e}. For an isotropic microstructure the Hashin–Shtrikman pair \
+                             is {} to {} W/m/K, which is the narrower range and usually the one to \
+                             choose inside",
+                            lo.to_si(),
+                            hi.to_si()
+                        ),
+                        None => format!("composites.{e}"),
+                    }
+                })?;
+            palette.declared.insert(key.clone(), substance);
+        }
+        // The parts asked for above stay recorded, which is what makes a substance mixed into a composite
+        // count as used. The composites themselves are *inserted* rather than asked for, so each is still
+        // subject to the unused check until a domain names it — the behaviour wanted, and it falls out of
+        // the distinction between `get` and `declared` rather than needing a rule.
+        //
+        // A first draft cleared this set here, reasoning that naming a part is not using the composite.
+        // True and irrelevant: it also erased the parts, so a wax declared purely to be mixed was refused
+        // as dead weight — the rule firing on the case it exists to protect. Three tests failed on one line.
+        Ok(palette)
     }
 
     /// Resolve the name a scene wrote, recording that it was asked for.
@@ -926,7 +1073,7 @@ impl DomainSpec {
                         "aluminium" => light::aluminium_mirror(),
                         other => {
                             return Err(format!(
-                                "{name}: unknown finish {other:?}; known finishes are                                  \"aluminium\""
+                                "{name}: unknown finish {other:?}; known finishes are \"aluminium\""
                             ))
                         }
                     },
@@ -994,9 +1141,7 @@ impl DomainSpec {
                                 Area::from_si(air.area_cm2 * 1e-4),
                             ),
                         ),
-                        None => {
-                            network.node(n.name.clone(), substance, volume, thickness, initial)
-                        }
+                        None => network.node(n.name.clone(), substance, volume, thickness, initial),
                     };
                 }
 
@@ -1298,7 +1443,7 @@ impl World {
             });
             let Some(nodes) = target else {
                 return Err(format!(
-                    "{name}: tracks names the network {net_name:?}, which this scene does not                      define"
+                    "{name}: tracks names the network {net_name:?}, which this scene does not define"
                 ));
             };
             if !nodes.iter().any(|n| n.name == node_name) {
@@ -1328,7 +1473,7 @@ impl World {
                 "photons" => quantity::PHOTONS,
                 other => {
                     return Err(format!(
-                        "tolerance_for names an unknown quantity {other:?}; known:                          energy, momentum, mass, charge, photons"
+                        "tolerance_for names an unknown quantity {other:?}; known: energy, momentum, mass, charge, photons"
                     ))
                 }
             };
@@ -1342,7 +1487,7 @@ impl World {
         for (i, spec) in scene.domains.iter().enumerate() {
             if let Some(earlier) = scene.domains[..i].iter().find(|d| d.name() == spec.name()) {
                 return Err(format!(
-                    "two domains are both called {:?}; names are how they are looked up,                      so the second would be invisible",
+                    "two domains are both called {:?}; names are how they are looked up, so the second would be invisible",
                     earlier.name()
                 ));
             }
@@ -1350,7 +1495,7 @@ impl World {
 
         // Validated before any domain is built, so an impossible substance is reported as the
         // declaration it is rather than as a `NaN` somewhere downstream.
-        let mut palette = Palette::new(&scene.materials)?;
+        let mut palette = Palette::with_composites(&scene.materials, &scene.composites)?;
         for spec in &scene.domains {
             sim = sim.with_boxed(spec.build(&mut palette)?);
         }
@@ -1360,7 +1505,7 @@ impl World {
         let unused = palette.unused();
         if !unused.is_empty() {
             return Err(format!(
-                "materials: {} declared and used by nothing — a block with no `material` runs as                  aluminium, so this scene would answer about a material it did not mean. Name it or                  delete it",
+                "materials: {} declared and used by nothing — a block with no `material` runs as aluminium, so this scene would answer about a material it did not mean. Name it or delete it",
                 unused
                     .iter()
                     .map(|u| format!("{u:?}"))

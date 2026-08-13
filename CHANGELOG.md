@@ -15,6 +15,55 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ## [Unreleased]
 
+### Added
+
+- **A scene can declare a composite, not only a substance.** `Scene::composites`, `CompositeSpec`,
+  `CompositePart`, `Palette::with_composites`. `crates/dualis-world/tests/declared_composites.rs`.
+
+  The gap between the two things 0.14.0 added. A scene could bring its own `Substance` and the library
+  could mix two of them, and there was no way to say the second thing in a file — so a motor that is
+  copper, steel, magnets and air still had to be one hand-computed material.
+
+  `volume_fraction` is spelled out because volume and mass are the trap: volumetric heat capacity is
+  volume-additive and specific heat is mass-weighted, and confusing them is worth 46% on a copper and FR-4
+  board. Wax filling 80% of a volume is 54.7% of the mass.
+
+  **The conductivity is the caller's and is checked.** No single value exists without the microstructure —
+  the same two materials in the same proportions conduct 38 times more one way than the other — so the
+  format cannot compute one. What it can do is refuse an impossible one, and the refusal is where the
+  value is: a scene file has nowhere else to learn what range is achievable, so the message carries the
+  Voigt and Reuss bounds *and* the tighter Hashin–Shtrikman pair. The emissivity is the caller's and cannot
+  be checked at all, because a mixture has no surface.
+
+  A composite may not be made of another composite. Not only an ordering problem, though a `BTreeMap` has
+  no declaration order: nesting changes what the bounds *mean*, since Hashin–Shtrikman is a two-phase
+  result and a three-part mixture has none. The refusal says to flatten it.
+
+  Two things the tests caught, and the first is the one worth reading:
+
+  **A material used only inside a composite was refused as dead weight** — the unused-declaration rule
+  firing on the case it exists to protect. `Palette::with_composites` cleared its record of what had been
+  asked for, on the reasoning that naming a part is not using the composite. True, and irrelevant: it also
+  erased the parts. Three tests failed on one line, and the doc comment above it had described the correct
+  behaviour while the code did the opposite.
+
+  **A hand-typed bound was 1.2e-6 too high.** The test asserting that both bounds are accepted used
+  `33.68644` against a true `33.6864`, so the assertion caught the test rather than the code. The endpoints
+  come from `Mix` now, since what is under test there is the boundary condition and not the bound.
+
+### Fixed
+
+- **Five error messages read with a gap in the middle.** A `\` line continuation had been lost from each,
+  leaving a run of eighteen spaces mid-sentence in what a caller sees — an unknown finish, a `tracks`
+  naming nothing, an unknown tolerance channel, two domains with one name, and an unused material.
+
+  Found by grepping for runs of spaces inside string literals, and the first fix was worse than the bug: a
+  regex over the whole file collapsed the indentation of two JSON examples in doc comments, because the
+  keys in them are quoted and the pattern could not tell a doc line from a literal. Reverted and redone
+  with comment lines excluded outright, which is the check that should have been in the pattern from the
+  start.
+
+
 ## [0.14.0] — 2026-08-13
 
 ### Added
