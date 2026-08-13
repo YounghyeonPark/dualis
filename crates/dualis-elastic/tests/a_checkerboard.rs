@@ -275,8 +275,8 @@ fn resolving_the_microstructure_walks_the_estimate_down_toward_the_upper_bound()
 /// **The period count is the fast knob, and its plateau is not the answer.**
 ///
 /// The other convergence parameter, isolated: two cells per block throughout, so the microstructure
-/// resolution never changes and only the boundary layer shrinks. It converges quickly — four doublings of
-/// the period count move the estimate 2.9% — and it converges to something **18% above HS+**, which is
+/// resolution never changes and only the boundary layer shrinks. It converges quickly — tripling the
+/// period count moves the estimate 2.7% — and it converges to something **17.5% above HS+**, which is
 /// where the unresolved microstructure leaves it.
 ///
 /// That is the point of measuring it separately. A reader seeing only this sweep would conclude the method

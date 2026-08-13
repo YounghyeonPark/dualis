@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-core"
-version = "0.10.0"
+version = "0.13.0"
 dependencies = [
  "dualis-units",
  "glam",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-thermal"
-version = "0.10.0"
+version = "0.13.0"
 dependencies = [
  "dualis-core",
  "dualis-units",
@@ -197,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "dualis-units"
-version = "0.10.0"
+version = "0.13.0"
 dependencies = [
  "glam",
  "serde",

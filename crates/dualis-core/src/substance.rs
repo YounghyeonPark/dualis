@@ -286,8 +286,9 @@ impl Substance {
     /// Both directions, in `any_material.rs`: every slug here resolves, and every constructor is
     /// reachable through some slug here. A pair of hand-written lists that agree until they do not
     /// is how a catalogue grows an entry that exists and cannot be named — which is what had
-    /// happened to `water`, present in this crate for nine releases and unreachable from a scene
-    /// file the whole time, because the scene format kept its own eight-name copy of this.
+    /// happened to `water`, present in this crate since 0.1.0 and unreachable from a scene file for
+    /// **eleven** releases — every version in which a scene could name a material at all — because
+    /// the scene format kept its own eight-name copy of this.
     pub const CATALOGUE: [&'static str; 9] = [
         "aluminium",
         "borosilicate",

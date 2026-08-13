@@ -26,7 +26,12 @@
 # Enrol first at github.com/sponsors, then uncomment. Enabling the key before enrolling renders a
 # button that leads to a page saying sponsorships are not accepted, which is the failure described
 # above rather than a head start on it.
-# github: YounghyeonPark
+#
+# Enabled 2026-08-13, and the listing was checked rather than assumed before the key went in --
+# `hasSponsorsListing` and `sponsorsListing.isPublic` both true over the GraphQL API. That check is the
+# whole content of the warning above: a private or unenrolled listing renders the same button and the
+# difference is invisible from inside the repository.
+github: YounghyeonPark
 
 # PAYOUT ROUTE: a bank account through Stripe Connect, not a fiscal host.
 #

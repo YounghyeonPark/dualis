@@ -1,7 +1,8 @@
 //! A laminate's stiffness, measured statically instead of with a wave.
 //!
 //! `a_layered_wave.rs` checks `Mix`'s stiffness bounds against Backus averaging by marching a wave and
-//! reading a frequency. It gets 0.036% at its finest mesh and costs 68 seconds in debug, and both of
+//! reading a frequency. It gets 0.035% at its finest mesh on the overlapping modulus and costs 68
+//! seconds in debug, and both of
 //! those are the price of *time being in the problem*: a leapfrog has a dispersion relation, a period has
 //! to be fitted over several cycles, and the mesh error is second order.
 //!

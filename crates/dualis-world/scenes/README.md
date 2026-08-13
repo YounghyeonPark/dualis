@@ -102,7 +102,7 @@ tells them apart.
 | `19-a-coating-stops-the-heat` | The same spot in a 9×9×18 block that is aluminium for half its depth and **borosilicate** for the other half. 150× the conductivity leaves the metal nearly isothermal and the glass barely touched, so the entire temperature drop sits on one face — and the test asserts the largest cell-to-cell step along z is exactly the interface one, which is what a block with the coating quietly not applied would fail |
 | `20-melting-a-block-of-ice` | A hundred watts into 1331 mm³ of ice at −10 °C. The mean holds at **exactly 0.000 °C** for 3.6 of the 5 s while `melted` climbs a straight line at 326.9 mm³/s — which is `P/ρL` and has no rate constant in it — and then the leftover 67.9 J warms what is now all water by 27.126 K, against 27.126 predicted. The scene a domain with no latent heat cannot express: without it the block would sail through zero and finish near 190 °C |
 
-| `21-a-wax-thermal-buffer` | Twenty watts into 10 648 mm³ of **n-octadecane**, which is not in the catalogue and is written out in the scene's own `materials` block. It holds 28.150 °C from 11 s to the end while `melted` climbs 100.70 mm³/s against a `P/ρL` of 100.68 — the same closed form `20` measures, now with the density and latent heat coming out of the *file*. The reserve running dry at 65 s stops the melting dead at 5354 mm³, 50.3% of the block. The energy accounts by hand: 136.6 J to warm 8.667 g of wax by 8.15 K, 1063.3 J to melt half of it, 1199.9 of the 1200 J available |
+| `21-a-wax-thermal-buffer` | Twenty watts into 10 648 mm³ of **n-octadecane**, which is not in the catalogue and is written out in the scene's own `materials` block. It holds 28.150 °C from 11 s to the end while `melted` climbs 100.6968 mm³/s against a `P/ρL` of 100.6968, agreeing to **8.3e-15** — the same closed form `20` measures, now with the density and latent heat coming out of the *file*. The 1200 J of reserve runs out at 60 s and the melting stops dead at 5354 mm³, 50.3% of the block. The energy accounts to `1.1e-14`: 136.6176 J to warm 8.667 g of wax by 8.15 K and 1063.3824 J to melt half of it, which is all 1200 J and not most of it |
 
 `20` is the one that needs latent heat, and its plateau is the whole of what latent heat *is*: a
 temperature that stops moving while energy keeps arriving. Ice is the only entry in the catalogue that
@@ -144,7 +144,8 @@ it, or that used the wrong spacing on one axis, fails there and passes everythin
 | --- | --- |
 | `11-motor-thermal-network` | 12 W into a copper winding, out through electrical steel and an aluminium housing. Three materials, two joints, and the drop across each |
 
-The one scene with **nothing to draw**. A network's nodes have capacities, not positions, so
+The first of three scenes with **nothing to draw** -- `11`, `12` and `13`, which is the list
+`tests/scene.rs` holds as `NOTHING_TO_DRAW`. A network's nodes have capacities, not positions, so
 `as_field` declines to invent a continuum and the renderer has no panel to make — the numbers
 are the output. That is also the point: a `lump` would report the motor as one temperature, and
 the winding runs 13 K above the housing at half a time constant in. The thing that fails is not
@@ -263,7 +264,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all eighteen on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all twenty-one on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

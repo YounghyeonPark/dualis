@@ -42,7 +42,7 @@
 //!
 //! # What this file costs
 //!
-//! **68 s in debug, 6.5 s in release**, which is 15% of the workspace's suite for five tests. Marching a
+//! **68 s in debug, 6.5 s in release**, which is 12% of the workspace's suite for five tests. Marching a
 //! wave to a dozen periods at three resolutions is inherently that, and the number is written down here
 //! because the first draft cost 5.4× more: the depth of the two propagate-along-the-layers blocks was
 //! eight elements where four says the same thing, and the layer-thickness sweep spanned 64 elements where
@@ -440,7 +440,7 @@ fn filling_with_what_it_already_held_changes_nothing() {
 /// and nowhere else. [`Waves::hold`] holds a component on every node, so this API cannot express it.
 ///
 /// Tried anyway, and the result is worth recording: releasing `u_z` everywhere gives 40.87 GPa, which is
-/// neither `⟨M⟩` nor `C11`. A block eight elements thick with traction-free faces carries **plate** modes,
+/// neither `⟨M⟩` nor `C11`. A block four elements thick with traction-free faces carries **plate** modes,
 /// whose modulus is neither — so the number is an answer to a third question. No claim is made about
 /// `C11` here, and that is a limit of the boundary conditions rather than of the bound.
 #[test]

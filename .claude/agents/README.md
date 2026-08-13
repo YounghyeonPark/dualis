@@ -42,7 +42,7 @@ and every test passed while the file said something the code no longer read.
 `consumer-advocate` asks the question none of the others can, because it requires not knowing
 how the library came to be: *what is this like to use*. It is not a review — it builds something
 against the public API and reports what building was like. It is also the method with the best
-record here by a distance: twenty-three findings, seventeen fixed, including the only real physics
+record here by a distance: twenty-four findings, eighteen fixed, including the only real physics
 defect found in the period. `Room` and `Tube` were starting a staggered leapfrog with the
 velocity at the wrong time level, `O(h)` and permanent, and it survived 345 passing tests — two
 of which had turned the bug into the specification.

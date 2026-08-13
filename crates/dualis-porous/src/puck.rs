@@ -463,11 +463,12 @@ impl Puck {
     ///
     /// **Nothing, in every scenario this crate ships**, and that is why it went unexamined. Under flow
     /// the bed is isothermal, so conduction carries no heat and `λ` is multiplied by zero: swinging it
-    /// over a factor of ten leaves the extraction yield identical to `1e-15`.
+    /// over a factor of eight leaves the extraction yield identical to `1e-14`.
     ///
-    /// It stops being free the moment there is a gradient. In a 20 °C basket the yield moves **3.9% per
-    /// unit `ln λ`**, so the honest range the old rule left — Voigt to Reuss, a factor of 1.674 — was
-    /// worth **2.0% in extraction yield**, which is a taste-level difference in a cup. Maxwell–Eucken
+    /// It stops being free the moment there is a gradient. In a 20 °C basket the yield moves **4.9% per
+    /// unit `ln λ`** on the grid `the_beds_conductivity.rs` measures it on, so the honest range the old
+    /// rule left — Voigt to Reuss, a factor of 1.674 — was worth about **2.5% in extraction yield** on
+    /// that grid, which is a taste-level difference in a cup. Maxwell–Eucken
     /// narrows the range that remains to 1.184 and costs 0.40% against the old value.
     pub fn bed_conductivity(liquid: f64, solid: f64, porosity: f64) -> f64 {
         let d = liquid - solid;

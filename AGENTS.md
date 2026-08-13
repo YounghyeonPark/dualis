@@ -245,7 +245,7 @@ also pass it, then go and check *that*.
 
 ## Where to look next
 
-- **`examples/`** — nine worked problems that print their numbers and assert every one of
+- **`examples/`** — twelve worked problems that print their numbers and assert every one of
   them. `cargo run --example melting`. Give any of them a path and it writes an SVG. Two are
   specifically about three dimensions: `heat_in_three_dimensions` and `room_in_three_dimensions`.
   `busbar_rating` is the one shaped like an engineer's working day rather than a demonstration —

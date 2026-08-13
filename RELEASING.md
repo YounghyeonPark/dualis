@@ -29,7 +29,7 @@ All of them, or the release is broken in a way only one CI job can see:
 | `AGENTS.md` | 1 — `dualis = "0.x"`, which `documented_version.rs` checks |
 | `crates/dualis/src/lib.rs` | 1 — the same series, in the facade's own docs |
 | `.claude/agents/invariant-guard.md` | 1 — which version is published against which is in the tree |
-| `CITATION.cff` | 1 — `version`. Also update `date-released`, which is not a version string and so is not caught by the grep below |
+| `CITATION.cff` | 1 — `version`. Also update `date-released`, which is not a version string and so is not caught by the grep below. The grep returns **2**: the other hit is a comment recording which version's Zenodo deposition failed, and bumping that would erase the history it is there for |
 
 Count them rather than trusting this table, because it has already been wrong in both directions. It
 lost a row when the docs were split — `CLAUDE.md` carried the `pip install ... .whl` line and the
@@ -60,7 +60,7 @@ Count them rather than remembering them:
 
 ```sh
 ls crates | wc -l                                    # crates
-ls crates/dualis/examples/*.rs | grep -vc common     # examples
+find crates -path '*examples*' -name '*.rs' -not -path '*common*' | wc -l   # examples: 15
 ls crates/dualis-world/scenes/*.json | wc -l         # scenes
 cargo test --locked --workspace --release 2>&1 | grep -E "test result:" \
   | awk -F'[; ]' '{p+=$4} END {print p}'             # tests

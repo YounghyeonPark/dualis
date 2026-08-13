@@ -179,7 +179,7 @@ These are not style. Each one is what makes some part of the goal reachable.
 
 1. **The kernel must never depend on a domain.** Without this, "add a physics" means "edit the
    kernel", and the goal is a rewrite each time.
-2. **No domain may depend on another.** They meet on the bus. Six domains have now been added
+2. **No domain may depend on another.** They meet on the bus. Ten domains have now been added
    without this breaking, which is the evidence that the split is real.
 3. **The arrows point one way.** Analysis → scene → physics. A domain that can see the scene can
    see another domain through it. This is enforced by cargo rather than by discipline now that
@@ -233,8 +233,9 @@ different quantities, the second separates domains carrying the same one.
    `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
    rate measured across three doublings.
 
-   Eight of the ten domains are three-dimensional now. What is left is `dualis-electrical`, which
-   is gap 4 below, and `dualis-optics`, whose rays are already 3D and whose *fields* are not.
+   Nine of the ten domains are three-dimensional now. What is left is `dualis-optics`, whose rays
+   are already 3D and whose *fields* are not — and gap 4 below, which closed `dualis-electrical`,
+   is why this sentence used to say eight.
 
    Building the first one **found a gap in the layer above it**, which is what a first
    three-dimensional anything is for. The second one found nothing, which is the evidence that
@@ -304,8 +305,9 @@ different mistake, with two machine-precision statements beside them that a deca
 coarse to see.
 
 That closes the list this section opened with. **The physics layer is where it was aimed**: ten
-crates, each one added without the kernel or either layer above it changing, which is rule 4 held
-ten times.
+crates, each one added without the kernel or either layer above it changing, which is this
+document's rule 1 held ten times. `CLAUDE.md` numbers the same rule 4, which is why a reader who has
+both open should trust the wording over the number.
 
 What was open was not a list of missing physics but a list of missing *depth* in what is here, and
 that list is closed too. All three entries were the second half of a crate that already existed, and

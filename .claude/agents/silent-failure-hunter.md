@@ -37,7 +37,7 @@ cannot downcast" to "this physics does not appear in any picture, table or expor
 The related one this workspace found by writing the check rather than by anything failing:
 `Placement::extent`. A field domain with no extent is not sampled, and `capture` skips it — so
 a scene format that gains a field variant and forgets the extent produces a report one panel
-short. `every_domain_with_a_field_was_given_an_extent` counts them across all fourteen scenes
+short. `every_domain_with_a_field_was_given_an_extent` counts them across every scene that ships
 from the two sides that must agree. **Ask of any new opt-in: what counts it?**
 
 ### A config key the parser ignores

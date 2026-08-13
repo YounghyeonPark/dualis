@@ -12,9 +12,8 @@
 //!   Swinging it over a factor of eight leaves the extraction yield identical to `1e-14`. A modelling
 //!   choice that no shipped scenario can observe is a modelling choice nobody will check.
 //! - **A cold basket can see it.** With a 20 °C wall the yield moves **4.9% per unit `ln λ`** on the grid
-//!   this file uses and 3.9% on the shipped basket, so the range the old rule left open — Voigt to Reuss,
-//!   a factor of 1.674 — was worth around 2% in extraction yield. That is a taste-level difference in a
-//!   cup.
+//!   this file uses, so the range the old rule left open — Voigt to Reuss, a factor of 1.674 — was worth
+//!   about 2.5% in extraction yield. That is a taste-level difference in a cup.
 //!
 //! So it is Maxwell–Eucken now, with the **liquid as the continuous phase**, which is the structural
 //! fact about a saturated bed rather than a preference. The remaining range is 1.184.
@@ -193,7 +192,7 @@ fn shot(ks: f64, wall_c: Option<f64>) -> f64 {
 /// Under flow the bed is isothermal — the water arrives at the brew temperature, the wall is at the brew
 /// temperature, and nothing in the bed generates heat — so every face carries a zero temperature
 /// difference and `λ` is multiplied by nothing. Swinging the solid's conductivity over four orders takes
-/// `λ` over a factor of ten and leaves the yield identical to `1e-14`.
+/// `λ` over a factor of eight and leaves the yield identical to `1e-14`.
 ///
 /// Asserted rather than reasoned, because "conduction cannot matter here" is exactly the kind of argument
 /// that is true of the continuum and false of a scheme — the two-phase work in `dualis-thermal` found one
@@ -229,12 +228,13 @@ fn an_isothermal_bed_is_blind_to_its_own_conductivity() {
 ///
 /// The other half, and the reason the first half is a finding rather than a licence to stop caring. With a
 /// 20 °C wall the yield falls as the bed conducts better, because more of the shot's heat reaches the cold
-/// metal. Measured near the operating point the slope is about 3.9% of the yield per unit `ln λ`, which
-/// over the 1.674 the old rule left open is close to 2% in extraction.
+/// metal. Measured near the operating point the slope is **4.9%** of the yield per unit `ln λ`, which over
+/// the 1.674 the old rule left open is about 2.5% in extraction.
 ///
 /// The slope is asserted as a slope and not extrapolated to an endpoint, because the response is not
-/// log-linear over a wide range: the same sweep taken over a factor of ten gives 4.9% rather than 3.9%.
-/// A single ratio quoted as "what the choice costs" would be a number with a hidden range of validity.
+/// log-linear: widening the sweep **raises** it, and the shipped 33×10×33 basket gives a shallower slope
+/// again. A single ratio quoted as "what the choice costs" would be a number with a hidden range of
+/// validity, so what is asserted is that a slope exists at all and roughly how steep.
 #[test]
 fn a_cold_basket_is_not_blind_to_it() {
     let kl = Liquid::water().conductivity.to_si();
