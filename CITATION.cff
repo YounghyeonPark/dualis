@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: >-
   If this software contributes to work you publish, please cite it. A citation is the
-  thing that helps; co-authorship is not requested and could not be required — see the
+  thing that helps; co-authorship is not requested and could not be required -- see the
   Citation section of README.md for why, and for the standing invitation to collaborate
   where a joint contribution is genuinely earned. Licensed MIT OR Apache-2.0 at your
   option; the `license` field below names one of the two because this format and Zenodo
@@ -19,6 +19,12 @@ authors:
   - family-names: Park
     given-names: Younghyeon
     orcid: "https://orcid.org/0000-0002-4733-5049"
+# ASCII only, above and below. The one non-ASCII character this file had was an em dash in `message`,
+# which is valid YAML and valid UTF-8 -- and Zenodo's only report is `{"errors": "Citation metadata load
+# failed"}`, a message that names no field and cannot distinguish a bad licence from a bad byte. Three
+# depositions have died at the load step, so every plausible load hazard goes at once rather than one per
+# attempt: no BOM, no CRLF, no non-ASCII, and one licence identifier.
+#
 # ONE identifier, and this line has now failed a deposition twice.
 #
 # The project is `MIT OR Apache-2.0`. v0.13.0 put that SPDX **expression** here; CFF's schema takes an

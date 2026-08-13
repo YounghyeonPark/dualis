@@ -142,7 +142,29 @@ newest. Cite the concept DOI in prose and the version DOI when the result depend
 Once the first one exists, add it to `CITATION.cff` as `doi:` and to the BibTeX block in `README.md`.
 Neither can be written before there is a DOI to write, which is why they are not there now.
 
-### It failed twice on the same field, and the second time the test was wrong
+### Zenodo says one thing and it names no field
+
+Every failed deposition reports exactly this, and nothing else:
+
+```json
+{"error_id": "b7cac9bfa9784775aa43f702472fcf73", "errors": "Citation metadata load failed"}
+```
+
+**It cannot distinguish a licence Zenodo will not store from a byte its YAML reader mishandles.** So the
+statement below that v0.13.0 "died on the licence line" was an *inference* from this same message, not
+something Zenodo reported — and it may have been wrong, which would make both of the first two fixes
+corrections to something that was not the cause.
+
+With a remote that only says "failed" there is nothing to bisect against, so the rule is: **remove every
+plausible load hazard at once rather than one per attempt.** Three attempts have been spent one guess at
+a time. `citation_is_valid.rs` now holds all of them — no BOM, no CRLF, no non-ASCII, one licence
+identifier, and the same for `.zenodo.json`.
+
+The non-ASCII one is worth naming because it was invisible: the file carried a single em dash in
+`message`. Valid YAML, valid UTF-8, and handled correctly by every loader anybody would test with —
+which is not the same as knowing Zenodo's handles it.
+
+### What was fixed, and the test that had locked in the wrong shape
 
 **v0.13.0**: `license: MIT OR Apache-2.0`. A valid SPDX *expression*, which CFF's schema does not take.
 **v0.14.0**: the two-element *list*. Valid CFF — `cffconvert --validate` says so — and Zenodo rejected it

@@ -91,6 +91,74 @@ fn the_licence_is_one_identifier_and_not_an_expression_or_a_list() {
     );
 }
 
+/// **The file Zenodo loads is plain ASCII, with no BOM and no CRLF.**
+///
+/// Three depositions have failed, and every one reported the same thing:
+///
+/// ```text
+///   {"error_id": "...", "errors": "Citation metadata load failed"}
+/// ```
+///
+/// It names no field. It cannot distinguish a licence Zenodo will not store from a byte its YAML reader
+/// mishandles, and it is the *only* thing Zenodo says — so the attribution in `RELEASING.md` that v0.13.0
+/// "died on the licence line" was an inference from this same message rather than something Zenodo
+/// reported. That inference may have been right and may not.
+///
+/// With no way to bisect against a remote that only says "failed", the answer is to remove every
+/// plausible load hazard at once rather than one per attempt:
+///
+/// - **no BOM.** A UTF-8 byte-order mark is invisible in an editor and breaks a strict YAML parser on the
+///   first line.
+/// - **no CRLF.** This is a Windows checkout and git normalises on commit, but a file written with the
+///   wrong newline and committed with `.gitattributes` silent would carry them.
+/// - **no non-ASCII.** The file had exactly one such character, an em dash in `message`. It is valid
+///   YAML and valid UTF-8 and a competent loader handles it — which is not the same as knowing that
+///   Zenodo's does.
+///
+/// None of these is *known* to have been the cause. That is the point: the cost of excluding all three is
+/// one test, and the cost of guessing wrong once more is another failed permanent release.
+#[test]
+fn the_citation_file_has_nothing_a_loader_could_trip_on() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .expect("two ancestors");
+    let bytes = std::fs::read(root.join("CITATION.cff")).expect("the citation file is there");
+
+    assert!(
+        !bytes.starts_with(&[0xEF, 0xBB, 0xBF]),
+        "a UTF-8 BOM is invisible in an editor and breaks a YAML parser on line one"
+    );
+    assert!(
+        !bytes.windows(2).any(|w| w
+            == b"
+"),
+        "CRLF in the file Zenodo loads"
+    );
+    let offenders: Vec<(usize, u8)> = bytes
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| **b > 127)
+        .map(|(i, b)| (i, *b))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "CITATION.cff must be plain ASCII; non-ASCII bytes at {:?}. An em dash here is valid YAML and          Zenodo's only report is \"Citation metadata load failed\", which cannot tell you it was fine",
+        &offenders[..offenders.len().min(5)]
+    );
+
+    // The same for `.zenodo.json`, which is the other file the integration may read.
+    let json = std::fs::read(root.join(".zenodo.json")).expect(".zenodo.json is there");
+    assert!(
+        !json.starts_with(&[0xEF, 0xBB, 0xBF]),
+        "a BOM in .zenodo.json"
+    );
+    assert!(
+        json.iter().all(|b| *b <= 127),
+        ".zenodo.json must be plain ASCII too"
+    );
+}
+
 /// **`.zenodo.json` exists, is the metadata Zenodo asks for, and agrees with `CITATION.cff`.**
 ///
 /// Zenodo prefers `.zenodo.json` over `CITATION.cff` when both are present, so it is the file that
