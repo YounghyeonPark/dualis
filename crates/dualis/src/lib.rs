@@ -94,6 +94,7 @@ pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
 pub use dualis_porous as porous;
 pub use dualis_scene as scene;
+pub use dualis_shape as shape;
 pub use dualis_thermal as thermal;
 pub use dualis_units as units;
 pub use dualis_view as view;
@@ -144,6 +145,7 @@ pub mod prelude {
     pub use dualis_scene::{
         capture, sample_field, settle_framing, Extent, Frame, Panel, PanelData, Placement,
     };
+    pub use dualis_shape::{Loss, Mesh, Triangle, Voxels};
     pub use dualis_thermal::{
         Bar1D, Environment, LumpedMass, Node, Solid3D, SteadyState, ThermalNetwork, HEAT,
     };

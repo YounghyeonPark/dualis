@@ -17,6 +17,7 @@ dependencies = [
  "dualis-optics",
  "dualis-porous",
  "dualis-scene",
+ "dualis-shape",
  "dualis-thermal",
  "dualis-units",
  "dualis-view",
@@ -123,6 +124,14 @@ name = "dualis-scene"
 version = "0.14.0"
 dependencies = [
  "dualis-core",
+ "dualis-units",
+ "glam",
+]
+
+[[package]]
+name = "dualis-shape"
+version = "0.14.0"
+dependencies = [
  "dualis-units",
  "glam",
 ]

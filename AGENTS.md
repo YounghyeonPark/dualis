@@ -210,7 +210,7 @@ They are listed here so it does not have to be loudly.
   `rand::thread_rng`, and reductions over unordered collections all break this.
 - **Domains do not depend on each other.** If your new physics needs to `use dualis_thermal`,
   the design is wrong — publish on a channel instead. The kernel depends on no domain either.
-- **Every public item is documented.** `#![deny(missing_docs)]` is set in all sixteen crates.
+- **Every public item is documented.** `#![deny(missing_docs)]` is set in all seventeen crates.
 - **MSRV is 1.78**, checked by CI.
 - **Tolerances are earned.** A number in an `assert!` should trace to an effect — an
   integrator's order, `1/√N` for a sample count, a discretisation. If you cannot say which,
@@ -256,7 +256,7 @@ also pass it, then go and check *that*.
 - **[README.md](README.md)** — the long version, including what is deliberately *not* here.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the conventions, and the gate CI runs.
 - **[CLAUDE.md](CLAUDE.md)** — working on dualis rather than with it.
-- **[RELEASING.md](RELEASING.md)** — the fifteen crates, the wheel, the seven places a version
+- **[RELEASING.md](RELEASING.md)** — the sixteen crates, the wheel, the seven places a version
   lives, and the DOI switch nobody has thrown yet. Read once per release and not otherwise, which is
   why it is not in `CLAUDE.md`.
 - **[CITATION.cff](CITATION.cff)** — how to cite this. Co-authorship is not requested and could not be

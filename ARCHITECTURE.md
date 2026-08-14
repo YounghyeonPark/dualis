@@ -32,9 +32,15 @@ promise dates.
     │  PHYSICS       what evolves, and what it conserves           │
     │                the kernel, and one crate per physics         │
     │                            `dualis-core` + ten domain crates │
+    └───────────────────────────▲─────────────────────────────────┘
+                                │  fills
+    ┌───────────────────────────┴─────────────────────────────────┐
+    │  INPUT         what a person designed, made into cells       │
+    │                a mesh · a rasterisation · what it lost       │
+    │                                             `dualis-shape`   │
     └─────────────────────────────────────────────────────────────┘
 
-As of 0.9.0 all three are crates on crates.io. Before that the upper two lived inside an
+As of 0.9.0 the upper three are crates on crates.io. Before that the top two lived inside an
 unpublished application, so a consumer could run a simulation and had no way to see it.
 ```
 
@@ -87,6 +93,36 @@ data is a 2D grid* apart from *a heatmap because that domain was a room*.
 One more rule holds throughout, and it is the easiest to break by accident: **the scale is fixed
 across a run**. A picture that renormalises per frame makes a decay look like a steady state, and
 per-frame normalisation is what you get if you do not think about it.
+
+### Layer 0 — input
+
+`dualis-shape`, and it is under the physics rather than beside it. Every domain
+here takes a **structured grid**; every file a person designs is a **surface**. This is the bridge,
+and it is the answer to a question the other three layers cannot be asked: *where does the geometry
+come from?* Until now, from a closure written by hand, which is a fine answer for a test and no
+answer at all for someone who has a part.
+
+It depends on `dualis-units` and nothing else in the workspace, and **no domain depends on it**. It
+produces a predicate, `|i, j, k| voxels.contains(i, j, k)`; a domain's `fill` consumes one. That is
+the entire coupling, and it is why adding geometry cost the ten domains nothing — `Solid3D::fill`,
+`Block::fill` and `Waves::fill` already had exactly that signature for other reasons.
+
+**The layer exists because the cell size is a physics decision disguised as a performance one.**
+Picking `cell_mm` picks three things at once: the stability limit and step count as `dx²`, the
+discretisation error, and — the one with no symptom — *how much of the shape survives*. A 0.5 mm rib
+voxelised at 2 mm is not a thin rib, it is gone, and the simulation runs perfectly well without it,
+conserves energy, audits clean and answers a question about a different object. So the crate's
+output is not only cells but a `Loss`: volume error, the fraction of the volume in boundary cells,
+runs one or two cells thick, and rows the rasteriser could not decide.
+
+Two things it deliberately does not do. It does not **choose** the cell size — that would be the
+library guessing, and refusing to guess is the property the rest of this document is about. And it
+does not repair, refine or simplify a mesh; it reads what was exported, measures it, and says
+whether the answer is trustworthy.
+
+What is still missing is named honestly in *What is not built* below: a grid has no **void**, so the
+cells a part does not occupy are some other substance rather than nothing, and two parts voxelised
+separately have no way to touch.
 
 ---
 
@@ -288,6 +324,24 @@ different quantities, the second separates domains carrying the same one.
    Depth buffering is still absent and still not obviously needed. Bodies are points, which
    painter's algorithm sorts correctly, and a field is composited rather than occluded. It becomes
    worth doing when something here has *surfaces* — a mesh, an isosurface — and nothing does.
+   `dualis-shape` now reads meshes but does not hand one to the view, so this is unchanged.
+7. **Geometry from a designed file.** Done as far as one object goes: `dualis-shape` reads an STL,
+   measures it, and rasterises it into the predicate a domain's `fill` already took. Nothing in the
+   physics changed.
+
+   The rest of it is not done, and the three that remain are the ones that block a real assembly:
+
+   - **A grid has no void.** Every cell is some substance, so a part in a box is surrounded by
+     another material rather than by nothing. Insulating it is a substance with a low conductivity,
+     which is not the same thing and is wrong for radiation, for contact and for anything with a
+     free surface.
+   - **Two parts have no way to touch.** Each rasterises onto its own grid from its own bounding
+     box. Placing them in one grid needs a shared origin and a rule for a cell both of them claim,
+     and neither exists. This is the one that arrives first in practice.
+   - **Nothing chooses the cell size.** The `Loss` report says what a choice cost, which is the
+     honest half; picking a cell that resolves the smallest feature and reporting what was traded
+     is a layer above this one, and would be the first place in the workspace that *guesses* — so
+     it has to guess visibly.
 
 Beyond these, the physics itself is open-ended, and two of the three that list named are done.
 

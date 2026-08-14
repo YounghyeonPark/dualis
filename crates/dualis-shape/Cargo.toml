@@ -1,0 +1,16 @@
+[package]
+name = "dualis-shape"
+description = "Designed geometry as simulation input: triangle meshes read, measured, and turned into the cells a domain fills"
+keywords = ["mesh", "voxel", "stl", "geometry", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+dualis-units = { workspace = true }
+

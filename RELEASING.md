@@ -4,8 +4,8 @@ Read this before a release and not otherwise. It was inside `CLAUDE.md`, which i
 session, and a procedure you follow once per release does not need to be in front of you for the
 hundred commits in between.
 
-Fifteen crates are published together and share one version. **A published version is permanent** —
-it can be yanked, never replaced — so the cost of a release is fifteen permanent version numbers on
+Sixteen crates are published together and share one version. **A published version is permanent** —
+it can be yanked, never replaced — so the cost of a release is sixteen permanent version numbers on
 crates.io, one on PyPI, and a prose sweep.
 
 ## When
@@ -23,7 +23,7 @@ All of them, or the release is broken in a way only one CI job can see:
 
 | | occurrences |
 | --- | --- |
-| `Cargo.toml` | 16 — the workspace version and all fifteen path pins |
+| `Cargo.toml` | 17 — the workspace version and all sixteen path pins |
 | `bindings/python/Cargo.toml` | 2 — the crate's own version **and** the exact `dualis` pin |
 | `bindings/python/pyproject.toml` | 1 — the wheel's version |
 | `AGENTS.md` | 1 — `dualis = "0.x"`, which `documented_version.rs` checks |
@@ -74,7 +74,7 @@ Each crate must be live on the index before the next one resolves it.
 set -euo pipefail
 for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular \
          dualis-optics dualis-thermal dualis-electrical dualis-elastic dualis-em \
-         dualis-fluid dualis-porous dualis-scene dualis-view dualis; do
+         dualis-fluid dualis-porous dualis-shape dualis-scene dualis-view dualis; do
   cargo publish -p "$c" --locked      # once per crate. Twice publishes the first and stops on it
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel

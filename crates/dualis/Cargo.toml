@@ -22,6 +22,7 @@ dualis-electrical = { workspace = true }
 dualis-optics = { workspace = true }
 dualis-porous = { workspace = true }
 dualis-scene = { workspace = true }
+dualis-shape = { workspace = true }
 dualis-view = { workspace = true }
 dualis-thermal = { workspace = true }
 dualis-units = { workspace = true }

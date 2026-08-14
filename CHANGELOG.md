@@ -17,6 +17,57 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 ### Added
 
+- **Geometry a person designed can drive the physics: `dualis-shape`, the sixteenth crate.** `Mesh`,
+  `Triangle`, `Voxels` and `Loss`. An STL in, and out comes `|i, j, k| voxels.contains(i, j, k)` — which
+  is *already* the signature `Solid3D::fill`, `Block::fill` and `Waves::fill` take, so **no domain
+  changed**. The crate depends on `dualis-units` and nothing else in the workspace, and nothing in the
+  workspace depends on it except the facade.
+
+  Until now the only way to say what shape a thing was, was a closure written by hand. That is a fine
+  answer for a test and no answer at all for someone who has a part.
+
+  **The crate's real output is the `Loss` report, not the cells.** A 0.5 mm rib voxelised at 2 mm is not a
+  thin rib, it is gone — and the simulation then runs perfectly well, conserves energy, audits clean, and
+  answers a question about a different object. There is no symptom. So every rasterisation carries a
+  signed volume error, the fraction of the volume in boundary cells, a count of runs one or two cells
+  thick, and a count of rows the rasteriser could not decide. A 0.4 mm plate at 2 mm reports a **400%**
+  volume error and 400 thin runs rather than quietly becoming a 2 mm plate.
+
+  **The volume error is not a convergent quantity, and that is the finding.** The obvious test — "voxel
+  volume converges to mesh volume at first order" — is wrong, and it would have passed. Cells the surface
+  bulges out of cancel against cells it cuts into, and what is left is a lattice-point count: a 10 mm
+  sphere at 2.5, 2.0 and 1.5 mm gives `+4.9%, +5.8%, −2.3%`, so the first refinement makes it **worse** and
+  the second flips its sign. Sliding the mesh a third of a cell off the grid changes none of it. On powers
+  of two the sequence looks tidy, which is how three points could have been fitted to any order you liked.
+
+  What does behave is the boundary layer, added as `Loss::boundary_fraction`: a surface area rather than a
+  cancellation, so it is `A·dx/V` — first order with a coefficient, measured to halve at 1.897×, 1.892×
+  and 1.975× per halving. Its coefficient is asserted as the bracket `[0.5, 1.5]` that counting column
+  ends on a convex body *proves*, not as the 0.82 that is measured, because 0.82 is a property of the
+  staircase that nothing here derives. On a box the same layer is exactly `1 − (nx−2)(ny−2)(nz−2)/nx·ny·nz`
+  and is checked with no tolerance at all.
+
+  It is also the number to put in front of someone choosing a cell size: *forty-three percent of your
+  object's volume is in cells that could have gone either way* says what 2 mm on a 20 mm ball means in a
+  way a step count does not. It is deliberately left out of `Loss::is_clean`, because no threshold on it
+  is right for more than one physics.
+
+  **`Loss::retried_rows` exists because a review asked what would notice if the retry did nothing.**
+  Nothing would. `ambiguous_rows` — the case where every perturbation fails — has never been produced by
+  any mesh in the suite, so the whole degenerate-ray path was exercised only by inference from a cell
+  count, and a retry that silently no-opped would have looked exactly like a mesh that never needed one.
+  Counting the rows that *were* retried makes it visible: a cube reports 8 at 1 mm, 20 at 0.5 mm, one per
+  diagonal row. That `ambiguous_rows` remains unexercised is now stated in its own doc rather than left to
+  be discovered.
+
+  Four things the same review found and that are corrected here rather than shipped: a claim that
+  `|volume_error| ≤ boundary_fraction` is an identity — **false**, and the 0.4 mm plate already in the
+  suite is the counterexample at `+4.0` against `1.0`; a `[0.5, 1.5]` bracket whose lower half was wrong,
+  because a column with one filled cell has one end and not two, so it is `[0.25, 1.5]`; a `1e-6`
+  tolerance on the binary STL round-trip that measured **exactly zero**, because 30, 20 and 10 mm are all
+  exact in `f32` and the effect it named was never in the configuration; and a comment justifying a
+  convergence band with the *box's* boundary fraction while describing the sphere's.
+
 - **A scene can declare a composite, not only a substance.** `Scene::composites`, `CompositeSpec`,
   `CompositePart`, `Palette::with_composites`. `crates/dualis-world/tests/declared_composites.rs`,
   `scenes/22-wax-in-an-aluminium-matrix.json`.
@@ -64,6 +115,28 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   come from `Mix` now, since what is under test there is the boundary condition and not the bound.
 
 ### Fixed
+
+
+- **A ray through a face's diagonal was counted twice, and parity approved it.** Found while writing the
+  integration test above, and silent in the worst way. `Voxels::of` fills between sorted *pairs* of
+  crossings; a ray through the edge two triangles share hits **both**, so an 8 mm cube's crossings come out
+  `[0, 0, 8, 8]` — an even count, paired as `(0,0)` and `(8,8)`, filling **nothing**. The row came back
+  empty, `ambiguous_rows` stayed at zero, and the loss report said the rasterisation was clean.
+
+  A cube loses a whole diagonal plane that way: **448 cells of 512** at 1 mm, a slab straight through the
+  middle, at every resolution. Every box test in the crate passed with the bug in it — a 30×20×10 mm box's
+  diagonal is `z = y/2`, which needs an even `y` centre, and a cell-centred grid has none. Pure luck.
+
+  Parity cannot detect this, so a hit on an edge is now a case of its own and the row is retried on a moved
+  ray whatever its parity says. The regression test is a cube, at five sizes, asserted on the cell count and
+  on the diagonal plane being solid; with the fix reverted it reports 448 against 512.
+
+- **`Mesh::is_closed` reported a watertight mesh as open when a coordinate was negative zero.** The edge
+  match is on bit patterns, deliberately — a gap of one bit passes a ray as readily as a gap of a
+  millimetre — but `-0.0` and `0.0` are the *same point*, at no distance from each other, and their bit
+  patterns differ. It fires on anything symmetric about an axis, where one side's coordinate is a product
+  that happened to carry a minus sign. Negative zero is now folded onto zero, which is not a tolerance.
+
 
 - **A bar and a lump can be made of something other than aluminium from Python.** `add_bar` and
   `add_lump` take a `material`, defaulting to aluminium so existing callers are unchanged, and
