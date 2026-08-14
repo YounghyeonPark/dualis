@@ -26,9 +26,9 @@ done
 echo "the gate passed"     # and if this line does not appear, it did not
 ```
 
-### This gate has reported a pass it had not earned, seven times
+### This gate has reported a result it had not earned, eight times
 
-Every one of them the same mistake — reading the *output* of a check as evidence the check **ran**:
+Seven were the same mistake — reading the *output* of a check as evidence the check **ran**:
 
 | what was done | what happened |
 | --- | --- |
@@ -84,6 +84,19 @@ wrote the first file and raised on the second's anchor — a `130x` where the fi
 a tree that was neither the old state nor the new one. Check every anchor **before** writing any file.
 That costs one pass over the inputs and is the difference between an edit that did not happen and an
 edit that half did.
+
+The eighth is the only one in the failure direction, and it earned its place by how close it came to
+being a pass. This checkout moved from `C:\dev\dualis-core` to `C:\dev\dualis`, and the next
+`cargo test` re-linked and ran a binary compiled before the move, with the old path still baked in
+through `env!("CARGO_MANIFEST_DIR")` — cargo's fingerprint survived a change to an environment
+variable its own dep-info records. Six citation tests panicked reading files from a directory that no
+longer existed, which is the loud version; had the old checkout still been on disk, the same six would
+have validated *its* files and printed `ok` — a verdict about a tree that is not the one being
+committed. So: after a checkout moves, `cargo clean` **every workspace in it** before believing
+anything a gate says — this tree has three, each with its own `target/`, and the viewer's suite
+failed the same way the library's had, five tests reading fixtures from the dead path. A binary's
+dep-info (`target/debug/deps/*.d`) states the `CARGO_MANIFEST_DIR` it was really compiled with,
+which is how this one was diagnosed.
 
 CI additionally builds on Rust 1.78, builds for `wasm32-unknown-unknown`, and runs the whole
 suite under `wasm32-wasip1` with wasmtime. Those three catch different things and none of them

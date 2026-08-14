@@ -19,7 +19,7 @@ The same reason `bindings/python` is, and the numbers are measured rather than a
 
 | | external crates |
 | --- | --- |
-| the library, all eleven published crates | **12** |
+| the library, all sixteen published crates | **12** |
 | `bindings/python`, which was split out for this | 15 |
 | here | **86** |
 

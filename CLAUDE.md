@@ -16,10 +16,14 @@ works in a fresh `bash -c`, so the option is right and the paste is what defeats
 
 The surest thing is one check per command with its exit code read. That is what caught the sixth time
 this gate reported a pass it had not earned — three shell guards had not.
-[CONTRIBUTING.md](CONTRIBUTING.md#run-what-ci-runs) is the authority and has all seven with what each
+[CONTRIBUTING.md](CONTRIBUTING.md#run-what-ci-runs) is the authority and has all eight with what each
 cost. The seventh is not a shell problem: `gh run list --limit 1` after a push returns the *previous*
 commit's run, and with `cancel-in-progress` on this workflow that run has probably just been
-**cancelled** — neither a pass nor a failure. Select a run by `headSha`.
+**cancelled** — neither a pass nor a failure. Select a run by `headSha`. The eighth is not either, and
+points the other way: after this checkout moved from `C:\dev\dualis-core`, the gate ran test binaries
+with the old path still baked in through `env!("CARGO_MANIFEST_DIR")` — a loud failure only because
+the old directory was gone; had it still existed, six tests would have **passed** against the wrong
+tree. `cargo clean` after moving a checkout.
 
 ```sh
 # Correct in a file, inert when pasted -- see above.
