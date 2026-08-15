@@ -554,7 +554,7 @@ pipeline. A USD writer is the next rung, and only worth it if the readers really
 | a viewer | `runtime/viewer` — a wgpu window that reads the run **file** and does not link `dualis` |
 | export | `dualis_view::gltf` — no dependency, reaches Blender, three.js and USD tools |
 | GPU physics | `runtime/gpu` — 191× at 64³, single precision, CPU as the reference |
-| an editor | not built. Its blocker is cleared — the platform section below is what it grows into |
+| an editor | a skeleton, at `runtime/editor`: the scene's JSON checked as you type beside a wireframe of every placed extent, run and verify as buttons, `viewer-core`'s camera. The platform section below is what it grows into, under whose rules |
 
 **The editor was last for a reason that is now gone.** An editor writes files, and the scene
 format is `dualis-world`'s, which is `publish = false` precisely because a file format is a
@@ -573,7 +573,11 @@ number closes.
 typing, and CI runs it over every scene so it is not the one entry point nothing exercises.
 
 What is left for an editor is a GUI, and that is a product decision rather than an architectural
-one. The format is ready to be edited.
+one. The format is ready to be edited — and `runtime/editor` is the first GUI over it: a third
+workspace, linking `dualis` where the viewer deliberately does not, reusing `viewer-core`'s
+camera rather than writing that arithmetic a third time, and split into a GUI-free
+`editor-core` (checked, placed, run, verified — tested headlessly) and a shell that paints only
+shapes. The platform section below is the set of rules it was built under.
 
 ---
 

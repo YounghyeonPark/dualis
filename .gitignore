@@ -25,3 +25,4 @@ __pycache__/
 # `/target` rule above does not reach it.
 /runtime/viewer/target/
 /runtime/gpu/target/
+/runtime/editor/target/

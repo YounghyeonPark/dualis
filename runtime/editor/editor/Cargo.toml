@@ -1,0 +1,12 @@
+[package]
+name = "editor"
+description = "Edit a dualis scene beside a 3D view of it: check as you type, run, verify."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+editor-core = { workspace = true }
+viewer-core = { workspace = true }
+eframe = "0.31"

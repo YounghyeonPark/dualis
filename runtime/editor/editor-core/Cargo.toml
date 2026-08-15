@@ -1,0 +1,15 @@
+[package]
+name = "editor-core"
+description = "The GUI-free half of the scene editor: check, place, run, verify."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+dualis-world = { workspace = true }
+dualis = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+viewer-core = { workspace = true }

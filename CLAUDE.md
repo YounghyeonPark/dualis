@@ -127,12 +127,14 @@ earned and was not.
 | [crates/dualis-world/FRICTION.md](crates/dualis-world/FRICTION.md) | changing the public API. Twenty-four findings from using the SDK as a stranger, five of them the same underlying decision |
 | [bindings/python/README.md](bindings/python/README.md) | touching the bindings. Its own cargo workspace, its own gate, and the two boundary decisions not to relitigate |
 | [runtime/viewer/README.md](runtime/viewer/README.md) | touching the viewer. Why it is a separate workspace and why it does not link `dualis` |
+| [runtime/editor/README.md](runtime/editor/README.md) | touching the editor. Why it is a third workspace, why it *does* link `dualis`, and the two halves the platform rules keep apart |
 | [.claude/agents/README.md](.claude/agents/README.md) | adding a reviewer |
 
 Three of those exist because a dependency tree does not belong in the library's lockfile. Measured:
-the library resolves **12** external crates, `bindings/python` **15**, and the viewer's wgpu stack
-**86**. `deny.toml` gates every one of the library's twelve, CI builds with `--locked`, and the same
-crates go to `wasm32` and Rust 1.78 — none of which can carry a GPU stack or a libpython link.
+the library resolves **12** external crates, `bindings/python` **15**, the viewer's wgpu stack
+**86**, and the editor's GUI stack **371**. `deny.toml` gates every one of the library's twelve, CI
+builds with `--locked`, and the same crates go to `wasm32` and Rust 1.78 — none of which can carry
+a GPU stack, a libpython link, or a window toolkit.
 
 `crates/dualis-world` is the fourth: an application, `publish = false`, whose purpose is to use the
 SDK the way a stranger would and report back. Anything you find yourself adding to it that a

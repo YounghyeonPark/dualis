@@ -1,0 +1,25 @@
+# A **separate cargo workspace**, excluded from the library's, for the reason the platform
+# section of ARCHITECTURE.md states as its first rule: a GUI stack is a dependency tree the
+# sixteen published crates must not carry. Measured — the library resolves 12 external
+# crates, the python bindings 15, the viewer's wgpu stack 86, and this workspace **371**.
+#
+# Unlike the viewer, this workspace **links dualis** — deliberately, and the difference is the
+# point: the viewer proves the wire format is complete by never linking the library, and the
+# editor exists to build, run and verify scenes, which cannot be done from the file alone.
+# Nothing in `crates/` depends on this. The arrow still points one way.
+[workspace]
+members = ["editor-core", "editor"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+editor-core = { path = "editor-core" }
+viewer-core = { path = "../viewer/viewer-core" }
+dualis-world = { path = "../../crates/dualis-world" }
+dualis = { path = "../../crates/dualis" }
+serde_json = "1"
