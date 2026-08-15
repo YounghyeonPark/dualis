@@ -554,7 +554,7 @@ pipeline. A USD writer is the next rung, and only worth it if the readers really
 | a viewer | `runtime/viewer` — a wgpu window that reads the run **file** and does not link `dualis` |
 | export | `dualis_view::gltf` — no dependency, reaches Blender, three.js and USD tools |
 | GPU physics | `runtime/gpu` — 191× at 64³, single precision, CPU as the reference |
-| an editor | not built. Its blocker is cleared |
+| an editor | not built. Its blocker is cleared — the platform section below is what it grows into |
 
 **The editor was last for a reason that is now gone.** An editor writes files, and the scene
 format is `dualis-world`'s, which is `publish = false` precisely because a file format is a
@@ -574,6 +574,90 @@ typing, and CI runs it over every scene so it is not the one entry point nothing
 
 What is left for an editor is a GUI, and that is a product decision rather than an architectural
 one. The format is ready to be edited.
+
+---
+
+## A platform of its own, and the rules that keep it open
+
+The section above says what not to build and where to be reachable instead, and that answer is
+complete for everything an external tool can express. **Most of what this workspace holds, no
+external tool can express.** There is no USD schema for a `Violation` — nor for a `Ledger`, an
+impedance boundary, a multirate schedule, a radial distribution function, a mode shape, a
+spectrum, a Biot number or a `Loss` report. Subtract geometry and appearance from what dualis
+models and nearly everything left has no authoring or inspection surface anywhere. Interop cannot
+reach that; only a native platform can — authoring the scene format, running it, inspecting the
+result, and verifying it.
+
+So the direction is both, with the boundary stated once: **what an external tool can express is
+reached through files** — glTF today, a usda writer as the next rung — **and what none of them
+can express is the native platform's reason to exist.**
+
+### Verification is the platform's identity
+
+The most dangerous errors this workspace has found were all passed by the audit, and that list is
+the platform's specification rather than a feature backlog:
+
+- **The coupling window.** A 10 ms window delivered exactly the right joules and read the peak
+  temperature 12% low — the one error class no conservation check catches.
+- **A collapsed convergence order.** Refining the grid halved the error instead of quartering it,
+  which is what found both acoustic boundary defects; no single run could have.
+- **Rasterisation loss.** A rib finer than the grid does not fail, it disappears. `Loss` measures
+  that, and nothing yet turns the measurement into a verdict a person reads.
+- **Margins, not verdicts.** How far each dt sits from `max_stable_dt`, and how many digits each
+  audit residual has left against its tolerance, per quantity — a pass with no margin is a
+  different fact from a pass.
+
+Every one of these needs *reruns* — a second resolution, a halved window — so a tool that only
+reads a run file cannot do it. The platform links `dualis` where the viewer deliberately does
+not, and that is the structural reason the panel is native: an incumbent without the audit and
+the determinism underneath cannot build it. Determinism adds one thing free of charge: a run
+digest, so "this result reproduces bit for bit on any machine" is a checkable fact on a report
+rather than a claim. And where a run stands beside a measured system — the digital-twin case —
+the measurement takes the closed form's seat, and the same battery is the comparison.
+
+Of the platform's verbs, two exist today inside `dualis-world` — `--check` parses and builds
+without running, reporting `file:line:column`, and a scene runs to a file — and `verify`, the
+battery above, is the missing one. It is worth building before any GUI, because a CLI that earns
+trust is the platform with the smallest possible surface.
+
+### The role boundary: the format graduates, the stranger remains
+
+`dualis-world` holds three roles today, and they pull apart. It is the stranger — the consumer
+whose naivety produces `FRICTION.md`, which requires it to stay unpublished. It owns the scene
+format. And it is the runtime that builds, runs and draws what the format states. The moment a
+platform exists, the second and third are product, and a product cannot be played by an actor
+whose job is not knowing things.
+
+The resolution is the move already made at 0.9.0, when scene and view left this same crate:
+**the format and its builder graduate into a published crate, and the platform and the CLI both
+consume it.** One schema, two front ends, no forks. That crate is the one place above the domains
+allowed to name them — it is the composition root, which is already true today inside
+`dualis-world` rather than a permission being invented.
+
+### Three rules, so the platform does not undo the library
+
+1. **Its own workspace.** Measured three times now: the library resolves 12 external crates, the
+   python bindings 15, the viewer's wgpu stack 86 — and a GUI stack is heavier than a viewer's.
+   The library's lockfile, licence gate, WebAssembly and MSRV promises cannot carry it. Unlike
+   the viewer it links `dualis`, because it has to run things; the rendering half is
+   `viewer-core`, reused rather than rewritten.
+
+2. **The inspection half must not enumerate domains.** A panel hard-coded per domain means the
+   eleventh physics costs a platform edit, and the property this document exists to protect is
+   lost one layer up — the bottleneck has moved, not gone. The mechanism is the one `dualis-view`
+   already proves: dispatch on the shape of the data. A new domain offering an existing shape is
+   drawn for free; a genuinely new shape costs one panel *kind*. The authoring half is different —
+   it is the composition root and names domains — and the difference stays structural for the
+   same reason `Pose` and `Placement::marker` do not share a type: the two halves do not share a
+   crate.
+
+3. **The stranger's method is inherited, not retired.** `FRICTION.md`'s findings have come from
+   five sources; building the platform is the sixth — direct manipulation. Dragging two parts
+   together arrives at "two parts have no way to touch"; a cell-size control arrives at "nothing
+   chooses the cell size"; drawing an enclosure arrives at "a grid has no void" — the gaps this
+   document already names, found again from outside, in the order a user meets them. The
+   obligation that transfers is the writing-down: every place the format or the library cannot
+   say what a user just tried to do becomes a finding before it becomes a feature.
 
 ---
 
