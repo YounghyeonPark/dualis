@@ -1554,12 +1554,27 @@ impl World {
         let mut frames = Vec::with_capacity(self.scene.frames + 1);
         frames.push(dualis::scene::capture(&self.sim, &placed));
         for _ in 0..self.scene.frames {
-            self.sim.advance(dt)?;
-            self.close_feedback();
+            self.advance(dt)?;
             frames.push(dualis::scene::capture(&self.sim, &placed));
         }
         dualis::scene::settle_framing(&mut frames);
         Ok(frames)
+    }
+
+    /// Advance the clock by `dt` and close the between-frames feedback — exactly one
+    /// iteration of [`World::run`]'s loop, made public.
+    ///
+    /// This is how a caller runs a world **frame by frame**: capture between advances with
+    /// [`dualis::scene::capture`], stream a long run to a screen as it computes, or stop one
+    /// early. The `verify` battery needed this loop first and reached it through crate
+    /// privacy; the editor needed it second, from outside, and a loop two consumers need is
+    /// an API rather than an implementation detail. The feedback is closed inside rather than
+    /// left to the caller, because a caller who forgets it gets a winding whose resistance
+    /// never moves — a run that is wrong in exactly the way nothing reports.
+    pub fn advance(&mut self, dt: Time) -> Result<dualis::core::Report, Violation> {
+        let report = self.sim.advance(dt)?;
+        self.close_feedback();
+        Ok(report)
     }
 
     /// Where each domain sits, keyed by the name the simulation knows it under.

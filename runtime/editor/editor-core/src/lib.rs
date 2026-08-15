@@ -171,6 +171,68 @@ pub fn run(text: &str) -> Result<String, String> {
     Ok(dualis::view::to_json(&title, &frames))
 }
 
+/// How a streamed run ended, when it did not fail.
+///
+/// Its own type rather than a bare `Ok(())`, because a stopped run and a finished one must
+/// not be confusable: a partial run that reads as complete is a picture of something that did
+/// not happen, which is this workspace's oldest failure shape wearing a scrub slider.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunEnd {
+    /// Every frame the scene asked for was captured.
+    Finished,
+    /// The stop flag was raised between frames; what was emitted is a prefix, and the caller
+    /// must say so wherever the frames are shown.
+    Stopped,
+}
+
+/// Run the scene, emitting the run-so-far as JSON after every captured frame.
+///
+/// This is what makes a run **watchable while it happens**: each `emit` payload is a complete,
+/// readable run — `viewer-core` parses every one — containing the frames captured so far, and
+/// the last payload is byte-identical to what [`run`] returns for the same text, which the
+/// tests pin. Intermediate payloads are the run *unsettled*: `settle_framing` runs once at the
+/// end, exactly as [`World::run`] does, so a shell scrubbing mid-run sees each frame's own
+/// framing and the picture settles when the run does — the honest rendering of a run that is
+/// not finished yet.
+///
+/// `stop` is read between frames. A violation still emits nothing extra: the frames already
+/// emitted stand, and the error carries the kernel's own words, so a shell can leave the
+/// partial run on screen *beside* the reason it ended — which is precisely the view somebody
+/// debugging a violation wants.
+pub fn run_streaming(
+    text: &str,
+    stop: &std::sync::atomic::AtomicBool,
+    mut emit: impl FnMut(String),
+) -> Result<RunEnd, String> {
+    use std::sync::atomic::Ordering;
+
+    let scene: Scene =
+        serde_json::from_str(text).map_err(|e| format!("{}:{}: {e}", e.line(), e.column()))?;
+    let title = scene.title.clone();
+    let mut world = World::build(scene.clone())?;
+    let dt = dualis::units::Time::from_si(scene.duration_s / scene.frames as f64);
+    let placed = world.placements();
+
+    let mut frames = vec![dualis::scene::capture(world.simulation(), &placed)];
+    emit(dualis::view::to_json(&title, &frames));
+    for _ in 0..scene.frames {
+        if stop.load(Ordering::Relaxed) {
+            return Ok(RunEnd::Stopped);
+        }
+        world.advance(dt).map_err(|v| {
+            format!(
+                "the audit stopped the run at t = {:.4} s: {v}",
+                world.time().to_si()
+            )
+        })?;
+        frames.push(dualis::scene::capture(world.simulation(), &placed));
+        emit(dualis::view::to_json(&title, &frames));
+    }
+    dualis::scene::settle_framing(&mut frames);
+    emit(dualis::view::to_json(&title, &frames));
+    Ok(RunEnd::Finished)
+}
+
 /// Run the verification battery and return its rendered report, with the findings count so
 /// the shell can be as loud as the CLI's exit code.
 pub fn verify(text: &str, deep: bool) -> Result<(String, usize), String> {
@@ -270,5 +332,42 @@ mod tests {
         let (report, findings) = verify(ROOM, false).expect("the battery runs");
         assert_eq!(findings, 0, "{report}");
         assert!(report.contains("determinism     two runs, identical bytes"));
+    }
+
+    /// Streaming emits one readable run per capture, and its last payload is byte-identical
+    /// to [`run`]'s — the stream lands exactly where the batch does, so watching a run happen
+    /// and reading it afterwards are the same run.
+    #[test]
+    fn a_streamed_run_is_watchable_and_lands_on_the_batch_answer() {
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let mut payloads = Vec::new();
+        let end = run_streaming(ROOM, &stop, |j| payloads.push(j)).expect("the room runs");
+        assert_eq!(end, RunEnd::Finished);
+        // The initial capture, one per frame, and the settled final.
+        assert_eq!(payloads.len(), 4);
+        for p in &payloads {
+            viewer_core::Run::from_json(p).expect("every payload is a whole, readable run");
+        }
+        assert_eq!(
+            payloads.last().unwrap(),
+            &run(ROOM).unwrap(),
+            "the stream must land on the batch answer to the byte"
+        );
+    }
+
+    /// The stop flag ends a run between frames, and the ending says Stopped — a prefix must
+    /// never be confusable with the run.
+    #[test]
+    fn a_stopped_run_says_so() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let stop = AtomicBool::new(false);
+        let mut emitted = 0;
+        let end = run_streaming(ROOM, &stop, |_| {
+            emitted += 1;
+            stop.store(true, Ordering::Relaxed);
+        })
+        .expect("stopping is not a violation");
+        assert_eq!(end, RunEnd::Stopped);
+        assert_eq!(emitted, 1, "stopped after the first capture");
     }
 }

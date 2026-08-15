@@ -9,10 +9,30 @@ cargo run --release -- scene.json   # opens on a file
 The left pane is the scene's JSON, checked **as you type** with the same two steps
 `dualis-world --check` runs — parse, then build — with parse errors carried as `line:column`,
 which is what that error format was designed for. The viewport draws every placed extent as a
-wireframe, live from the text before anything runs. **Run** executes the scene off the UI
-thread and overlays what came back, scrubbable by frame; **Verify** runs the battery from
-`dualis-world verify` and shows the report the CLI prints, with the findings count in the
-window title. Drag to rotate, scroll to zoom.
+wireframe, live from the text before anything runs. **Run** streams the run in as it computes
+— each frame appears when it is captured, the slider grows, **stop** ends a long run between
+frames — and **Verify** runs the battery from `dualis-world verify` and shows the report the
+CLI prints, with the findings count in the window title. Drag to rotate, scroll to zoom.
+
+## The live loop
+
+Leave the window open and let a script do the editing. With **watch file** on (the default)
+the editor polls the file's modified time and reloads when something else writes it; with
+**run on change** on as well, the reload runs the scene — so
+`script writes → editor rechecks → runs → draws` closes with no hand on the window, which is
+the loop an agent-driven workflow needs. A change arriving mid-run stops the in-flight run at
+the next frame boundary and starts a fresh one, so the picture converges on the latest text
+rather than queueing history.
+
+Two honesty rules hold it together. **Unsaved edits are never clobbered**: if the pane is
+dirty and the disk changes, the status line says so and the disk's version waits for an
+explicit `load` — which of two writers meant it is not the editor's call. And **a prefix is
+never dressed as the run**: a streaming or stopped run is labelled on the canvas, because a
+partial run that looks complete is a picture of something that did not happen.
+
+The streaming itself is `editor-core::run_streaming`, built on `World::advance` — one
+iteration of `World::run`'s loop, made public when the editor became its second consumer —
+and its tests pin that the final streamed payload is byte-identical to the batch run's.
 
 ## Why this is a third workspace
 

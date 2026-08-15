@@ -1,4 +1,5 @@
-//! Edit a dualis scene beside a 3D view of it.
+//! Edit a dualis scene beside a 3D view of it — and leave it open while a script does the
+//! editing.
 //!
 //! ```text
 //! cargo run --release                 # opens on the built-in room
@@ -8,8 +9,23 @@
 //! The left pane is the scene's JSON, checked as you type with the same two steps
 //! `dualis-world --check` runs; a parse error is shown with its `line:column`. The viewport
 //! draws every placed extent as a wireframe — live, from the text, before anything runs — and
-//! after **Run** it overlays what the run produced, scrubbable by frame. **Verify** runs the
-//! battery from `dualis-world verify` and shows the same report the CLI prints.
+//! **Run** streams the run in as it computes: each frame appears when it is captured, the
+//! slider grows, and **stop** ends a long run between frames. **Verify** runs the battery
+//! from `dualis-world verify` and shows the same report the CLI prints.
+//!
+//! # The live loop
+//!
+//! With **watch file** on (it is on by default), the editor polls the file's modified time
+//! and reloads when something else writes it — a script, an agent, another editor. With
+//! **run on change** on as well, the reload runs the scene, so the loop
+//! `script writes → editor rechecks → runs → draws` closes with no hand on the window.
+//! An in-flight run is stopped and superseded when the file changes again, so the picture
+//! converges on the latest text rather than queueing history.
+//!
+//! One rule keeps that honest: **unsaved edits in the pane are never clobbered.** If the pane
+//! is dirty and the disk changes, the status line says so, loudly, and the disk's version
+//! waits for an explicit `load`. The alternative silently discards somebody's typing, and
+//! which of the two writers meant it is not the editor's call to make.
 //!
 //! Drag to rotate, scroll to zoom, and the camera is `viewer-core`'s — the same fit, the same
 //! projection, the same clamps, because that arithmetic has been wrong here before and is not
@@ -24,7 +40,9 @@
 //! name used only as a label. A domain added next year is drawn by the code below unchanged.
 
 use eframe::egui;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant, SystemTime};
 
 fn main() -> eframe::Result {
     let path = std::env::args().nth(1);
@@ -37,8 +55,10 @@ fn main() -> eframe::Result {
 
 /// What a background job sent back.
 enum Job {
-    /// The run's JSON, or the violation that stopped it.
-    Ran(Result<String, String>),
+    /// The run so far, as JSON — one of these per captured frame, plus the settled final.
+    Frames(String),
+    /// How the streaming run ended: finished, stopped, or the violation that refused it.
+    RunEnded(Result<editor_core::RunEnd, String>),
     /// The battery's rendered report and its findings count, or why it could not start.
     Verified(Result<(String, usize), String>),
 }
@@ -47,6 +67,10 @@ enum Job {
 struct RunView {
     run: viewer_core::Run,
     frame: usize,
+    /// Whether what is on screen is a prefix of a stopped run rather than the run. Set from
+    /// [`editor_core::RunEnd`], drawn on the canvas, because a prefix that looks complete is
+    /// a picture of something that did not happen.
+    partial: bool,
 }
 
 struct App {
@@ -55,8 +79,7 @@ struct App {
     path: String,
     /// The result of checking `text`, refreshed whenever the text changes.
     checked: editor_core::Checked,
-    /// The last completed run, if any. Cleared when the text changes, because a picture of a
-    /// run beside text that no longer produces it is a picture of something else.
+    /// The last run — possibly still growing, streamed frame by frame.
     run: Option<RunView>,
     /// The verify report, its findings count, and whether its window is open.
     verify: Option<(String, usize)>,
@@ -65,6 +88,8 @@ struct App {
     /// The in-flight background job, if any. One at a time: a second run pressed mid-run
     /// would race two worlds for one pane.
     busy: Option<(&'static str, mpsc::Receiver<Job>)>,
+    /// Raised to end a streaming run between frames; replaced on every spawn.
+    stop: Arc<AtomicBool>,
     status: String,
     /// The viewport camera — `viewer-core`'s, shared arithmetic with the viewer and the HTML
     /// report so all three open on the same picture.
@@ -72,6 +97,24 @@ struct App {
     /// Fit the camera on the next paint. Set when geometry appears or is replaced, not every
     /// frame — a camera that re-fits while you drag is a camera you cannot aim.
     needs_fit: bool,
+
+    // The live loop.
+    /// Poll the file for outside writes.
+    watch: bool,
+    /// Run automatically after an outside write is loaded.
+    auto_run: bool,
+    /// The pane has edits the disk does not. While true, outside writes are announced and
+    /// never applied.
+    dirty: bool,
+    /// The modified time last loaded or saved, so an outside write is a *different* mtime
+    /// rather than any mtime.
+    known_mtime: Option<SystemTime>,
+    /// When the file was last polled; polling is cheap but not free, and sixty times a
+    /// second buys nothing over twice a second.
+    last_poll: Option<Instant>,
+    /// An auto-run is owed as soon as the current job ends — set when the file changed while
+    /// something was in flight, so the picture converges on the latest text.
+    rerun_owed: bool,
 }
 
 impl App {
@@ -92,6 +135,7 @@ impl App {
             ),
         };
         let checked = editor_core::check(&text);
+        let known_mtime = mtime_of(&path);
         App {
             text,
             path,
@@ -101,9 +145,16 @@ impl App {
             verify_open: false,
             deep: false,
             busy: None,
+            stop: Arc::new(AtomicBool::new(false)),
             status,
             camera: viewer_core::Camera::default(),
             needs_fit: true,
+            watch: true,
+            auto_run: false,
+            dirty: false,
+            known_mtime,
+            last_poll: None,
+            rerun_owed: false,
         }
     }
 
@@ -113,67 +164,177 @@ impl App {
     }
 
     /// Start a background job, refusing a second while one is in flight.
-    fn spawn(&mut self, label: &'static str, job: impl FnOnce() -> Job + Send + 'static) {
+    fn spawn(&mut self, label: &'static str, job: impl FnOnce(mpsc::Sender<Job>) + Send + 'static) {
         if self.busy.is_some() {
             self.status = format!("still busy with the last job; {label} not started");
             return;
         }
         let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(job());
-        });
+        std::thread::spawn(move || job(tx));
         self.busy = Some((label, rx));
         self.status = format!("{label}…");
     }
 
+    fn start_run(&mut self) {
+        let text = self.text.clone();
+        self.stop = Arc::new(AtomicBool::new(false));
+        let stop = self.stop.clone();
+        self.spawn("running", move |tx| {
+            let end = editor_core::run_streaming(&text, &stop, |json| {
+                let _ = tx.send(Job::Frames(json));
+            });
+            let _ = tx.send(Job::RunEnded(end));
+        });
+    }
+
+    fn start_verify(&mut self) {
+        let text = self.text.clone();
+        let deep = self.deep;
+        self.spawn("verifying", move |tx| {
+            let _ = tx.send(Job::Verified(editor_core::verify(&text, deep)));
+        });
+    }
+
+    /// Drain everything the background job has sent. Drained, not sampled: a fast run can
+    /// produce several frames per paint, and showing only the first of them would make the
+    /// stream look slower than the simulation.
     fn poll_jobs(&mut self) {
-        let Some((label, rx)) = &self.busy else {
-            return;
-        };
-        let label = *label;
-        match rx.try_recv() {
-            Ok(Job::Ran(Ok(json))) => {
-                self.busy = None;
-                match viewer_core::Run::from_json(&json) {
-                    Ok(run) => {
-                        let frames = run.frames.len();
-                        self.run = Some(RunView {
-                            run,
-                            frame: frames.saturating_sub(1),
-                        });
-                        self.needs_fit = true;
-                        self.status = format!("ran: {frames} frames");
-                    }
-                    // The editor wrote this JSON one call ago, so the viewer failing to read
-                    // it back is a wire-format defect, not a user mistake — say so.
-                    Err(e) => self.status = format!("the run's own JSON did not read back: {e}"),
+        let Some((_, rx)) = &self.busy else { return };
+        let mut ended = None;
+        let mut latest_frames = None;
+        while let Ok(job) = rx.try_recv() {
+            match job {
+                Job::Frames(json) => latest_frames = Some(json),
+                other => {
+                    ended = Some(other);
+                    break;
                 }
             }
-            Ok(Job::Ran(Err(e))) => {
+        }
+        if let Some(json) = latest_frames {
+            match viewer_core::Run::from_json(&json) {
+                Ok(run) => {
+                    let last = run.frames.len().saturating_sub(1);
+                    // Follow the tail while the run grows, unless the person has scrubbed
+                    // back — a slider that snatches itself out of a hand is worse than one
+                    // that lags.
+                    let follow = self
+                        .run
+                        .as_ref()
+                        .is_none_or(|v| v.frame + 1 >= v.run.frames.len());
+                    let frame = if follow {
+                        last
+                    } else {
+                        self.run.as_ref().map_or(last, |v| v.frame.min(last))
+                    };
+                    if self.run.is_none() {
+                        self.needs_fit = true;
+                    }
+                    self.run = Some(RunView {
+                        run,
+                        frame,
+                        partial: true,
+                    });
+                    self.status = format!("running: {} frame(s) so far", last + 1);
+                }
+                // The editor wrote this JSON one call ago, so the viewer failing to read it
+                // back is a wire-format defect, not a user mistake — say so.
+                Err(e) => self.status = format!("the run's own JSON did not read back: {e}"),
+            }
+        }
+        match ended {
+            None => {}
+            Some(Job::RunEnded(end)) => {
                 self.busy = None;
-                self.status = e;
+                match end {
+                    Ok(editor_core::RunEnd::Finished) => {
+                        if let Some(v) = &mut self.run {
+                            v.partial = false;
+                            self.status = format!("ran: {} frames", v.run.frames.len());
+                        }
+                    }
+                    Ok(editor_core::RunEnd::Stopped) => {
+                        self.status =
+                            String::from("stopped — what is on screen is a prefix, not the run");
+                    }
+                    Err(e) => {
+                        // The frames already streamed stay on screen beside the reason the
+                        // run ended, which is the view somebody debugging a violation wants.
+                        self.status = e;
+                    }
+                }
+                if std::mem::take(&mut self.rerun_owed) {
+                    self.start_run();
+                }
             }
-            Ok(Job::Verified(Ok((report, findings)))) => {
+            Some(Job::Verified(result)) => {
                 self.busy = None;
-                self.verify = Some((report, findings));
-                self.verify_open = true;
-                self.status = match findings {
-                    0 => String::from("verified: no structural findings"),
-                    n => format!("verify: {n} finding(s) — see the report"),
-                };
+                match result {
+                    Ok((report, findings)) => {
+                        self.verify = Some((report, findings));
+                        self.verify_open = true;
+                        self.status = match findings {
+                            0 => String::from("verified: no structural findings"),
+                            n => format!("verify: {n} finding(s) — see the report"),
+                        };
+                    }
+                    Err(e) => self.status = e,
+                }
+                if std::mem::take(&mut self.rerun_owed) {
+                    self.start_run();
+                }
             }
-            Ok(Job::Verified(Err(e))) => {
-                self.busy = None;
-                self.status = e;
+            Some(Job::Frames(_)) => unreachable!("frames are drained above"),
+        }
+    }
+
+    /// Notice an outside write, and apply it only when the pane has nothing to lose.
+    fn poll_disk(&mut self) {
+        if !self.watch {
+            return;
+        }
+        let due = self
+            .last_poll
+            .is_none_or(|t| t.elapsed() > Duration::from_millis(400));
+        if !due {
+            return;
+        }
+        self.last_poll = Some(Instant::now());
+        let Some(disk) = mtime_of(&self.path) else {
+            return;
+        };
+        if Some(disk) == self.known_mtime {
+            return;
+        }
+        if self.dirty {
+            // Announced, sticky, and not applied. Which of two writers meant it is not the
+            // editor's call; the disk's version waits for an explicit `load`.
+            self.status = format!(
+                "{} changed on disk while the pane has unsaved edits — press load to take \
+                 the disk's version",
+                self.path
+            );
+            self.known_mtime = Some(disk);
+            return;
+        }
+        match std::fs::read_to_string(&self.path) {
+            Ok(t) => {
+                self.known_mtime = Some(disk);
+                self.text = t;
+                self.recheck();
+                self.status = format!("reloaded {} (changed outside)", self.path);
+                if self.auto_run && self.checked.error.is_none() {
+                    if self.busy.is_some() {
+                        // Converge on the latest text: end the in-flight run at the next
+                        // frame boundary and owe a fresh one.
+                        self.stop.store(true, Ordering::Relaxed);
+                        self.rerun_owed = true;
+                    } else {
+                        self.start_run();
+                    }
+                }
             }
-            Err(mpsc::TryRecvError::Empty) => {
-                self.status = format!("{label}…");
-            }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.busy = None;
-                self.status =
-                    format!("{label} died without reporting — that is a bug worth a note");
-            }
+            Err(e) => self.status = format!("{}: {e}", self.path),
         }
     }
 }
@@ -181,20 +342,24 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_jobs();
+        self.poll_disk();
         if self.busy.is_some() {
-            // A background job finishes whether or not the mouse moves; without this the
-            // result waits for the next wiggle.
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            // A stream draws itself; without this, frames wait for a mouse wiggle.
+            ctx.request_repaint_after(Duration::from_millis(60));
+        } else if self.watch {
+            ctx.request_repaint_after(Duration::from_millis(400));
         }
 
         egui::TopBottomPanel::top("bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("file");
-                ui.add(egui::TextEdit::singleline(&mut self.path).desired_width(260.0));
+                ui.add(egui::TextEdit::singleline(&mut self.path).desired_width(220.0));
                 if ui.button("load").clicked() {
                     match std::fs::read_to_string(&self.path) {
                         Ok(t) => {
                             self.text = t;
+                            self.dirty = false;
+                            self.known_mtime = mtime_of(&self.path);
                             self.recheck();
                             self.needs_fit = true;
                             self.status = format!("loaded {}", self.path);
@@ -204,27 +369,34 @@ impl eframe::App for App {
                 }
                 if ui.button("save").clicked() {
                     match std::fs::write(&self.path, &self.text) {
-                        Ok(()) => self.status = format!("saved {}", self.path),
+                        Ok(()) => {
+                            self.dirty = false;
+                            self.known_mtime = mtime_of(&self.path);
+                            self.status = format!("saved {}", self.path);
+                        }
                         Err(e) => self.status = format!("{}: {e}", self.path),
                     }
                 }
                 ui.separator();
                 let runnable = self.checked.error.is_none() && self.busy.is_none();
                 if ui.add_enabled(runnable, egui::Button::new("run")).clicked() {
-                    let text = self.text.clone();
-                    self.spawn("running", move || Job::Ran(editor_core::run(&text)));
+                    self.start_run();
+                }
+                if let Some(("running", _)) = self.busy {
+                    if ui.button("stop").clicked() {
+                        self.stop.store(true, Ordering::Relaxed);
+                    }
                 }
                 if ui
                     .add_enabled(runnable, egui::Button::new("verify"))
                     .clicked()
                 {
-                    let text = self.text.clone();
-                    let deep = self.deep;
-                    self.spawn("verifying", move || {
-                        Job::Verified(editor_core::verify(&text, deep))
-                    });
+                    self.start_verify();
                 }
                 ui.checkbox(&mut self.deep, "deep");
+                ui.separator();
+                ui.checkbox(&mut self.watch, "watch file");
+                ui.checkbox(&mut self.auto_run, "run on change");
                 if ui.button("fit view").clicked() {
                     self.needs_fit = true;
                 }
@@ -232,8 +404,7 @@ impl eframe::App for App {
         });
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            let error = self.checked.error.as_deref();
-            match error {
+            match self.checked.error.as_deref() {
                 Some(e) => {
                     ui.colored_label(egui::Color32::from_rgb(220, 80, 80), e);
                 }
@@ -259,6 +430,7 @@ impl eframe::App for App {
                             .desired_rows(34),
                     );
                     if edit.changed() {
+                        self.dirty = true;
                         self.recheck();
                     }
                 });
@@ -361,11 +533,21 @@ impl App {
 
         // The run, by shape. Points are circles, paths are polylines, both coloured by value
         // on the run-wide scale — one scale across the run, never per frame, for the reason
-        // viewer-core states. A field's box is already on screen; its values stay the HTML
-        // report's job for now, and saying so beats quietly drawing nothing.
+        // viewer-core states; while a run streams, "the run" is the run so far, and the
+        // colours settle when it does. A field's box is already on screen; its values stay
+        // the HTML report's job for now, and saying so beats quietly drawing nothing.
         let Some(view) = &mut self.run else {
             return;
         };
+        if view.partial {
+            painter.text(
+                egui::pos2(rect.left() + 8.0, rect.top() + 8.0),
+                egui::Align2::LEFT_TOP,
+                "streaming — a prefix of the run",
+                egui::FontId::proportional(12.0),
+                egui::Color32::from_rgb(230, 180, 60),
+            );
+        }
         let frames = view.run.frames.len();
         if frames > 1 {
             ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink(8.0)), |ui| {
@@ -377,7 +559,7 @@ impl App {
                 });
             });
         }
-        let frame = &view.run.frames[view.frame];
+        let frame = &view.run.frames[view.frame.min(frames - 1)];
         for panel in &frame.panels {
             let scale = view.run.scale_of(panel.name());
             match panel {
@@ -446,6 +628,11 @@ impl App {
             }
         }
     }
+}
+
+/// The file's modified time, or `None` for a path that does not resolve to one.
+fn mtime_of(path: &str) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 /// A value on the run-wide scale, as a colour. The two-ended ramp the HTML report uses in
