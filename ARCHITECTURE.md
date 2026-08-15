@@ -615,10 +615,13 @@ digest, so "this result reproduces bit for bit on any machine" is a checkable fa
 rather than a claim. And where a run stands beside a measured system — the digital-twin case —
 the measurement takes the closed form's seat, and the same battery is the comparison.
 
-Of the platform's verbs, two exist today inside `dualis-world` — `--check` parses and builds
-without running, reporting `file:line:column`, and a scene runs to a file — and `verify`, the
-battery above, is the missing one. It is worth building before any GUI, because a CLI that earns
-trust is the platform with the smallest possible surface.
+Of the platform's verbs, all three exist inside `dualis-world`: `--check` parses and builds
+without running, reporting `file:line:column`; a scene runs to a file; and `verify` runs the
+battery above — built before any GUI, because a CLI that earns trust is the platform with the
+smallest possible surface. Its maiden run did what the battery is for: the default scene's peak
+converged at first order where the scheme is second, and the cause measured out to be the room's
+**height**, quantised to whole cells and converging on the stated 3.1 m at first order — a
+contaminant the battery's own documentation names, found in the first file pointed at it.
 
 ### The role boundary: the format graduates, the stranger remains
 

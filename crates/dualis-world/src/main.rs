@@ -11,6 +11,8 @@
 //! dualis-world scene.json out.json    # the frames themselves — fields, bodies and readings
 //! dualis-world --check s.json         # does it parse and build, without running it
 //! dualis-world --emit-default s.json  # write the built-in scene out to start from
+//! dualis-world verify s.json          # the battery: margins, determinism, both sweeps
+//! dualis-world verify s.json --deep   # and a third run per sweep, measuring the order
 //! ```
 //!
 //! `.html` is the one to reach for if you do not already know how you want this drawn. It picks
@@ -75,6 +77,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
+    }
+
+    // The measurements a passing audit does not make: margins, determinism, and what moves
+    // when the coupling window halves or every grid refines. See `dualis_world::verify` for
+    // what each is and which shipped error it exists because of.
+    if args.first().map(String::as_str) == Some("verify") {
+        let path = args.get(1).ok_or("verify needs a path")?;
+        // The whole tail is matched, not just the third argument — `verify s.json --deep
+        // --whatever` silently ignoring the rest would run something other than what was
+        // typed and report it as verified.
+        let deep = match &args[2..] {
+            [] => false,
+            [d] if d == "--deep" => true,
+            rest => {
+                eprintln!("verify takes a scene and optionally --deep, not {rest:?}");
+                std::process::exit(1);
+            }
+        };
+        let text = std::fs::read_to_string(path)?;
+        let scene: Scene = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
+        println!("{}", scene.title);
+        let battery = match dualis_world::verify::verify(&scene, deep) {
+            Ok(b) => b,
+            Err(why) => {
+                eprintln!("{path}: {why}");
+                std::process::exit(1);
+            }
+        };
+        print!("{}", battery.render());
+        if !battery.findings.is_empty() {
+            std::process::exit(1);
+        }
+        return Ok(());
     }
 
     if args.first().map(String::as_str) == Some("--emit-default") {

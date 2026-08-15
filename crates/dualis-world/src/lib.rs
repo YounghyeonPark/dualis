@@ -35,6 +35,7 @@ use dualis::prelude::Room as AcousticRoom;
 pub mod beam;
 pub mod heater;
 pub mod light;
+pub mod verify;
 
 use beam::Beam;
 use heater::Heater;
@@ -267,6 +268,13 @@ pub enum ScheduleSpec {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum DomainSpec {
     /// A two-dimensional box of air with rigid walls, released in a standing mode.
+    ///
+    /// The samples sit on the walls, so `cells_across` samples are `cells_across − 1`
+    /// intervals, and the **height is quantised** to whole intervals of the spacing the width
+    /// sets — exactly as [`DomainSpec::Hall`] documents for three dimensions. A 3.1 m height
+    /// at 61 samples across 4.4 m is really 3.08 m, and `verify`'s resolution sweep measured
+    /// the consequence before this sentence existed: the quantised height converges on the
+    /// stated one at first order, and every mode frequency rides along with it.
     Room {
         /// Domain name, and the handle the renderer uses to find it again.
         name: String,
@@ -1389,7 +1397,9 @@ pub struct HotSpot {
 /// A scene that has been checked and turned into a runnable simulation.
 pub struct World {
     scene: Scene,
-    sim: Simulation,
+    // `pub(crate)` for the `verify` module, whose instrumented loop reads the ledger and the
+    // stability limits between the advances `World::run` makes without measuring.
+    pub(crate) sim: Simulation,
 }
 
 impl World {
@@ -1580,7 +1590,7 @@ impl World {
     /// a node that is not there produces a winding whose resistance never moves, which looks
     /// exactly like a correct run at a constant temperature. `World::build` validates the target
     /// up front so this cannot be reached with a bad name; the check there is the real one.
-    fn close_feedback(&mut self) {
+    pub(crate) fn close_feedback(&mut self) {
         let targets: Vec<(String, String, String)> = self
             .scene
             .domains
