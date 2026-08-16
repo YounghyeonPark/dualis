@@ -1000,6 +1000,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor-wasm"
+version = "0.1.0"
+dependencies = [
+ "dualis",
+ "editor-core",
+ "serde_json",
+ "viewer-core",
+]
+
+[[package]]
 name = "eframe"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

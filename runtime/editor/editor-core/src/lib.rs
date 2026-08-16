@@ -119,8 +119,14 @@ pub fn check(text: &str) -> Checked {
         ..Checked::default()
     };
 
+    // The scene's own placements, so a pose the file states moves the box on screen — and so
+    // this shell and `World` cannot disagree about where anything is.
+    let placed = scene.placements();
     for spec in &scene.domains {
-        let placement = spec.placement();
+        let placement = placed
+            .get(spec.name())
+            .copied()
+            .unwrap_or_else(|| spec.placement());
         let Some(extent) = placement.extent else {
             continue;
         };
@@ -379,4 +385,166 @@ mod tests {
         assert_eq!(end, RunEnd::Stopped);
         assert_eq!(emitted, 1, "stopped after the first capture");
     }
+}
+
+/// One drawn cell of a field: where it is in the world, and what colour it is.
+///
+/// World space and no camera, deliberately. Two shells draw these now — the native window and
+/// the browser — and the projection is `viewer-core`'s in both, so what lives here is the half
+/// that could be got wrong the same way twice: **where the samples sit inside the placed box,
+/// and what colour a value is.** The camera was already shared for that reason; this is the
+/// same argument one layer along.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Splat {
+    /// Where, in world metres.
+    pub at: [f64; 3],
+    /// Colour and coverage, straight sRGB with an alpha.
+    pub rgba: [u8; 4],
+}
+
+/// What a field's splats are, and the sentence a reader needs beside them.
+#[derive(Clone, Debug)]
+pub struct Splatted {
+    /// The cells to draw, in grid order. A shell projects, sorts by depth and paints.
+    pub splats: Vec<Splat>,
+    /// Cells skipped per axis. One means every cell is drawn.
+    pub stride: usize,
+    /// Whether the colours are Planck's or the conventional ramp — see [`field_splats`].
+    pub physical: bool,
+    /// The note the canvas must carry, saying which of the two a reader is looking at.
+    pub note: &'static str,
+}
+
+/// The most cells one field may draw in a frame.
+///
+/// A 100³ field is a million splats and a painter that stops painting. Past this the field is
+/// subsampled with a stride and the note says so — a silently decimated picture is a picture of
+/// a coarser simulation than the one that ran.
+pub const MAX_SPLATS: usize = 8000;
+
+/// Turn a field panel into cells to draw, coloured by physics where physics gives a colour.
+///
+/// # Two colourings, and the physics decides which
+///
+/// A temperature field is drawn in the colour a body at that temperature **actually is** —
+/// Planck's law through the CIE matching functions, from [`dualis::view::colour`] — whenever
+/// anything in it is hot enough to emit visible light. That is not a palette: a melting block
+/// glows the orange a melting block glows, and nothing here picked it.
+///
+/// Below that, physics gives no colour. A body at 300 K emits nothing visible and this
+/// workspace holds no visible reflectance for it to have instead, so the field falls back to a
+/// conventional ramp — which says *more* and *less* and does not pretend to say *looks like* —
+/// and [`Splatted::note`] states which, because a false colour mistaken for a real one is a
+/// wrong answer that looks right.
+///
+/// The dispatch is on the panel's **unit**, which is data rather than a domain name, so a
+/// physics added next year is coloured correctly with no edit here.
+pub fn field_splats(
+    corners: &[[f64; 3]; 8],
+    counts: (usize, usize, usize),
+    values: &[f64],
+    unit: &str,
+    scale: Option<(f64, f64)>,
+) -> Splatted {
+    let (nx, ny, nz) = counts;
+    if nx == 0 || ny == 0 || nz == 0 || values.len() < nx * ny * nz {
+        return Splatted {
+            splats: Vec::new(),
+            stride: 1,
+            physical: false,
+            note: "field: the panel's values do not fill its grid — not drawn",
+        };
+    }
+
+    // The box's axes. Corner 0 is the low one and bits 0, 1, 2 step one axis each, which is the
+    // order [`EDGES`] is written against.
+    let o = corners[0];
+    let axis = |c: [f64; 3]| [c[0] - o[0], c[1] - o[1], c[2] - o[2]];
+    let (ax, ay, az) = (axis(corners[1]), axis(corners[2]), axis(corners[4]));
+
+    let to_kelvin = |v: f64| match unit {
+        "K" => Some(v),
+        "C" => Some(v + 273.15),
+        _ => None,
+    };
+    let hottest = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let peak_glow = to_kelvin(hottest).map_or(0.0, dualis::view::glow_fraction);
+    let physical = peak_glow > 1e-6;
+
+    let total = nx * ny * nz;
+    let stride = if total > MAX_SPLATS {
+        ((total as f64 / MAX_SPLATS as f64).cbrt().ceil() as usize).max(1)
+    } else {
+        1
+    };
+    let frac = |i: usize, n: usize| {
+        if n > 1 {
+            i as f64 / (n - 1) as f64
+        } else {
+            0.5
+        }
+    };
+
+    let mut splats = Vec::new();
+    for k in (0..nz).step_by(stride) {
+        for j in (0..ny).step_by(stride) {
+            for i in (0..nx).step_by(stride) {
+                let v = values[i + nx * (j + ny * k)];
+                if !v.is_finite() {
+                    continue;
+                }
+                let (u, w, t) = (frac(i, nx), frac(j, ny), frac(k, nz));
+                let at = [
+                    o[0] + ax[0] * u + ay[0] * w + az[0] * t,
+                    o[1] + ax[1] * u + ay[1] * w + az[1] * t,
+                    o[2] + ax[2] * u + ay[2] * w + az[2] * t,
+                ];
+                // One scale across the whole run, never per frame, for the reason
+                // `viewer-core` states.
+                let s = match scale {
+                    Some((lo, hi)) if hi > lo => ((v - lo) / (hi - lo)).clamp(0.0, 1.0),
+                    _ => 0.5,
+                };
+                let rgba = if physical {
+                    let kelvin = to_kelvin(v).unwrap_or(0.0);
+                    let [r, g, b] = dualis::view::blackbody_srgb(kelvin);
+                    // Brightness is the glow relative to this field's own hottest cell, so a
+                    // cool corner of a glowing block is dark rather than merely bluer — which
+                    // is what a photograph of it looks like.
+                    let rel = (dualis::view::glow_fraction(kelvin) / peak_glow).clamp(0.0, 1.0);
+                    [r, g, b, ((rel.sqrt() * 235.0) as u8).max(6)]
+                } else {
+                    let (r, g, b) = ramp(s);
+                    [r, g, b, (30.0 + 200.0 * s * s) as u8]
+                };
+                splats.push(Splat { at, rgba });
+            }
+        }
+    }
+
+    let note = match (physical, stride) {
+        (true, 1) => "field: colour is Planck's, not a palette",
+        (true, _) => "field: Planck colour, subsampled — see the report for every cell",
+        (false, 1) => "field: false colour — nothing here is hot enough to glow",
+        (false, _) => "field: false colour, subsampled — see the report for every cell",
+    };
+    Splatted {
+        splats,
+        stride,
+        physical,
+        note,
+    }
+}
+
+/// The conventional ramp, for a quantity physics gives no colour to: cool blue through to warm.
+///
+/// A designer's choice and stated as one. It says *more* and *less*, which for a pressure
+/// swinging about zero is the whole truth and for a temperature is a stand-in.
+fn ramp(t: f64) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    (
+        (60.0 + 195.0 * t) as u8,
+        (90.0 + 40.0 * (1.0 - (2.0 * t - 1.0).abs())) as u8,
+        (230.0 - 170.0 * t) as u8,
+    )
 }

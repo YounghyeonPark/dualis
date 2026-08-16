@@ -26,3 +26,4 @@ __pycache__/
 /runtime/viewer/target/
 /runtime/gpu/target/
 /runtime/editor/target/
+/runtime/editor/site/*.wasm

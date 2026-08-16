@@ -54,6 +54,18 @@ renderer: Wien's displacement law fixes where the Planck curve peaks, the curve 
 `σT⁴`, equal-energy white lands on `x = y = 1/3`, and the locus passes through CIE Illuminant A
 at `(0.44757, 0.40745)` — a coordinate this code had no hand in producing.
 
+## The same editor, in a browser
+
+`editor-wasm` compiles this machinery to `wasm32-unknown-unknown` and `site/` is a page over it:
+edit, check as you type, run, scrub, verify — with **no server**, because the whole library
+builds for the browser and a backend would only be a slower copy of what is already in the tab.
+See [site/README.md](site/README.md), and `node editor-wasm/selftest.mjs` for the browser path
+exercised without a browser.
+
+One core, two shells. `editor-core` owns checking, placement geometry, running, verifying and
+the colour rule; `editor` is a native window and `editor-wasm` is a page. The camera is
+`viewer-core`'s in both. A thing that could be got wrong the same way twice is written once.
+
 ## Why this is a third workspace
 
 The measured table, one row longer:

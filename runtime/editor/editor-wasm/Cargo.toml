@@ -1,0 +1,16 @@
+[package]
+name = "editor-wasm"
+description = "The same editor machinery, compiled for a browser: check, run, verify and draw."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+editor-core = { workspace = true }
+viewer-core = { workspace = true }
+dualis = { workspace = true }
+serde_json = { workspace = true }

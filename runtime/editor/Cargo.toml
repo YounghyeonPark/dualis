@@ -3,12 +3,17 @@
 # sixteen published crates must not carry. Measured — the library resolves 12 external
 # crates, the python bindings 15, the viewer's wgpu stack 86, and this workspace **371**.
 #
+# One workspace, one core, **two shells**: `editor` is a native window and `editor-wasm` is the
+# same machinery compiled for a browser. They share `editor-core` rather than each carrying a
+# copy, which is the rule the camera already answers to — a thing that could be got wrong the
+# same way twice is written once.
+#
 # Unlike the viewer, this workspace **links dualis** — deliberately, and the difference is the
 # point: the viewer proves the wire format is complete by never linking the library, and the
 # editor exists to build, run and verify scenes, which cannot be done from the file alone.
 # Nothing in `crates/` depends on this. The arrow still points one way.
 [workspace]
-members = ["editor-core", "editor"]
+members = ["editor-core", "editor", "editor-wasm"]
 resolver = "2"
 
 [workspace.package]
