@@ -166,6 +166,16 @@ pub struct Scene {
     /// and a mixture has no surface. A half-copper board is 0.05 bare and 0.9 under solder mask.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub composites: BTreeMap<String, CompositeSpec>,
+    /// Where each domain sits, by the name it answers to. See [`PoseSpec`].
+    ///
+    /// A name-keyed map rather than a field on every [`DomainSpec`] variant, and the reason is
+    /// not style: serde's `flatten` — the only way to add one optional field to fifteen
+    /// variants without writing it fifteen times — **silently disables
+    /// `deny_unknown_fields`**, which is this format's whole defence against a typo running
+    /// something other than what the file says. A map beside `materials` and `composites`
+    /// keeps every type strict and reads the way those do.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub poses: BTreeMap<String, PoseSpec>,
     /// The stage the experiment stands on. See [`EnvironmentSpec`].
     ///
     /// **Absent means what every scene written before this key existed means**: each domain's
@@ -174,6 +184,90 @@ pub struct Scene {
     /// bump: no existing file changes meaning.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<EnvironmentSpec>,
+}
+
+/// Where one domain sits in the world: a translation, and optionally a turn.
+///
+/// # What placing a part does today, and what it does not
+///
+/// It moves where the domain is **captured and drawn** — its field's samples, its bodies, its
+/// box in the viewport — and it is applied through [`Pose`], the kernel's rigid motion, so a
+/// rotation preserves every distance and angle exactly. What it does **not** do is make two
+/// placed parts interact: domains meet on the bus and over an [`Interface`], and an interface
+/// is matched by face count rather than by geometry, so two blocks placed against each other
+/// are two blocks that are drawn against each other. `ARCHITECTURE.md` names that gap — "two
+/// parts have no way to touch" — as the one that arrives first in practice, and placing them
+/// is the half of it that can be done without answering the other half.
+///
+/// Saying so here rather than letting somebody discover it: a scene that places two parts in
+/// contact and runs happily, with no heat crossing between them, is the shape of failure this
+/// format exists to make impossible.
+///
+/// ```json
+/// "poses": {
+///   "armature": { "at_m": [0.12, 0.0, 0.0] },
+///   "housing":  { "at_m": [0.0, 0.0, 0.05],
+///                 "turn": { "axis": [0.0, 0.0, 1.0], "degrees": 45.0 } }
+/// }
+/// ```
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PoseSpec {
+    /// Where the domain's origin lands in the world, in metres.
+    #[serde(default)]
+    pub at_m: [f64; 3],
+    /// A turn about an axis through that origin. Absent is no rotation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<TurnSpec>,
+}
+
+/// A rotation, as an axis and an angle.
+///
+/// Axis-and-angle rather than a quaternion or three Euler angles, because it is the form a
+/// person can write down and check: a quaternion's four numbers have a constraint between them
+/// that a file cannot express, and Euler angles need a convention that every writer remembers
+/// differently. An axis is a direction and an angle is an angle.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TurnSpec {
+    /// The axis, in the domain's own coordinates. Normalised on the way in; a zero vector is
+    /// refused rather than normalised into a NaN.
+    pub axis: [f64; 3],
+    /// How far to turn about it, in degrees. Degrees because a file is written by a person.
+    pub degrees: f64,
+}
+
+impl PoseSpec {
+    /// The kernel's [`Pose`] this describes, or why it is not one.
+    pub fn to_pose(&self, site: &str) -> Result<Pose, String> {
+        if !self.at_m.iter().all(|v| v.is_finite()) {
+            return Err(format!(
+                "poses.{site}: at_m is {:?}, and a position has to be a number",
+                self.at_m
+            ));
+        }
+        let translation = LengthVec::m(self.at_m[0], self.at_m[1], self.at_m[2]);
+        let Some(turn) = &self.turn else {
+            return Ok(Pose::at(translation));
+        };
+        if !turn.axis.iter().all(|v| v.is_finite()) || !turn.degrees.is_finite() {
+            return Err(format!(
+                "poses.{site}: the turn is not a number — axis {:?}, {} degrees",
+                turn.axis, turn.degrees
+            ));
+        }
+        let axis = glam::DVec3::new(turn.axis[0], turn.axis[1], turn.axis[2]);
+        if axis.length() < 1e-12 {
+            return Err(format!(
+                "poses.{site}: the turn's axis is {:?}, which has no direction — a rotation                  needs one, and normalising a zero vector gives a NaN rather than an error",
+                turn.axis
+            ));
+        }
+        Ok(Pose::new(
+            translation,
+            glam::DQuat::from_axis_angle(axis.normalize(), turn.degrees.to_radians()),
+        ))
+    }
 }
 
 /// The stage an experiment stands on — the conditions that are the *scene's* and not any one
@@ -278,6 +372,30 @@ fn default_format() -> u32 {
 }
 
 impl Scene {
+    /// Where each domain sits, by name — the domain's own extent, moved by its [`PoseSpec`].
+    ///
+    /// **The one place poses are applied.** `World` uses it to capture and the editors use it
+    /// to draw; a shell that composed the pose itself would be a second implementation of the
+    /// same composition, and the two would drift the first time one of them learned something.
+    ///
+    /// A malformed pose is skipped here rather than reported, because this runs on a scene that
+    /// may not have been built yet — `World::build` is where a bad pose is refused, and it is
+    /// called before anything is run.
+    pub fn placements(&self) -> BTreeMap<String, Placement> {
+        self.domains
+            .iter()
+            .map(|spec| {
+                let mut placement = spec.placement();
+                if let Some(pose) = self.poses.get(spec.name()) {
+                    if let Ok(p) = pose.to_pose(spec.name()) {
+                        placement.pose = p;
+                    }
+                }
+                (spec.name().to_string(), placement)
+            })
+            .collect()
+    }
+
     /// Refuse a file from a future this build does not know.
     ///
     /// Called by [`World::build`], so nothing can run a scene it half-understands. The failure
@@ -1607,6 +1725,19 @@ impl World {
         if let Some(env) = &scene.environment {
             env.check()?;
         }
+        // A pose naming a domain the scene does not define would place nothing, silently — the
+        // same shape as `tracks` pointing at a node that is not there, and refused the same way,
+        // with the file's own vocabulary quoted back.
+        for (name, pose) in &scene.poses {
+            if !scene.domains.iter().any(|d| d.name() == name) {
+                let known: Vec<&str> = scene.domains.iter().map(|d| d.name()).collect();
+                return Err(format!(
+                    "poses.{name}: this scene defines no domain called {name:?}; it defines {}",
+                    known.join(", ")
+                ));
+            }
+            pose.to_pose(name)?;
+        }
         let mut palette = Palette::with_composites(&scene.materials, &scene.composites)?;
         let mut notes = Vec::new();
         for spec in &scene.domains {
@@ -1710,11 +1841,7 @@ impl World {
     /// scene does not move while it is being simulated. Rebuilding it 240 times would also have
     /// made a placement that *did* drift look like a working feature.
     pub fn placements(&self) -> BTreeMap<String, Placement> {
-        self.scene
-            .domains
-            .iter()
-            .map(|spec| (spec.name().to_string(), spec.placement()))
-            .collect()
+        self.scene.placements()
     }
 
     /// Refresh every tracking winding's temperature from the node it follows.
