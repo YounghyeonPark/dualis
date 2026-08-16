@@ -30,7 +30,52 @@ use dualis::prelude::ThermalNetwork;
 use dualis::view::{html, readings_csv, svg as filmstrip, to_json};
 use dualis_world::{Scene, World};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// Read a file, saying **which** file when it cannot be read.
+///
+/// `std::fs::read_to_string(path)?` propagates an `io::Error` that names the reason and not the
+/// file, so a mistyped or missing path exits with
+/// `Os { code: 2, kind: NotFound, message: "The system cannot find the file specified." }` and
+/// nothing in it to act on. That is what a first run of this binary actually printed, and the
+/// parse path one line further on had been reporting `file:line:column` the whole time — the two
+/// halves of reading a file disagreed about whether the reader deserved to know its name.
+///
+/// A missing file also gets the sentence that fixes it, because "not found" is a complete
+/// diagnosis and an incomplete answer: nothing in this repository is called `scene.json` until
+/// somebody writes one.
+fn read(path: &str) -> Result<String, String> {
+    std::fs::read_to_string(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "{path}: {e}\n  write one to start from with `--emit-default {path}`, or run a \
+                 shipped scene from crates/dualis-world/scenes/"
+            )
+        } else {
+            format!("{path}: {e}")
+        }
+    })
+}
+
+/// Write a file, saying which file when it cannot be written. The counterpart to [`read`], and
+/// here for the same reason: a full disk or a read-only directory should not report itself as a
+/// bare `Os { code: 13 }`.
+fn write(path: &str, bytes: &str) -> Result<(), String> {
+    std::fs::write(path, bytes).map_err(|e| format!("{path}: {e}"))
+}
+
+/// Print what went wrong and exit non-zero, rather than letting the runtime `Debug`-print it.
+///
+/// Returning `Result` from `main` is idiomatic and prints the **Debug** form: a `String` error
+/// comes out wrapped in quotes with its newlines escaped, so the hint this binary attaches to a
+/// missing file arrived as a literal backslash-n. Every other error path here already printed
+/// and exited; this makes the last one agree with them.
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // Validate without running. What an editor needs while somebody is typing: the same checks
@@ -41,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // this file do" are different questions and an editor asks the first one constantly.
     if args.first().map(String::as_str) == Some("--check") {
         let path = args.get(1).ok_or("--check needs a path")?;
-        let text = std::fs::read_to_string(path)?;
+        let text = read(path)?;
         let scene: Scene = match serde_json::from_str(&text) {
             Ok(s) => s,
             Err(e) => {
@@ -101,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         };
-        let text = std::fs::read_to_string(path)?;
+        let text = read(path)?;
         let scene: Scene = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
         println!("{}", scene.title);
         let battery = match dualis_world::verify::verify(&scene, deep) {
@@ -120,14 +165,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.first().map(String::as_str) == Some("--emit-default") {
         let path = args.get(1).ok_or("--emit-default needs a path")?;
-        std::fs::write(path, serde_json::to_string_pretty(&default_scene())? + "\n")?;
+        write(
+            path,
+            &(serde_json::to_string_pretty(&default_scene())? + "\n"),
+        )?;
         println!("wrote {path}");
         return Ok(());
     }
 
     let scene = match args.first() {
-        Some(path) => serde_json::from_str::<Scene>(&std::fs::read_to_string(path)?)
-            .map_err(|e| format!("{path}: {e}"))?,
+        Some(path) => {
+            serde_json::from_str::<Scene>(&read(path)?).map_err(|e| format!("{path}: {e}"))?
+        }
         None => default_scene(),
     };
     let out = args.get(1);
@@ -246,12 +295,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                         std::process::exit(1);
                     }
-                    std::fs::write(path, &svg)?;
+                    write(path, &svg)?;
                     println!("  wrote {path} ({} bytes, filmstrip)", svg.len());
                 }
                 "csv" => {
                     let csv = readings_csv(&frames);
-                    std::fs::write(path, &csv)?;
+                    write(path, &csv)?;
                     println!(
                         "  wrote {path} ({} bytes, {} columns over {} rows)",
                         csv.len(),
@@ -261,7 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "html" => {
                     let page = html(world.scene().title.as_str(), &frames);
-                    std::fs::write(path, &page)?;
+                    write(path, &page)?;
                     println!(
                         "  wrote {path} ({} bytes, a report that opens in a browser)",
                         page.len()
@@ -289,7 +338,7 @@ nothing to export: the run produced no frames"
                         );
                         std::process::exit(1);
                     }
-                    std::fs::write(path, &out.document)?;
+                    write(path, &out.document)?;
                     println!(
                         "  wrote {path} ({} bytes, geometry for Blender, three.js or a USD tool)",
                         out.document.len()
@@ -297,7 +346,7 @@ nothing to export: the run produced no frames"
                 }
                 "json" => {
                     let json = to_json(world.scene().title.as_str(), &frames);
-                    std::fs::write(path, &json)?;
+                    write(path, &json)?;
                     println!(
                         "  wrote {path} ({} bytes, {} frames)",
                         json.len(),
