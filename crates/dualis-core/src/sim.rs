@@ -341,6 +341,24 @@ pub struct Exchange {
     /// made it — snapshot before, snapshot after, and the difference is that domain's, because
     /// only that domain ran in between.
     published_total: BTreeMap<&'static str, f64>,
+    /// What plain [`take`](Exchange::take)s have removed from each channel since the last
+    /// [`mark`](Exchange::mark), and what plain [`publish`](Exchange::publish)es have offered.
+    ///
+    /// Three things about these and each answers a way the second-consumer check was got wrong
+    /// before it was got right.
+    ///
+    /// They are **since a mark** rather than cumulative, and the caller marks before each
+    /// domain's turn, so what comes back is that domain's own traffic **summed from zero**.
+    /// Differencing two totals instead — even two per-sweep totals — carries the sensitivity of
+    /// `2⁻⁵²` times whatever has already gone through: a taker that received a microjoule after
+    /// another had received a gigajoule differences to *nothing*, and the check accused it of
+    /// receiving nothing. That was measured, on a scene written to test the opposite.
+    ///
+    /// And they are **plain only**. `take_on` credits `consumed` but not `takers`, so folding
+    /// spatial amounts in made a plain-channel decision turn on a spatial transfer — wrong in
+    /// both directions at once.
+    taken_since_mark: BTreeMap<&'static str, f64>,
+    published_since_mark: BTreeMap<&'static str, f64>,
 }
 
 impl Exchange {
@@ -354,6 +372,7 @@ impl Exchange {
     pub fn publish(&mut self, channel: &'static str, si_amount: f64) {
         *self.published.entry(channel).or_insert(0.0) += si_amount;
         *self.published_total.entry(channel).or_insert(0.0) += si_amount;
+        *self.published_since_mark.entry(channel).or_insert(0.0) += si_amount;
     }
 
     /// Take everything on a channel, recording that it was taken. The channel is
@@ -361,6 +380,7 @@ impl Exchange {
     pub fn take(&mut self, channel: &'static str) -> f64 {
         let amount = self.published.insert(channel, 0.0).unwrap_or(0.0);
         *self.consumed.entry(channel).or_insert(0.0) += amount;
+        *self.taken_since_mark.entry(channel).or_insert(0.0) += amount;
         *self.takers.entry(channel).or_insert(0) += 1;
         amount
     }
@@ -409,6 +429,7 @@ impl Exchange {
         self.unclaimed_time.insert(channel, left - h);
         *self.published.entry(channel).or_insert(0.0) -= share;
         *self.consumed.entry(channel).or_insert(0.0) += share;
+        *self.taken_since_mark.entry(channel).or_insert(0.0) += share;
         share
     }
 
@@ -418,6 +439,7 @@ impl Exchange {
         self.interval = dt.to_si().max(0.0);
         self.unclaimed_time.clear();
         self.takers.clear();
+        self.mark();
     }
 
     /// Offer an amount that knows where on a boundary it landed.
@@ -603,6 +625,7 @@ impl Exchange {
         self.spatial.clear();
         self.unclaimed_time.clear();
         self.takers.clear();
+        self.mark();
     }
 
     /// How many times each channel has been taken from this sweep.
@@ -613,6 +636,40 @@ impl Exchange {
     /// `Simulation::sweep`, where the check that a channel had at most one *consumer* lives.
     pub fn takes_per_channel(&self) -> impl Iterator<Item = (&'static str, u32)> + '_ {
         self.takers.iter().map(|(c, n)| (*c, *n))
+    }
+
+    /// Start a fresh tally of plain traffic. [`Simulation`] calls this before each domain's
+    /// turn, so [`plain_traffic_since_mark`](Exchange::plain_traffic_since_mark) reports that
+    /// domain's own amounts rather than a difference of two larger numbers.
+    pub fn mark(&mut self) {
+        self.taken_since_mark.clear();
+        self.published_since_mark.clear();
+    }
+
+    /// What has plainly moved since the last [`mark`](Exchange::mark):
+    /// `(channel, taken, published)`.
+    ///
+    /// The amounts the second-consumer check is decided on, and deliberately not
+    /// [`traffic`](Exchange::traffic)'s: that one folds in spatial transfers and the whole run,
+    /// and neither belongs in a decision about who was left with nothing on a plain channel.
+    pub fn plain_traffic_since_mark(&self) -> Vec<(&'static str, f64, f64)> {
+        let mut names: Vec<&'static str> = self.taken_since_mark.keys().copied().collect();
+        for name in self.published_since_mark.keys() {
+            if !self.taken_since_mark.contains_key(name) {
+                names.push(name);
+            }
+        }
+        names.sort_unstable();
+        names
+            .into_iter()
+            .map(|n| {
+                (
+                    n,
+                    self.taken_since_mark.get(n).copied().unwrap_or(0.0),
+                    self.published_since_mark.get(n).copied().unwrap_or(0.0),
+                )
+            })
+            .collect()
     }
 }
 
@@ -910,6 +967,10 @@ impl Simulation {
     /// One pass over the domains in declared order.
     fn sweep(&mut self, dt: Time, multirate: bool) -> Result<Report, Violation> {
         let now = self.t;
+        // How much each channel has been **moved by an earlier taker** in this sweep, as a
+        // magnitude. The second-consumer check turns on this: a domain that asks and receives
+        // nothing is only robbed if somebody before it received something.
+        let mut moved: BTreeMap<&'static str, f64> = BTreeMap::new();
         let mut substeps = Vec::with_capacity(self.domains.len());
         for domain in self.domains.iter_mut() {
             // A quasi-static domain has no state to march, so subdividing its
@@ -929,20 +990,26 @@ impl Simulation {
             let audited = domain.books_balance();
             let books_before = audited.then(|| domain.ledger());
             let traffic_before = audited.then(|| self.bus.traffic());
+            // From here the bus tallies this domain's own plain traffic, summed from zero.
+            // Not a difference of two larger numbers: a microjoule received after somebody
+            // else received a gigajoule differences to nothing, and the check would accuse the
+            // domain that received it.
+            self.bus.mark();
             for _ in 0..n {
                 domain.step(t, h, &mut self.bus)?;
                 t += h;
             }
-            if let (Some(before), Some(traffic)) = (books_before, traffic_before) {
+            if let (Some(books), Some(traffic)) = (books_before, traffic_before) {
                 attribute(
                     domain.name(),
-                    &before,
+                    &books,
                     &domain.ledger(),
                     &traffic,
                     &self.bus.traffic(),
                     &self.conservation_tol,
                 )?;
             }
+            let mine = self.bus.plain_traffic_since_mark();
 
             // A channel this domain took from that an *earlier* domain had already emptied.
             //
@@ -958,24 +1025,76 @@ impl Simulation {
             // choose — equally, by heat capacity, by area? — and any rule it picked would be
             // silently wrong for someone, which is the failure being fixed rather than a fresh
             // one. A caller who knows the answer can publish on channels of their own.
-            for (channel, now_taken) in self.bus.takes_per_channel() {
+            // A channel this domain took from that an *earlier* domain had already emptied.
+            //
+            // `Exchange::take` empties a channel, so the second consumer gets zero — and every
+            // total agrees, because everything published was consumed. Two plates under one
+            // lamp warm at the rate of one plate and the conservation audit structurally
+            // cannot see it. That is what this refuses.
+            //
+            // **It asks what moved, not how many times somebody asked.** Counting takes made
+            // an empty channel taken from twice look exactly like a full one: two `Solid3D`
+            // blocks with no heater anywhere were refused, which is the first thing anybody
+            // assembling parts writes and where nothing could have been mis-split.
+            //
+            // Three properties of the arithmetic, each answering a way the amount version was
+            // got wrong on the first attempt:
+            //
+            // - **Net, not gross** — `taken − published`, the same quantity `attribute` uses
+            //   a few lines above. A domain that publishes onto a channel and takes its own
+            //   offer back received nothing, and counting the gross let it mask a robbery.
+            // - **Summed from zero, never differenced** — the bus tallies each domain's own
+            //   traffic between marks. Differencing totals carries the sensitivity of `2⁻⁵²`
+            //   times whatever has already crossed, so a microjoule received after a gigajoule
+            //   differences to nothing and the domain that received it is accused of not
+            //   having. Per-sweep totals were not enough; only per-turn is.
+            // - **Magnitudes** — a publisher may offer a negative amount, and two earlier
+            //   takers whose receipts cancel had still moved something.
+            //
+            // **What this promises is narrower than "one consumer per channel", and the
+            // difference is deliberate.** A producer that runs *between* two consumers —
+            // publish, take, publish, take — passes, because both received a real amount and
+            // nothing went missing. Which arrangement was intended cannot be read from a bus
+            // that carries amounts and an order, so this checks what can be checked: that no
+            // domain went empty-handed because another had drained the channel. Declaration
+            // order already decides who is offered what under a staggered schedule.
+            //
+            // **The spatial channel has no check of this kind at all.** `take_on` hands a
+            // second consumer a zeroed `Flux` and never touches `takers`, so nothing here
+            // sees it; that gap is older than this code and is not closed by it.
+            let plain = |t: &[(&'static str, f64, f64)], channel: &str| {
+                t.iter()
+                    .find(|(c, _, _)| *c == channel)
+                    .map_or((0.0, 0.0), |(_, taken, published)| (*taken, *published))
+            };
+            let took_now: Vec<(&'static str, u32)> = self.bus.takes_per_channel().collect();
+            for (channel, now_taken) in took_now {
                 let was = before
                     .iter()
                     .find(|(c, _)| *c == channel)
                     .map_or(0, |(_, n)| *n);
-                if was > 0 && now_taken > was {
+                if now_taken <= was {
+                    continue; // this domain did not take from this channel
+                }
+                let (taken, published) = plain(&mine, channel);
+                let net = taken - published;
+                let earlier = moved.get(channel).copied().unwrap_or(0.0);
+                if earlier > 0.0 && net == 0.0 {
                     return Err(Violation {
                         quantity: channel.to_string(),
                         site: format!(
                             "{} (a second domain took from a channel already emptied)",
                             domain.name()
                         ),
-                        before: was as f64,
-                        after: now_taken as f64,
-                        scale: now_taken as f64,
+                        // Amounts rather than call counts, so the message says what was moved
+                        // and what this domain got rather than how many times it asked.
+                        before: earlier,
+                        after: net,
+                        scale: earlier,
                         tolerance: 0.0,
                     });
                 }
+                *moved.entry(channel).or_insert(0.0) += net.abs();
             }
             substeps.push((domain.name().to_string(), n));
         }

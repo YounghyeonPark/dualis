@@ -11,11 +11,13 @@
 //! contact exchange nothing. `ARCHITECTURE.md` names that as the gap that arrives first in
 //! practice, and placing is the half that can be done without answering the other half.
 //!
-//! Writing those tests turned up a second obstacle, larger and not in that list: **two domains
-//! that consume the same channel cannot share a scene at all.** Two blocks with no heater
-//! anywhere are refused on the second one's first step, because the kernel's guard counts takes
-//! rather than amounts. Today a scene holds one heat-consuming domain, which is a harder limit
-//! on assembly than contact is.
+//! Writing those tests turned up a second obstacle, larger and not in that list, and it is gone
+//! now because of them: **two domains that consume the same channel could not share a scene at
+//! all.** Two blocks with no heater anywhere were refused on the second one's first step,
+//! because the kernel's guard counted takes rather than amounts and could not tell an empty
+//! channel taken from twice from a full one. It asks what moved now — an earlier domain
+//! received something and this one asked and got nothing because of it — so two parts coexist
+//! and one lamp still cannot warm two plates at the rate of one.
 
 use dualis_world::{Scene, World};
 
@@ -138,21 +140,20 @@ fn a_degenerate_pose_is_refused() {
     );
 }
 
-/// **Two parts that consume the same channel cannot share a scene at all** — which is a larger
-/// obstacle to assembly than the one this file was written to record.
+/// **Two parts that consume the same channel share a scene, as long as nothing is producing.**
 ///
-/// Two blocks, no heater, nothing published anywhere. The kernel refuses on the second block's
-/// first step: `Exchange::take` empties a channel, so a second consumer would silently get
-/// nothing and warm at the wrong rate, and the kernel would rather say so than let two plates
-/// under one lamp warm as one. The guard counts **takes**, not amounts, so it fires even when
-/// the channel was empty and nothing could have been mis-split.
+/// This test recorded the opposite when it was written, and the kernel changed because of it.
+/// Two blocks with no heater anywhere were refused on the second one's first step, because the
+/// bus's second-consumer guard counted **takes** rather than amounts: an empty channel taken
+/// from twice looked exactly like a full one taken from twice. Nothing could have been
+/// mis-split — there was nothing on the channel — and the first thing anybody assembling parts
+/// writes is two parts.
 ///
-/// Recorded rather than worked around, because it is a fact somebody assembling parts meets
-/// immediately: today a scene holds **one** heat-consuming domain. Whether the guard should look
-/// at the amount rather than the count is a question about the kernel, and the kernel is not
-/// this file's to change.
+/// The guard asks what moved now. It refuses when an earlier domain in the sweep received
+/// something and this one asked and received nothing *because* of it, which is the failure it
+/// was built for and is still caught — see the test below and `crates/dualis/tests/two_consumers.rs`.
 #[test]
-fn two_parts_that_take_from_one_channel_are_refused() {
+fn two_parts_with_nothing_to_share_now_share_a_scene() {
     let s = scene(
         r#"{
   "title": "two blocks, face to face",
@@ -181,14 +182,66 @@ fn two_parts_that_take_from_one_channel_are_refused() {
         cold_lo.x
     );
 
-    // And the scene builds — the refusal is the kernel's, at the first step, not the builder's.
     let mut world = World::build(s).expect("two blocks describe a simulation");
-    let violation = world.run().expect_err("two heat consumers must be refused");
+    let frames = world.run().expect("and with nothing to share, they run");
+    let last = frames.last().unwrap();
+    let temperature = |name: &str| {
+        last.readings
+            .iter()
+            .find(|r| r.domain == name && r.label == "mean")
+            .map(|r| r.value)
+            .unwrap_or_else(|| panic!("{name} reports a mean"))
+    };
+    // Sharing a scene is not touching: neither moved a millikelvin toward the other.
+    assert!(
+        (temperature("cold") - 20.0).abs() < 1e-9,
+        "{}",
+        temperature("cold")
+    );
+    assert!(
+        (temperature("hot") - 500.0).abs() < 1e-9,
+        "{}",
+        temperature("hot")
+    );
+}
+
+/// **Two parts consuming from one producer are still refused, and named.**
+///
+/// The other direction of the same guard, at the scene level: a heater publishing onto the heat
+/// channel with two blocks to take it. `Exchange::take` empties the channel, so the second block
+/// would warm at nothing while every total agreed to the bit — the audit structurally cannot see
+/// it, which is why the guard exists at all.
+#[test]
+fn two_parts_sharing_one_producer_are_refused() {
+    let s = scene(
+        r#"{
+  "title": "one heater, two blocks",
+  "duration_s": 10.0,
+  "frames": 2,
+  "domains": [
+    { "kind": "heater", "name": "element", "watts": 5.0, "reserve_j": 500.0 },
+    { "kind": "block", "name": "near", "cells": [2, 2, 2], "cell_mm": 10.0,
+      "initial_c": 20.0 },
+    { "kind": "block", "name": "far", "cells": [2, 2, 2], "cell_mm": 10.0,
+      "initial_c": 20.0 }
+  ]
+}"#,
+    );
+    let mut world = World::build(s).expect("the scene builds");
+    let violation = world
+        .run()
+        .expect_err("two blocks cannot share one heater's joules");
     assert_eq!(violation.quantity, "energy");
     assert!(
-        violation.site.contains("already emptied"),
-        "the refusal should name the emptied channel: {}",
+        violation.site.starts_with("far") && violation.site.contains("already emptied"),
+        "the *second* taker is the one that found nothing: {}",
         violation.site
+    );
+    // The message carries amounts now rather than call counts: what the first block received,
+    // and what this one did.
+    assert!(
+        violation.before > 0.0 && violation.after == 0.0,
+        "the violation should say what was taken and what was left: {violation:?}"
     );
 }
 
