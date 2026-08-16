@@ -73,6 +73,10 @@ pub struct Checked {
     pub error: Option<String>,
     /// One line of what the scene is — title, domains, duration, frames — for the header.
     pub summary: Option<String>,
+    /// What the build dismissed and why — a stated condition a domain correctly ignored,
+    /// with the measurement that earns it. Shown under the summary, because a dismissal
+    /// nobody can see is the silence it exists to replace.
+    pub notes: Vec<String>,
     /// Every placed extent, posed into world coordinates.
     pub boxes: Vec<PlacedBox>,
     /// The union of every box, `[x0, y0, z0, x1, y1, z1]`, for the camera to fit. `None` when
@@ -98,8 +102,13 @@ pub fn check(text: &str) -> Checked {
         }
     };
 
+    let (error, notes) = match World::build(scene.clone()) {
+        Ok(world) => (None, world.notes().to_vec()),
+        Err(e) => (Some(e), Vec::new()),
+    };
     let mut out = Checked {
-        error: World::build(scene.clone()).err(),
+        error,
+        notes,
         summary: Some(format!(
             "{}: {} domain(s), {:.3} s in {} frames",
             scene.title,

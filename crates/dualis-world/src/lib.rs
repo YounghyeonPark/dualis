@@ -166,6 +166,73 @@ pub struct Scene {
     /// and a mixture has no surface. A half-copper board is 0.05 bare and 0.9 under solder mask.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub composites: BTreeMap<String, CompositeSpec>,
+    /// The stage the experiment stands on. See [`EnvironmentSpec`].
+    ///
+    /// **Absent means what every scene written before this key existed means**: each domain's
+    /// own assumption, unchanged — a bounce falls at standard gravity, an orbit falls only
+    /// toward its own bodies. That default is what lets this key be added without a format
+    /// bump: no existing file changes meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentSpec>,
+}
+
+/// The stage an experiment stands on — the conditions that are the *scene's* and not any one
+/// domain's.
+///
+/// This block exists because the stage used to be an assumption. Gravity was hardcoded into
+/// the bounce's constructor, so a scene on the Moon could not be written, a scene in free
+/// fall could not be written, and nothing in any file said `9.80665` anywhere a reader could
+/// see it. A layer boundary turns assumptions into statements; this is that boundary for the
+/// conditions an experiment is performed under.
+///
+/// # Every domain must answer a stated environment, and there are three answers
+///
+/// - **Consume it.** A bounce under stated gravity falls at that gravity — the Moon at 1.62,
+///   a drop tower at 0.
+/// - **Refuse it.** Bodies under their own mutual gravity cannot also stand in a stated
+///   uniform field — the domain has no way to consume one, and quietly not consuming it
+///   would run a different experiment than the file describes. The build refuses, naming the
+///   domain.
+/// - **Dismiss it, with the measurement that earns the dismissal.** A molecular fluid under
+///   stated gravity ignores it *correctly*: for argon, `m·g·σ` — the gravitational energy
+///   across one molecular diameter — is `2.2e-34 J` against a well depth of `1.65e-21 J`, a
+///   ratio of `1.3e-13`. The dismissal is reported as a build note (printed by `--check` and
+///   shown in the editor) rather than left silent, because a stated condition that is
+///   ignored without a word is this format's oldest failure shape.
+///
+/// The fourth answer — silence — is not available.
+///
+/// # What is deliberately not here yet
+///
+/// No ground plane: the bounce owns its own floor today, and a stage-level ground earns its
+/// place when a *second* domain needs to stand on the same one — the rule `World::advance`
+/// was made public under. No ambient temperature: every thermal domain already states its own
+/// `ambient_c` explicitly, which is more honest than a default it might not mean. Each moves
+/// here when something needs them shared, not before.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvironmentSpec {
+    /// Uniform gravity, in m/s², pulling along −z. Zero is free fall; standard Earth is
+    /// 9.80665, which is also what an *absent* environment means for the domains that fall.
+    ///
+    /// A magnitude, not a vector: −z is the format's down, and a scene that wants sideways
+    /// gravity wants a rotated scene. Negative is refused rather than read as "up".
+    pub gravity_m_per_s2: f64,
+}
+
+impl EnvironmentSpec {
+    /// Refuse a stage that does not describe one.
+    fn check(&self) -> Result<(), String> {
+        if !self.gravity_m_per_s2.is_finite() || self.gravity_m_per_s2 < 0.0 {
+            return Err(format!(
+                "environment: gravity_m_per_s2 is {}; it is a magnitude along -z, so it must \
+                 be finite and non-negative — a scene wanting gravity in another direction \
+                 wants a rotated scene",
+                self.gravity_m_per_s2
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// One composite in [`Scene::composites`].
@@ -930,7 +997,15 @@ impl DomainSpec {
     /// Takes the [`Palette`] by mutable reference because resolving a material name is what *records*
     /// that the name was used, and a declared substance nobody used is refused. See
     /// [`Palette::unused`].
-    pub fn build(&self, palette: &mut Palette) -> Result<Box<dyn Domain>, String> {
+    ///
+    /// Takes the scene's [`EnvironmentSpec`] because the stage is stated once and consumed
+    /// here, where the domains are constructed — `None` is a scene written before the stage
+    /// could be stated, and means each domain's own assumption.
+    pub fn build(
+        &self,
+        palette: &mut Palette,
+        environment: Option<&EnvironmentSpec>,
+    ) -> Result<Box<dyn Domain>, String> {
         let domain: Box<dyn Domain> = match self {
             DomainSpec::Room {
                 name,
@@ -992,6 +1067,21 @@ impl DomainSpec {
                 inclinations_deg,
                 satellite_kg,
             } => {
+                // Refused, not ignored: these bodies fall only toward each other, and the
+                // domain has no way to consume a uniform field. Building it anyway would run
+                // a different experiment than the file states — in free fall while the file
+                // says Earth — which is the failure this format exists to make impossible.
+                if let Some(env) = environment {
+                    if env.gravity_m_per_s2 != 0.0 {
+                        return Err(format!(
+                            "{name}: an orbit cannot stand in the stated uniform gravity of \
+                             {} m/s^2 — its bodies fall only toward each other. State \
+                             \"gravity_m_per_s2\": 0.0 for a free-fall stage, or remove the \
+                             environment and let each domain keep its own assumption",
+                            env.gravity_m_per_s2
+                        ));
+                    }
+                }
                 let mut bodies = vec![Body::new(
                     Mass::kg(*central_kg),
                     LengthVec::m(0.0, 0.0, 0.0),
@@ -1024,18 +1114,25 @@ impl DomainSpec {
                 mass_kg,
                 stiffness,
                 damping,
-            } => Box::new(ContactSystem::new(
-                name.clone(),
-                &[Body::new(
-                    Mass::kg(*mass_kg),
-                    LengthVec::m(0.0, 0.0, *drop_m),
-                    VelocityVec::ZERO,
-                )],
-                AccelerationVec::from_si(-glam::DVec3::Z * G0.to_si()),
-                Ground::floor(),
-                Stiffness::from_si(*stiffness),
-                Damping::from_si(*damping),
-            )),
+            } => {
+                // The stage's gravity when one is stated, the old hardcoded assumption when
+                // not — which keeps every scene written before the stage existed meaning
+                // exactly what it meant. Zero is a legitimate stage: a drop tower's ball
+                // floats on its dashpot.
+                let g = environment.map_or(G0.to_si(), |e| e.gravity_m_per_s2);
+                Box::new(ContactSystem::new(
+                    name.clone(),
+                    &[Body::new(
+                        Mass::kg(*mass_kg),
+                        LengthVec::m(0.0, 0.0, *drop_m),
+                        VelocityVec::ZERO,
+                    )],
+                    AccelerationVec::from_si(-glam::DVec3::Z * g),
+                    Ground::floor(),
+                    Stiffness::from_si(*stiffness),
+                    Damping::from_si(*damping),
+                ))
+            }
             DomainSpec::Atoms {
                 name,
                 cells,
@@ -1400,6 +1497,8 @@ pub struct World {
     // `pub(crate)` for the `verify` module, whose instrumented loop reads the ledger and the
     // stability limits between the advances `World::run` makes without measuring.
     pub(crate) sim: Simulation,
+    /// What the build dismissed and why — see [`World::notes`].
+    notes: Vec<String>,
 }
 
 impl World {
@@ -1505,9 +1604,28 @@ impl World {
 
         // Validated before any domain is built, so an impossible substance is reported as the
         // declaration it is rather than as a `NaN` somewhere downstream.
+        if let Some(env) = &scene.environment {
+            env.check()?;
+        }
         let mut palette = Palette::with_composites(&scene.materials, &scene.composites)?;
+        let mut notes = Vec::new();
         for spec in &scene.domains {
-            sim = sim.with_boxed(spec.build(&mut palette)?);
+            sim = sim.with_boxed(spec.build(&mut palette, scene.environment.as_ref())?);
+            // The dismissals — a stated condition a domain ignores for a measured reason.
+            // Collected here, in the composition root, because the reason is about the pair
+            // (this stage, this domain) and neither owns it alone. Reported by `--check` and
+            // the editor, because a dismissal nobody can see is indistinguishable from the
+            // silence it exists to replace.
+            if let (DomainSpec::Atoms { name, .. }, Some(env)) = (spec, &scene.environment) {
+                if env.gravity_m_per_s2 != 0.0 {
+                    notes.push(format!(
+                        "{name}: the stated gravity is dismissed at this scale — the \
+                         gravitational energy across one molecular diameter, m·g·σ, is about \
+                         1.3e-13 of the Lennard-Jones well depth for argon, and the fluid's \
+                         physics would not move by a pixel"
+                    ));
+                }
+            }
         }
         // And after, because "used" means a domain asked for it, which is only known once they all
         // have. A block's `material` is optional and defaults to aluminium, so a declaration nothing
@@ -1524,12 +1642,21 @@ impl World {
             ));
         }
 
-        Ok(World { scene, sim })
+        Ok(World { scene, sim, notes })
     }
 
     /// The scene this was built from.
     pub fn scene(&self) -> &Scene {
         &self.scene
+    }
+
+    /// What the build dismissed, with the measurement that earned each dismissal.
+    ///
+    /// Empty for most scenes. Non-empty when a stated condition was correctly ignored — a
+    /// molecular fluid under stated gravity — and the whole point is that "correctly ignored"
+    /// is something a person gets to read rather than something that silently happened.
+    pub fn notes(&self) -> &[String] {
+        &self.notes
     }
 
     /// The simulation underneath, for a caller that wants the kernel's own accessors —

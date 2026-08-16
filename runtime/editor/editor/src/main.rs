@@ -420,6 +420,12 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 if let Some(summary) = &self.checked.summary {
                     ui.label(summary.clone());
+                    for note in &self.checked.notes {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(230, 180, 60),
+                            format!("note: {note}"),
+                        );
+                    }
                     ui.separator();
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {

@@ -70,6 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     println!("  {:<14} {shape}", spec.name());
                 }
+                // The dismissals: a stated condition a domain correctly ignored, with the
+                // measurement that earns it. Printed because a dismissal nobody can see is
+                // the silence it exists to replace.
+                for note in world.notes() {
+                    println!("  note: {note}");
+                }
                 return Ok(());
             }
             Err(why) => {
