@@ -43,11 +43,13 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod colour;
 pub mod data;
 pub mod filmstrip;
 pub mod gltf;
 pub mod report;
 
+pub use colour::{blackbody_srgb, glow_fraction, planck_exitance, planckian_chromaticity};
 pub use data::{readings_csv, to_json};
 pub use filmstrip::svg;
 pub use gltf::{gltf, Exported};

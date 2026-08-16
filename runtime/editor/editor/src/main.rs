@@ -602,14 +602,32 @@ impl App {
                         }
                     }
                 }
-                viewer_core::Panel::Field { name, .. } => {
-                    // Its extent is already wireframed above. Not silently: the box carries a
-                    // note so a field is visibly "not drawn here" rather than absent.
-                    if let Some(b) = self.checked.boxes.iter().find(|b| &b.name == name) {
+                viewer_core::Panel::Field {
+                    name,
+                    unit,
+                    nx,
+                    ny,
+                    nz,
+                    values,
+                } => {
+                    let Some(b) = self.checked.boxes.iter().find(|b| &b.name == name) else {
+                        // A field with no placed extent has nowhere to be drawn, and saying so
+                        // beats an absence: the scene stated a field and the picture has none.
+                        continue;
+                    };
+                    if let Some(note) = draw_field(
+                        &painter,
+                        &to_screen,
+                        b,
+                        (*nx, *ny, *nz),
+                        values,
+                        unit,
+                        scale,
+                    ) {
                         painter.text(
                             to_screen(b.corners[0]),
                             egui::Align2::LEFT_TOP,
-                            "field: values in the HTML report",
+                            note,
                             egui::FontId::proportional(10.0),
                             ui.visuals().weak_text_color(),
                         );
@@ -639,6 +657,166 @@ impl App {
 /// The file's modified time, or `None` for a path that does not resolve to one.
 fn mtime_of(path: &str) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+/// The most cells one field may draw in a frame.
+///
+/// A 100³ field is a million splats and a painter that stops painting. Past this the field is
+/// **subsampled with a stride**, and the canvas says so — a silently decimated picture is a
+/// picture of a coarser simulation than the one that ran, which is exactly the kind of quiet
+/// substitution this workspace refuses elsewhere.
+const MAX_VOXELS: usize = 8000;
+
+/// Draw a field as depth-sorted voxels, and return the note the canvas should carry.
+///
+/// # Two colourings, and the physics decides which
+///
+/// A temperature field is drawn in the colour a body at that temperature **actually is** —
+/// Planck's law through the CIE matching functions, from `dualis::view::colour` — whenever
+/// anything in the field is hot enough to emit visible light at all. That is not a palette: a
+/// melting block glows the orange a melting block glows, and nothing here picked it.
+///
+/// Below that, physics gives no colour — a body at 300 K emits nothing visible, and this
+/// workspace holds no visible reflectance for it to have instead — so the field falls back to
+/// the conventional ramp, which says *more* and *less* and does not pretend to say *looks
+/// like*. The returned note states which of the two a reader is looking at, because a false
+/// colour mistaken for a real one is a wrong answer that looks right.
+fn draw_field(
+    painter: &egui::Painter,
+    to_screen: &impl Fn([f64; 3]) -> egui::Pos2,
+    placed: &editor_core::PlacedBox,
+    counts: (usize, usize, usize),
+    values: &[f64],
+    unit: &str,
+    scale: Option<(f64, f64)>,
+) -> Option<&'static str> {
+    let (nx, ny, nz) = counts;
+    if nx == 0 || ny == 0 || nz == 0 || values.len() < nx * ny * nz {
+        return Some("field: the panel's values do not fill its grid — not drawn");
+    }
+
+    // The extent's axes, from the corners `editor-core` posed. Corner 0 is the low one and
+    // bits 0, 1, 2 step one axis each, which is the order `EDGES` is written against.
+    let o = placed.corners[0];
+    let axis = |c: [f64; 3]| [c[0] - o[0], c[1] - o[1], c[2] - o[2]];
+    let (ax, ay, az) = (
+        axis(placed.corners[1]),
+        axis(placed.corners[2]),
+        axis(placed.corners[4]),
+    );
+
+    // A temperature in kelvin, or nothing. The unit is the panel's own — data, not a domain
+    // name — which is the rule the view layer is held to and the reason this works for a
+    // physics that does not exist yet.
+    let to_kelvin = |v: f64| match unit {
+        "K" => Some(v),
+        "C" => Some(v + 273.15),
+        _ => None,
+    };
+    // Does anything in this field glow? `glow_fraction` answers it with the visible share of
+    // the radiated power rather than a threshold somebody chose.
+    let hottest = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let peak_glow = to_kelvin(hottest).map_or(0.0, dualis::view::glow_fraction);
+    let physical = peak_glow > 1e-6;
+
+    // Subsample to a budget, and report it rather than quietly drawing a coarser field.
+    let total = nx * ny * nz;
+    let stride = if total > MAX_VOXELS {
+        ((total as f64 / MAX_VOXELS as f64).cbrt().ceil() as usize).max(1)
+    } else {
+        1
+    };
+
+    // One splat's screen size: the box's own projected span divided by its grid, so a coarse
+    // field draws fat cells and a fine one draws small ones instead of both drawing dots.
+    let span_px = {
+        let a = to_screen(placed.corners[0]);
+        let b = to_screen(placed.corners[7]);
+        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+    };
+    let radius =
+        (span_px / (nx.max(ny).max(nz) as f32) * 0.7 / stride.max(1) as f32).clamp(1.0, 40.0);
+
+    let frac = |i: usize, n: usize| {
+        if n > 1 {
+            i as f64 / (n - 1) as f64
+        } else {
+            0.5
+        }
+    };
+
+    // Collected then depth-sorted: painter's algorithm, far to near, which is what the viewer
+    // uses and what makes a translucent volume composite in the right order.
+    let mut splats: Vec<(f64, egui::Pos2, egui::Color32)> = Vec::new();
+    for k in (0..nz).step_by(stride) {
+        for j in (0..ny).step_by(stride) {
+            for i in (0..nx).step_by(stride) {
+                let v = values[i + nx * (j + ny * k)];
+                if !v.is_finite() {
+                    continue;
+                }
+                let (u, w, t) = (frac(i, nx), frac(j, ny), frac(k, nz));
+                let p = [
+                    o[0] + ax[0] * u + ay[0] * w + az[0] * t,
+                    o[1] + ax[1] * u + ay[1] * w + az[1] * t,
+                    o[2] + ax[2] * u + ay[2] * w + az[2] * t,
+                ];
+                // Normalised position on the run-wide scale — one scale across the whole run,
+                // never per frame, for the reason `viewer-core` states.
+                let s = match scale {
+                    Some((lo, hi)) if hi > lo => ((v - lo) / (hi - lo)).clamp(0.0, 1.0),
+                    _ => 0.5,
+                };
+                let colour = if physical {
+                    let kelvin = to_kelvin(v).unwrap_or(0.0);
+                    let [r, g, b] = dualis::view::blackbody_srgb(kelvin);
+                    // Brightness is the glow relative to the field's own hottest cell, so a
+                    // cool corner of a glowing block is dark rather than merely bluer — which
+                    // is what a photograph of it looks like.
+                    let rel = (dualis::view::glow_fraction(kelvin) / peak_glow).clamp(0.0, 1.0);
+                    let a = (rel.sqrt() * 235.0) as u8;
+                    egui::Color32::from_rgba_unmultiplied(r, g, b, a.max(6))
+                } else {
+                    let c = shade(v, scale);
+                    let a = (30.0 + 200.0 * s * s) as u8;
+                    egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
+                };
+                let screen = to_screen(p);
+                // Depth from the same projection the camera uses, so the sort agrees with the
+                // picture rather than approximating it.
+                splats.push((depth_of(to_screen, p), screen, colour));
+            }
+        }
+    }
+    splats.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    for (_, at, colour) in &splats {
+        painter.circle_filled(*at, radius, *colour);
+    }
+
+    match (physical, stride) {
+        (true, 1) => Some("field: colour is Planck's, not a palette"),
+        (true, _) => Some("field: Planck colour, subsampled — see the report for every cell"),
+        (false, 1) => Some("field: false colour — nothing here is hot enough to glow"),
+        (false, _) => Some("field: false colour, subsampled — see the report for every cell"),
+    }
+}
+
+/// A stand-in depth for the painter's sort: the screen position alone cannot order two points,
+/// so the world point's distance along the view is recovered by projecting a point pushed
+/// slightly away — cheaper than threading the camera through, and monotone in true depth,
+/// which is all a sort needs.
+fn depth_of(to_screen: &impl Fn([f64; 3]) -> egui::Pos2, p: [f64; 3]) -> f64 {
+    // The projection is a perspective divide, so a fixed world offset shrinks with distance:
+    // the screen separation between `p` and `p + eps` falls monotonically as `p` recedes.
+    let a = to_screen(p);
+    let b = to_screen([p[0], p[1], p[2] + 1e-3]);
+    let sep = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt() as f64;
+    // Larger separation means nearer, so invert for a far-to-near sort key.
+    if sep > 0.0 {
+        1.0 / sep
+    } else {
+        f64::MAX
+    }
 }
 
 /// A value on the run-wide scale, as a colour. The two-ended ramp the HTML report uses in

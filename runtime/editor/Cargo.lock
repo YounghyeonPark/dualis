@@ -809,6 +809,7 @@ dependencies = [
  "dualis-molecular",
  "dualis-optics",
  "dualis-porous",
+ "dualis-quantum",
  "dualis-scene",
  "dualis-shape",
  "dualis-thermal",
@@ -909,6 +910,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dualis-quantum"
+version = "0.14.0"
+dependencies = [
+ "dualis-core",
+ "dualis-units",
+]
+
+[[package]]
 name = "dualis-scene"
 version = "0.14.0"
 dependencies = [
@@ -974,6 +983,7 @@ dependencies = [
 name = "editor"
 version = "0.1.0"
 dependencies = [
+ "dualis",
  "editor-core",
  "eframe",
  "viewer-core",

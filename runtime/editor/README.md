@@ -34,6 +34,26 @@ The streaming itself is `editor-core::run_streaming`, built on `World::advance` 
 iteration of `World::run`'s loop, made public when the editor became its second consumer —
 and its tests pin that the final streamed payload is byte-identical to the batch run's.
 
+## The colour is computed, not chosen
+
+A temperature field is drawn in the colour a body at that temperature **actually is** — Planck's
+spectral exitance through the CIE 1931 colour matching functions to sRGB, from
+`dualis::view::colour`. A block at 1473 K is that orange and no other, and nothing here picked
+it; in Blender the same block's colour is a value somebody types.
+
+Which is also the honest limit. Below about 900 K a body emits no visible light at all —
+`glow_fraction` says so with the visible share of its radiated power rather than a threshold
+somebody chose — and this workspace holds no visible *reflectance* to draw instead, since
+`Substance` carries a broadband infrared emissivity and no colour. So a cool field falls back to
+the conventional ramp and the canvas says **"false colour — nothing here is hot enough to
+glow"**. A false colour mistaken for a real one is a wrong answer that looks right, and the
+label is what stops that.
+
+The physics is checked against closed forms and published values, not against a second
+renderer: Wien's displacement law fixes where the Planck curve peaks, the curve integrates to
+`σT⁴`, equal-energy white lands on `x = y = 1/3`, and the locus passes through CIE Illuminant A
+at `(0.44757, 0.40745)` — a coordinate this code had no hand in producing.
+
 ## Why this is a third workspace
 
 The measured table, one row longer:
