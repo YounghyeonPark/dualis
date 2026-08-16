@@ -64,12 +64,16 @@
 use dualis_core::conserved::quantity;
 use dualis_core::Reading;
 use dualis_core::{
-    units::{Conductance, Energy, HeatCapacity, Length, LengthVec, Temperature, Time, Volume},
+    units::{
+        Area, Conductance, Energy, HeatCapacity, Length, LengthVec, Temperature, Time, Volume,
+    },
     Domain, Exchange, Ledger, ScalarField, Substance, Violation,
 };
 use glam::DVec3;
 
-use crate::HEAT;
+use crate::{Environment, HEAT};
+use dualis_units::STEFAN_BOLTZMANN;
+use std::collections::BTreeMap;
 
 /// The largest Fourier number an explicit three-dimensional sweep is stable at.
 ///
@@ -93,6 +97,76 @@ pub const STABLE_FOURIER_3D: f64 = 1.0 / 6.0;
 /// [`fill`](Solid3D::fill) gives cells a different substance from the constructor's, which is what
 /// makes a coating, a joint or a layered wall expressible. Read that method for the one number the
 /// scheme turns on — the conductivity **on a face** is the harmonic mean of the two cells', not
+/// A surface conductance put in series with the half cell of solid behind it.
+///
+/// `1/(1/G_film + dx/(2kA))`. The film is charged against the **surface**, and a finite-volume
+/// cell knows only its centre, so the half cell between them is part of the path. Leaving it
+/// out sheds too much heat and — measured — turns a second-order boundary into a first-order
+/// one, which is the defect this workspace has twice found in an acoustic wall.
+///
+/// An infinite conductivity (a substance that does not say) leaves the film alone, which is the
+/// right limit rather than a special case.
+fn series_with_half_cell(film: f64, conductivity: f64, area: f64, dx: f64) -> f64 {
+    if film <= 0.0 {
+        return 0.0;
+    }
+    let half = 2.0 * conductivity * area / dx;
+    if !half.is_finite() {
+        return film;
+    }
+    if half <= 0.0 {
+        return 0.0;
+    }
+    1.0 / (1.0 / film + 1.0 / half)
+}
+
+/// One outer face of a block.
+///
+/// Named rather than indexed because a caller says which side of a part is exposed, and
+/// `faces[3]` is a thing nobody can read back. The axis pairs are low and high along `x`, `y`
+/// and `z` in the block's own coordinates — a [`Pose`](dualis_core::Pose) is what puts those in
+/// the world.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Face {
+    /// The `x = 0` face.
+    XMin,
+    /// The far face along `x`.
+    XMax,
+    /// The `y = 0` face.
+    YMin,
+    /// The far face along `y`.
+    YMax,
+    /// The `z = 0` face.
+    ZMin,
+    /// The far face along `z`.
+    ZMax,
+}
+
+impl Face {
+    /// All six, in a fixed order — for a block exposed on every side.
+    pub const ALL: [Face; 6] = [
+        Face::XMin,
+        Face::XMax,
+        Face::YMin,
+        Face::YMax,
+        Face::ZMin,
+        Face::ZMax,
+    ];
+
+    /// Whether the cell at `(i, j, k)` of a `counts`-shaped block lies on this face.
+    fn holds(&self, (i, j, k): (usize, usize, usize), counts: (usize, usize, usize)) -> bool {
+        let (nx, ny, nz) = counts;
+        match self {
+            Face::XMin => i == 0,
+            Face::XMax => i + 1 == nx,
+            Face::YMin => j == 0,
+            Face::YMax => j + 1 == ny,
+            Face::ZMin => k == 0,
+            Face::ZMax => k + 1 == nz,
+        }
+    }
+}
+
 /// the arithmetic one, and the difference is not a refinement away.
 #[derive(Clone, Debug)]
 pub struct Solid3D {
@@ -159,6 +233,24 @@ pub struct Solid3D {
     /// [`max_stable_dt`](Domain::max_stable_dt) for why it is a maximum over cells and not a
     /// function of the fastest material.
     worst_rate: f64,
+    /// Each cell's conduction sum, `Σ_f k_f`, kept so the stability limit can be rebuilt at
+    /// the block's **current** temperature — see [`Solid3D::worst_rate_now`].
+    face_sum: Vec<f64>,
+    /// Which faces lose heat, and to what. Empty is the adiabatic block every scene had until
+    /// now: six insulated faces and no steady state to reach.
+    exposed: BTreeMap<Face, Environment>,
+    /// Joules given up to those environments over the run, and the reason the books still
+    /// balance: the ledger is `stored + lost`, so what leaves the cells arrives in this
+    /// counter and the total moves only by what crossed the bus. `LumpedMass` keeps the same
+    /// pair for the same reason.
+    lost: f64,
+    /// The saved counterpart of [`Solid3D::lost`].
+    ///
+    /// Saved because `LumpedMass` learned this the expensive way: rewinding the cells and not
+    /// the losses makes an iterative sweep grow its books by one sweep of shed heat per
+    /// iteration, and the audit reports energy created from nothing. Measured there at 1567.6 J
+    /// becoming 1600.9 J over forty advances.
+    saved_lost: f64,
     /// Whether any material names a **liquid** phase whose properties differ from its solid.
     ///
     /// The one thing that decides whether the sweep has to rebuild its operator each step. A block of
@@ -203,6 +295,10 @@ impl Solid3D {
             cap_solid: Vec::new(),
             cap_liquid: Vec::new(),
             worst_rate: 0.0,
+            face_sum: Vec::new(),
+            exposed: BTreeMap::new(),
+            lost: 0.0,
+            saved_lost: 0.0,
             two_phase: false,
         };
         block.resolve();
@@ -523,6 +619,7 @@ impl Solid3D {
             .collect();
         self.capacity = vec![0.0; self.cells.len()];
         self.mobility = vec![0.0; self.cells.len()];
+        self.face_sum = vec![0.0; self.cells.len()];
         self.worst_rate = 0.0;
         let mut nowhere = false;
         for k in 0..nz {
@@ -540,6 +637,12 @@ impl Solid3D {
                         + self.kz[i + nx * (j + ny * (k + 1))];
                     // NaN loses every comparison, so `max` would step straight past a substance that
                     // does not say what it conducts. Tested for, and the sweep is refused.
+                    //
+                    // An exposed cell also loses to air, and that conductance leaves the cell
+                    // exactly as a face conductance does — so it belongs in the same sum. It is
+                    // divided by `dx` because `mobility` is `dx/capacity`: the face terms are
+                    // conductivities and this one is already a conductance.
+                    self.face_sum[c] = sum;
                     let rate = self.mobility[c] * sum;
                     if rate.is_nan() {
                         nowhere = true;
@@ -552,6 +655,146 @@ impl Solid3D {
         if nowhere {
             self.worst_rate = f64::NAN;
         }
+    }
+
+    /// Expose a face to an environment, so the block can lose heat through it.
+    ///
+    /// **Until this existed a `Solid3D` was adiabatic on all six faces**, which means no
+    /// three-dimensional thermal scene could reach a steady state: every one of them warmed
+    /// for as long as it ran. That is honest for a pulse and useless for the question a
+    /// designer actually asks — *what temperature does this run at* — which is the question a
+    /// chip package, a magnet busbar, a motor and a factory cell are all asking.
+    ///
+    /// The loss is [`Environment::loss_from`]'s, convective **and** radiative, applied per
+    /// boundary cell at that cell's own temperature and its own emissivity. Per cell rather
+    /// than to a mean, because that is what makes a gradient: the middle of a face runs hotter
+    /// than its edge, and a lumped loss says it does not.
+    ///
+    /// The environment's `area` is the **whole face's** area; each boundary cell is charged its
+    /// share, `area / cells_on_the_face`. Stating the face's area rather than a cell's keeps
+    /// the number a caller writes independent of the grid they chose, which is what lets the
+    /// same scene be refined without becoming a different problem — the property
+    /// `dualis-world`'s `verify` sweep depends on.
+    ///
+    /// Exposing a face **tightens the stability limit**, because a cell that can also lose to
+    /// air has more conductance leaving it. [`Solid3D::max_stable_dt`] accounts for it; a
+    /// caller stepping by hand past the returned limit is refused as ever.
+    pub fn losing_from(mut self, face: Face, environment: Environment) -> Solid3D {
+        self.exposed.insert(face, environment);
+        self.resolve();
+        self
+    }
+
+    /// Heat given up to the exposed faces' environments over the run.
+    pub fn lost_energy(&self) -> Energy {
+        Energy::from_si(self.lost)
+    }
+
+    /// Which faces are exposed, and to what.
+    pub fn exposed_faces(&self) -> impl Iterator<Item = (Face, &Environment)> + '_ {
+        self.exposed.iter().map(|(f, e)| (*f, e))
+    }
+
+    /// The stability rate at the block's **present** state: conduction, plus each exposed
+    /// cell's loss conductance at that cell's own temperature.
+    ///
+    /// State-dependent on purpose, which is what [`Domain::max_stable_dt`] means by "the
+    /// largest step this domain can take **from `now`**". A block cooling from 1000 °C is
+    /// stiffer at the start than at the end, and a limit that ignored that would be correct
+    /// only at the end.
+    ///
+    /// Costs a pass over the boundary cells and nothing at all for an unexposed block, which is
+    /// every scene that existed before this.
+    fn worst_rate_now(&self) -> f64 {
+        if self.exposed.is_empty() || self.worst_rate.is_nan() {
+            return self.worst_rate;
+        }
+        let (nx, ny, nz) = self.counts;
+        let dx = self.dx.to_si();
+        let mut worst = self.worst_rate;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let c = i + nx * (j + ny * k);
+                    let loss = self.loss_conductance_at(self.temperature_at(i, j, k), (i, j, k));
+                    if loss == 0.0 {
+                        continue;
+                    }
+                    worst = worst.max(self.mobility[c] * (self.face_sum[c] + loss / dx));
+                }
+            }
+        }
+        worst
+    }
+
+    /// How many cells lie on a face.
+    fn cells_on(&self, face: Face) -> usize {
+        let (nx, ny, nz) = self.counts;
+        match face {
+            Face::XMin | Face::XMax => ny * nz,
+            Face::YMin | Face::YMax => nx * nz,
+            Face::ZMin | Face::ZMax => nx * ny,
+        }
+    }
+
+    /// The loss conductance an exposed cell carries, in W/K, summed over the faces it lies on.
+    ///
+    /// Evaluated at the temperature handed in, and the callers hand in **the cell's own current
+    /// temperature** rather than the ambient. That is not a refinement, it is the difference
+    /// between a limit that holds and one that does not: the radiative conductance is `4εσT³`
+    /// and a part at 1000 °C carries **26 times** what the same surface carries at room
+    /// temperature — measured, `ε = 0.9`, 136 against 5.14 W/m²·K. A limit linearised about
+    /// ambient would hand a hot block a step an order too long, and an explicit boundary past
+    /// its limit does not diverge loudly: it oscillates about the air it is losing to while the
+    /// conservation audit stays perfectly happy, because the heat really did leave.
+    ///
+    /// Two things make it conservative rather than merely plausible, and each was measured
+    /// wrong first.
+    ///
+    /// The **derivative** `4εσT³` rather than the secant `q/(T−T∞)`, because `T⁴` is convex and
+    /// the derivative is the larger of the two — four times it in the hot limit.
+    ///
+    /// And at `max(T_cell, T_ambient)`, because the derivative only dominates the secant for
+    /// `T ≥ T∞`. Below ambient it reverses without bound, and the first version of this used
+    /// the cell alone: a 20 mm cell at 20 °C inside a 700 °C radiant enclosure was handed a
+    /// step whose true ratio was **13**, and one accepted step took it to 8847 °C. `4T∞³`
+    /// bounds `(T+T∞)(T²+T∞²)` for every `T ≤ T∞`, so the larger of the two points is safe on
+    /// both sides.
+    ///
+    /// The film is put **in series with the half cell of solid between the cell centre and the
+    /// surface**, `2k·A/dx`. A finite-volume cell knows only its centre and the film acts at the
+    /// surface, so the half cell between them is part of the path; charging the whole film
+    /// against the centre sheds too much, by the cell Biot number `h·dx/2k`.
+    ///
+    /// **How firmly this is established, exactly.** The series form is first-principles and is
+    /// what a ghost-cell derivation of the Robin condition gives. A review measured the version
+    /// without it converging at **first order** — 2.08, 2.04, 2.02 per grid doubling against the
+    /// interior's 4.0, the signature this workspace has twice caught in an acoustic wall — and
+    /// measured the series form removing that spatial error. That measurement has **not** been
+    /// reproduced here, and no test in this crate pins the boundary's convergence rate: an
+    /// attempt to write one measured the boundary cell's first lurch rather than the slowest
+    /// mode, and then a bias it could not account for. So the fix rests on the derivation and on
+    /// a review's numbers, and the rate is the thing to pin next. Saying so beats a comment that
+    /// implies a test exists.
+    fn loss_conductance_at(&self, at: Temperature, cell: (usize, usize, usize)) -> f64 {
+        self.exposed
+            .iter()
+            .filter(|(face, _)| face.holds(cell, self.counts))
+            .map(|(face, env)| {
+                let share = env.area.to_si() / self.cells_on(*face).max(1) as f64;
+                let thermal = self.substance_at(cell.0, cell.1, cell.2).thermal;
+                let emissivity = thermal.map_or(0.0, |t| t.emissivity);
+                let hot = at.to_si().max(env.ambient.to_si());
+                let h = env.convection_w_per_m2_k
+                    + 4.0 * emissivity * STEFAN_BOLTZMANN.to_si() * hot.powi(3);
+                series_with_half_cell(
+                    h * share,
+                    thermal.map_or(f64::INFINITY, |t| t.conductivity.to_si()),
+                    share,
+                    self.dx.to_si(),
+                )
+            })
+            .sum()
     }
 
     /// How many cells along each axis.
@@ -679,7 +922,7 @@ impl Solid3D {
     /// `dt · maxᵢ (Σ_f k_f / Cᵢ) · dx`: a maximum over **cells**, because stability is a statement
     /// about a row of the update matrix and each cell has its own.
     pub fn stability_ratio(&self, dt: Time) -> f64 {
-        dt.to_si() * self.worst_rate
+        dt.to_si() * self.worst_rate_now()
     }
 
     /// The heat capacity of the whole block, which for a filled one is a sum and not a product.
@@ -953,10 +1196,11 @@ impl Domain for Solid3D {
     /// hand can sit exactly on it. `cargo run --example heat_in_three_dimensions` is the
     /// measurement.
     fn max_stable_dt(&self, _now: Time) -> Time {
-        if self.worst_rate.is_nan() {
+        let rate = self.worst_rate_now();
+        if rate.is_nan() {
             return Time::from_si(f64::INFINITY);
         }
-        Time::from_si(1.0 / self.worst_rate)
+        Time::from_si(1.0 / rate)
     }
 
     fn step(&mut self, _t: Time, dt: Time, bus: &mut Exchange) -> Result<(), Violation> {
@@ -1057,6 +1301,100 @@ impl Domain for Solid3D {
         // 40 cells and 4.2x at 4096, so a two-phase sweep runs 2.6x to 5.2x a one-phase one. That is
         // the price of the simple version. An incremental update touching only the mush — one or two
         // cells wide — is the optimisation available if a problem ever needs it, and none does yet.
+        // **What the exposed faces shed**, after the conduction sweep and before the phases are
+        // re-derived, so a cell that melts this step does so on the enthalpy it actually has.
+        //
+        // Per cell at that cell's own temperature and its own emissivity, which is what makes a
+        // gradient: the middle of a cooled face sits hotter than its edge, and a lumped loss
+        // says it does not. `Environment::loss_from` is the model — convective **and**
+        // radiative — imported rather than rewritten, because a second convection model in the
+        // same crate is a second thing to be wrong.
+        //
+        // Explicit, like the sweep it follows, and bounded by the same limit: `max_stable_dt`
+        // carries each exposed cell's loss conductance, so a step this domain accepted cannot
+        // overshoot ambient. A cell that could is a cell whose temperature oscillates about the
+        // air rather than settling into it, which is the silent version of an unstable
+        // boundary — and `stability_ratio` refuses the step before this runs.
+        if !self.exposed.is_empty() {
+            let (nx, ny, nz) = self.counts;
+            let dts = dt.to_si();
+            let dxs = self.dx.to_si();
+            for k in 0..nz {
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let c = i + nx * (j + ny * k);
+                        let mut watts = 0.0;
+                        let mut conductance = 0.0;
+                        let here_t = self.temperature_at(i, j, k);
+                        let thermal = self.substance_at(i, j, k).thermal;
+                        for (face, env) in &self.exposed {
+                            if !face.holds((i, j, k), self.counts) {
+                                continue;
+                            }
+                            let share = env.area.to_si() / self.cells_on(*face).max(1) as f64;
+                            let here = Environment {
+                                ambient: env.ambient,
+                                convection_w_per_m2_k: env.convection_w_per_m2_k,
+                                area: Area::from_si(share),
+                            };
+                            let emissivity = thermal.map_or(0.0, |t| t.emissivity);
+                            let bare = here.loss_from(here_t, emissivity).to_si();
+                            let gap = here_t.to_si() - env.ambient.to_si();
+                            if gap == 0.0 {
+                                continue;
+                            }
+                            // The **secant** conductance of the bare surface — the exact one for
+                            // this flux — then put in series with the half cell behind it, which
+                            // is where the centre temperature this is charged against lives.
+                            let film = bare / gap;
+                            let g = series_with_half_cell(
+                                film,
+                                thermal.map_or(f64::INFINITY, |t| t.conductivity.to_si()),
+                                share,
+                                dxs,
+                            );
+                            watts += g * gap;
+                            conductance += g;
+                        }
+                        if watts == 0.0 {
+                            continue;
+                        }
+                        // **The step is re-checked here, against the state the film actually
+                        // meets.** `stability_ratio` reads the temperatures the step *started*
+                        // with, and heat off the bus is spread over every cell before this
+                        // runs — so a slug can make a cell far stiffer than the limit was
+                        // computed for. Measured: a cube at ambient given a 300 K rise in one
+                        // accepted step shed its corner to −137 °C, and 900 K took it to
+                        // −7007 °C, with the ledger balancing perfectly throughout. An explicit
+                        // boundary past its limit does not diverge loudly; it overshoots the
+                        // air it is losing to, and the audit cannot see it because the heat
+                        // really did leave.
+                        if conductance * dts > self.capacity[c] {
+                            return Err(Violation {
+                                quantity: "surface loss ratio".to_string(),
+                                site: format!(
+                                    "{} (cooled face, after this step's heat)",
+                                    self.name
+                                ),
+                                before: self.capacity[c],
+                                after: conductance * dts,
+                                scale: self.capacity[c],
+                                tolerance: 0.0,
+                            });
+                        }
+                        // Removed in enthalpy, the same currency `deposit` adds in, so what
+                        // leaves the cell and what lands in `lost` are the same number and the
+                        // ledger's `stored + lost` is exact rather than nearly so.
+                        let joules = watts * dts;
+                        // The same currency `deposit` adds in, so what leaves the cell and what
+                        // lands in `lost` are the same number and `stored + lost` is exact.
+                        self.add_kelvin(c, -joules / self.capacity[c]);
+                        self.lost += joules;
+                    }
+                }
+            }
+        }
+
         if self.two_phase {
             self.resolve();
         }
@@ -1065,7 +1403,11 @@ impl Domain for Solid3D {
 
     /// Heat gained since the start. The faces are insulated, so this is exactly what came in.
     fn ledger(&self) -> Ledger {
-        Ledger::new().with(quantity::ENERGY, self.stored_heat())
+        // `stored + lost`, so the total moves only by what crossed the bus and the claim in
+        // `books_balance` survives a block that sheds heat to air. `LumpedMass` carries the
+        // same pair for the same reason; what differs is that this one keeps the claim,
+        // because every joule it sheds is counted here in the same step it leaves a cell.
+        Ledger::new().with(quantity::ENERGY, self.stored_heat() + self.lost)
     }
 
     /// The temperatures **and** the phase, because a temperature alone is not a state.
@@ -1077,11 +1419,16 @@ impl Domain for Solid3D {
     fn checkpoint(&mut self) {
         self.saved.clone_from(&self.cells);
         self.saved_melted.clone_from(&self.melted);
+        // The losses too, and `LumpedMass` records what it costs to forget: an iterative sweep
+        // that rewinds the cells and not the counter grows its books by one sweep of shed heat
+        // per iteration, and the audit reports energy created from nothing.
+        self.saved_lost = self.lost;
     }
 
     fn restore(&mut self) {
         self.cells.clone_from(&self.saved);
         self.melted.clone_from(&self.saved_melted);
+        self.lost = self.saved_lost;
     }
 
     fn supports_restore(&self) -> bool {

@@ -64,7 +64,7 @@ use dualis_units::{
 };
 use glam::DVec3;
 pub use network::{Node, SteadyState, ThermalNetwork};
-pub use solid::{Solid3D, STABLE_FOURIER_3D};
+pub use solid::{Face, Solid3D, STABLE_FOURIER_3D};
 
 /// The bus channel heat arrives on, in joules.
 ///
