@@ -1,6 +1,6 @@
 # Scenes
 
-Twenty-two worlds described as data, covering seven of the library's ten domains — twenty-one of them
+Twenty-two worlds described as data, covering seven of the library's eleven domains — twenty-one of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.

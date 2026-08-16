@@ -624,7 +624,7 @@ only form in which the claim means anything.
 
 ## What this report does not cover
 
-Seven of the ten domains have scenes; `dualis-elastic`, `dualis-em` and `dualis-fluid` are the three without. What is left
+Seven of the eleven domains have scenes; `dualis-elastic`, `dualis-em`, `dualis-fluid` and `dualis-quantum` are the four without. What is left
 is smaller and more specific.
 
 **`TreeNBody`, `RigidBody` and the rest of mechanics.** Four types took `as_any` in this pass

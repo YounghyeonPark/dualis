@@ -93,7 +93,7 @@ alters that constant, that is the finding** — it is never the fix.
 cargo clippy --workspace --lib -- -W missing_docs 2>&1 | grep -c "^warning: missing"
 ```
 
-Must be `0`. All seventeen crates carry `#![deny(missing_docs)]` — the sixteen published ones
+Must be `0`. All eighteen crates carry `#![deny(missing_docs)]` — the seventeen published ones
 and `dualis-world` — so a regression is a build
 failure — but check that the attribute is still present and still positioned before any item,
 since an inner attribute after the first item is a compile error and it is easy to reintroduce
@@ -157,7 +157,7 @@ became owned, `Panel` became an enum), a removed re-export, a constructor's para
 has *not* meant adding a defaulted trait method or a new `serde(default)` field — those are
 additive, and both have been done without a bump.
 
-The sixteen crates share one version and are published together. Check that every
+The seventeen crates share one version and are published together. Check that every
 `workspace.dependencies` entry's `version` matches `workspace.package.version`: a mismatch
 publishes a facade that depends on a version of its own crates that does not exist.
 

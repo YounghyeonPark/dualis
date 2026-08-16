@@ -40,7 +40,7 @@ The measured table, one row longer:
 
 | | external crates |
 | --- | --- |
-| the library, all sixteen published crates | **12** |
+| the library, all seventeen published crates | **12** |
 | `bindings/python` | 15 |
 | `runtime/viewer` | 86 |
 | here | **371** |

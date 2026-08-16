@@ -93,6 +93,7 @@ pub use dualis_mechanics as mechanics;
 pub use dualis_molecular as molecular;
 pub use dualis_optics as optics;
 pub use dualis_porous as porous;
+pub use dualis_quantum as quantum;
 pub use dualis_scene as scene;
 pub use dualis_shape as shape;
 pub use dualis_thermal as thermal;
@@ -142,6 +143,7 @@ pub mod prelude {
         SpectralPower, Spectrum, SurfaceFinish, SurfaceOptics, Zernike, VISIBLE_RANGE,
     };
     pub use dualis_porous::{Basket, Bed, Grind, Liquid, Observable, Puck, Shot};
+    pub use dualis_quantum::{Wavenumber, Well, PROBABILITY};
     pub use dualis_scene::{
         capture, sample_field, settle_framing, Extent, Frame, Panel, PanelData, Placement,
     };

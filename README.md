@@ -5,10 +5,10 @@
 [![docs.rs](https://docs.rs/dualis/badge.svg)](https://docs.rs/dualis)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
-physics, and ten domains built on it that do: **light, heat, motion, sound, electricity,
-electromagnetic fields, elastic deformation, incompressible flow, flow through a packed bed, and
-matter one atom at a time.** Two layers above them place a simulation in the world and draw it, and
-neither knows a domain either.
+physics, and eleven domains built on it that do: **light, heat, motion, sound, electricity,
+electromagnetic fields, elastic deformation, incompressible flow, flow through a packed bed,
+matter one atom at a time, and a quantum wavefunction in a well.** Two layers above them place a
+simulation in the world and draw it, and neither knows a domain either.
 
 Dimensions live in the type system, so `Length + Time` does not compile. Conservation is
 audited rather than assumed, and a `Violation` names what went missing and where. Every
@@ -16,7 +16,7 @@ result is reproducible bit for bit — across platforms, across optimisation lev
 WebAssembly, and under sixteen threads as readily as one.
 
 ```sh
-cargo add dualis                             # one dependency, all sixteen published crates
+cargo add dualis                             # one dependency, all seventeen published crates
 pip install dualis                           # or from Python, see bindings/python
 ```
 
@@ -25,7 +25,7 @@ Or, in a clone of this repository:
 ```sh
 cargo run --release --example melting        # a crystal melting, read off its own structure
 cargo run --release --example beam_hot_spot  # a laser on a mirror, and the hot spot a lumped model misses
-cargo test --workspace                       # 652 tests, all against closed forms
+cargo test --workspace                       # 697 tests, all against closed forms
 ```
 
 Add `out.svg` to either example and it draws the result. There are twelve of those; three more
@@ -93,14 +93,15 @@ its own scheme. There are tests for those rates now.
 | `dualis-em` | Maxwell's equations on a Yee grid, where `∇·B = 0` is an **identity of the update** rather than a tolerance: inject a divergence and 500 steps later it is unchanged to nine digits. Cavity resonances at second order, the leapfrog's energy swing against its own closed form, an absorbing boundary that leaves 0.149% of a pulse behind where a conductor leaves all of it, and a waveguide whose dispersion relation comes out of one march |
 | `dualis-elastic` | What a shape does under load: `∇·σ = 0` solved on trilinear elements, so a stiffness is a property of a geometry. Four moduli come out exactly — `E`, the constrained `M`, the bulk `K` and the shear `G` — and Clapeyron's `2U = Σf·u` says the discretisation is self-consistent |
 | `dualis-porous` | Flow through a packed bed: Darcy's law solved as a field, the heat the liquid carries, and the dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed and an aquifer |
+| `dualis-quantum` | A wavefunction in a well: the time-dependent Schrödinger equation, marched with the same staggered leapfrog family the acoustic domain uses — real part on integer steps, imaginary on halves — so **probability is conserved as an identity of the update**, the way `∇·B` is on the Yee grid. Eigenvalues against the discrete operator's own closed form, Gaussian spreading and Ehrenfest's theorem at second order |
 | `dualis-shape` | Designed geometry as input: an STL read and measured, and rasterised into the cells a domain fills — with a report of what the cells could **not** hold, because a rib finer than the grid does not fail, it disappears. Depends on `dualis-units` and nothing else |
 | `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
 | `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV, JSON, and **glTF** so Blender, three.js and USD tools can open a result. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
-| `dualis` | A facade over the other fifteen, and where the cross-domain integration tests live — including the three that hold two domains against each other: a Yee grid against Fresnel's algebra, a field's decay in a conductor against a lumped resistance that has no frequency in it, and a diffraction pattern against the scalar theory it converges on |
+| `dualis` | A facade over the other sixteen, and where the cross-domain integration tests live — including the three that hold two domains against each other: a Yee grid against Fresnel's algebra, a field's decay in a conductor against a lumped resistance that has no frequency in it, and a diffraction pattern against the scalar theory it converges on |
 | `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `runtime/gpu` | `Solid3D`'s stencil as a compute shader — 191× on a 64³ grid, and single precision against the domain's double, so the CPU is the reference and the difference is measured. Its own workspace |
 | `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `dualis`, so the wire format being sufficient is demonstrated rather than claimed |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with twenty-two scenes across seven of the ten domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with twenty-two scenes across seven of the eleven domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a
 simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels
@@ -119,7 +120,8 @@ dualis-electrical  depends on core      │
 dualis-elastic     depends on core      │
 dualis-em          depends on core      │
 dualis-fluid       depends on core      │
-dualis-porous      depends on core     ─┘
+dualis-porous      depends on core      │
+dualis-quantum     depends on core     ─┘
 dualis-shape       depends on units only                ── designed geometry in
 dualis-scene       depends on core                      ── where things are
 dualis-view        depends on scene                     ── how to draw that
@@ -774,7 +776,7 @@ and GitHub renders it as a **Cite this repository** button; the same content as 
 @software{park_dualis,
   author  = {Park, Younghyeon},
   title   = {dualis: physics for simulated worlds, checked against closed forms},
-  version = {0.13.0},
+  version = {0.14.0},
   year    = {2026},
   url     = {https://github.com/YounghyeonPark/dualis},
   note    = {ORCID: 0000-0002-4733-5049},

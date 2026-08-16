@@ -16,6 +16,7 @@ dependencies = [
  "dualis-molecular",
  "dualis-optics",
  "dualis-porous",
+ "dualis-quantum",
  "dualis-scene",
  "dualis-shape",
  "dualis-thermal",
@@ -117,6 +118,14 @@ dependencies = [
  "dualis-core",
  "dualis-units",
  "glam",
+]
+
+[[package]]
+name = "dualis-quantum"
+version = "0.14.0"
+dependencies = [
+ "dualis-core",
+ "dualis-units",
 ]
 
 [[package]]

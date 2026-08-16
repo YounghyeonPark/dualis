@@ -104,7 +104,7 @@ answer at all for someone who has a part.
 
 It depends on `dualis-units` and nothing else in the workspace, and **no domain depends on it**. It
 produces a predicate, `|i, j, k| voxels.contains(i, j, k)`; a domain's `fill` consumes one. That is
-the entire coupling, and it is why adding geometry cost the ten domains nothing — `Solid3D::fill`,
+the entire coupling, and it is why adding geometry cost the domains nothing — `Solid3D::fill`,
 `Block::fill` and `Waves::fill` already had exactly that signature for other reasons.
 
 **The layer exists because the cell size is a physics decision disguised as a performance one.**
@@ -128,7 +128,7 @@ separately have no way to touch.
 
 ## Where the work is: 3D is not the default yet
 
-The physics layer is ten crates deep and dimensionally uneven. This is the honest state.
+The physics layer is eleven crates deep and dimensionally uneven. This is the honest state.
 
 | crate | space it lives in | for the goal |
 | --- | --- | --- |
@@ -142,6 +142,7 @@ The physics layer is ten crates deep and dimensionally uneven. This is the hones
 | `dualis-elastic` | **3D** — linear elasticity on trilinear elements, statics and waves | done |
 | `dualis-em` | **3D** — Maxwell on a Yee grid, conducting walls | done |
 | `dualis-fluid` | **3D** — incompressible Navier–Stokes by projection | done |
+| `dualis-quantum` | **1D** `Well` — a wavefunction between walls | arrived one-dimensional, as every wave here did; higher dimensions are cells and cost, not new physics |
 
 Two observations follow, and they point in opposite directions.
 
@@ -215,7 +216,7 @@ These are not style. Each one is what makes some part of the goal reachable.
 
 1. **The kernel must never depend on a domain.** Without this, "add a physics" means "edit the
    kernel", and the goal is a rewrite each time.
-2. **No domain may depend on another.** They meet on the bus. Ten domains have now been added
+2. **No domain may depend on another.** They meet on the bus. Eleven domains have now been added
    without this breaking, which is the evidence that the split is real.
 3. **The arrows point one way.** Analysis → scene → physics. A domain that can see the scene can
    see another domain through it. This is enforced by cargo rather than by discipline now that
@@ -269,7 +270,7 @@ different quantities, the second separates domains carrying the same one.
    `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
    rate measured across three doublings.
 
-   Nine of the ten domains are three-dimensional now. What is left is `dualis-optics`, whose rays
+   Nine of the eleven domains are three-dimensional now. What is left is `dualis-optics`, whose rays
    are already 3D and whose *fields* are not — and gap 4 below, which closed `dualis-electrical`,
    is why this sentence used to say eight.
 
