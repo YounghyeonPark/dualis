@@ -727,6 +727,40 @@ impl Solid3D {
         worst
     }
 
+    /// The film's flux out of a cell, in the sweep's own units — a conductivity times a
+    /// temperature difference, so that `mobility · this` is a rate in kelvin per second.
+    ///
+    /// The **secant** conductance of the bare surface, which is the exact one for this flux,
+    /// put in series with the half cell of solid behind it. Positive means heat leaving.
+    fn film_flux(&self, old: &[f64], cell: (usize, usize, usize), c: usize) -> f64 {
+        let thermal = self.substance_at(cell.0, cell.1, cell.2).thermal;
+        let emissivity = thermal.map_or(0.0, |t| t.emissivity);
+        let conductivity = thermal.map_or(f64::INFINITY, |t| t.conductivity.to_si());
+        let dx = self.dx.to_si();
+        let here = Temperature::from_si(old[c]);
+        let mut out = 0.0;
+        for (face, env) in &self.exposed {
+            if !face.holds(cell, self.counts) {
+                continue;
+            }
+            let share = env.area.to_si() / self.cells_on(*face).max(1) as f64;
+            let gap = here.to_si() - env.ambient.to_si();
+            if gap == 0.0 {
+                continue;
+            }
+            let bare = Environment {
+                ambient: env.ambient,
+                convection_w_per_m2_k: env.convection_w_per_m2_k,
+                area: Area::from_si(share),
+            }
+            .loss_from(here, emissivity)
+            .to_si();
+            let g = series_with_half_cell(bare / gap, conductivity, share, dx);
+            out += g * gap / dx;
+        }
+        out
+    }
+
     /// How many cells lie on a face.
     fn cells_on(&self, face: Face) -> usize {
         let (nx, ny, nz) = self.counts;
@@ -766,16 +800,15 @@ impl Solid3D {
     /// surface, so the half cell between them is part of the path; charging the whole film
     /// against the centre sheds too much, by the cell Biot number `h·dx/2k`.
     ///
-    /// **How firmly this is established, exactly.** The series form is first-principles and is
-    /// what a ghost-cell derivation of the Robin condition gives. A review measured the version
-    /// without it converging at **first order** — 2.08, 2.04, 2.02 per grid doubling against the
-    /// interior's 4.0, the signature this workspace has twice caught in an acoustic wall — and
-    /// measured the series form removing that spatial error. That measurement has **not** been
-    /// reproduced here, and no test in this crate pins the boundary's convergence rate: an
-    /// attempt to write one measured the boundary cell's first lurch rather than the slowest
-    /// mode, and then a bias it could not account for. So the fix rests on the derivation and on
-    /// a review's numbers, and the rate is the thing to pin next. Saying so beats a comment that
-    /// implies a test exists.
+    /// **And it took two corrections to reach second order, not one.** The series form fixes
+    /// the *space*: without it a review measured 2.08, 2.04, 2.02 per grid doubling against the
+    /// interior's 4.0 — the signature this workspace has twice caught in an acoustic wall. With
+    /// it the boundary was still first order, at 1.27, 1.71, 1.87, because the film was applied
+    /// as a pass *after* the conduction sweep. That split's error carries a coefficient growing
+    /// as `1/dx` while the step falls as `dx²`, so their product falls as `dx`. Applying the
+    /// film inside the same explicit update — see `film_flux`, called from the sweep — makes
+    /// them one operator, and `tests/the_cooled_boundary_order.rs` measures four per doubling at
+    /// `Bi = 1.7` and at `Bi = 17`.
     fn loss_conductance_at(&self, at: Temperature, cell: (usize, usize, usize)) -> f64 {
         self.exposed
             .iter()
@@ -1282,7 +1315,28 @@ impl Domain for Solid3D {
                         flux += self.kz[c + nx * ny] * (old[c + nx * ny] - t);
                     }
                     debug_assert_eq!(t, self.cells[c], "the sweep reads `old` and writes `cells`");
-                    self.add_kelvin(c, dts * self.mobility[c] * flux);
+
+                    // **The film is part of this flux, not a pass after it.** Applying it
+                    // separately is Lie splitting, and the split's error carries a coefficient
+                    // that grows as `1/dx` while the step falls as `dx²` — so the product falls
+                    // as `dx`, and the boundary came out **first order** while the interior was
+                    // second. Measured before this line moved here: ratios 1.27, 1.71, 1.87 per
+                    // grid doubling, approaching two rather than four. In the same update they
+                    // are one operator and the order is the interior's.
+                    //
+                    // Read off `old` like every other term, so the sweep stays a function of the
+                    // state it began with.
+                    let shed = if self.exposed.is_empty() {
+                        0.0
+                    } else {
+                        self.film_flux(&old, (i, j, k), c)
+                    };
+                    self.add_kelvin(c, dts * self.mobility[c] * (flux - shed));
+                    // What that removed, in joules, counted in the same statement that removes
+                    // it so `stored + lost` stays exact.
+                    if shed != 0.0 {
+                        self.lost += dts * self.mobility[c] * shed * self.capacity[c];
+                    }
                 }
             }
         }
@@ -1301,100 +1355,9 @@ impl Domain for Solid3D {
         // 40 cells and 4.2x at 4096, so a two-phase sweep runs 2.6x to 5.2x a one-phase one. That is
         // the price of the simple version. An incremental update touching only the mush — one or two
         // cells wide — is the optimisation available if a problem ever needs it, and none does yet.
-        // **What the exposed faces shed**, after the conduction sweep and before the phases are
-        // re-derived, so a cell that melts this step does so on the enthalpy it actually has.
-        //
-        // Per cell at that cell's own temperature and its own emissivity, which is what makes a
-        // gradient: the middle of a cooled face sits hotter than its edge, and a lumped loss
-        // says it does not. `Environment::loss_from` is the model — convective **and**
-        // radiative — imported rather than rewritten, because a second convection model in the
-        // same crate is a second thing to be wrong.
-        //
-        // Explicit, like the sweep it follows, and bounded by the same limit: `max_stable_dt`
-        // carries each exposed cell's loss conductance, so a step this domain accepted cannot
-        // overshoot ambient. A cell that could is a cell whose temperature oscillates about the
-        // air rather than settling into it, which is the silent version of an unstable
-        // boundary — and `stability_ratio` refuses the step before this runs.
-        if !self.exposed.is_empty() {
-            let (nx, ny, nz) = self.counts;
-            let dts = dt.to_si();
-            let dxs = self.dx.to_si();
-            for k in 0..nz {
-                for j in 0..ny {
-                    for i in 0..nx {
-                        let c = i + nx * (j + ny * k);
-                        let mut watts = 0.0;
-                        let mut conductance = 0.0;
-                        let here_t = self.temperature_at(i, j, k);
-                        let thermal = self.substance_at(i, j, k).thermal;
-                        for (face, env) in &self.exposed {
-                            if !face.holds((i, j, k), self.counts) {
-                                continue;
-                            }
-                            let share = env.area.to_si() / self.cells_on(*face).max(1) as f64;
-                            let here = Environment {
-                                ambient: env.ambient,
-                                convection_w_per_m2_k: env.convection_w_per_m2_k,
-                                area: Area::from_si(share),
-                            };
-                            let emissivity = thermal.map_or(0.0, |t| t.emissivity);
-                            let bare = here.loss_from(here_t, emissivity).to_si();
-                            let gap = here_t.to_si() - env.ambient.to_si();
-                            if gap == 0.0 {
-                                continue;
-                            }
-                            // The **secant** conductance of the bare surface — the exact one for
-                            // this flux — then put in series with the half cell behind it, which
-                            // is where the centre temperature this is charged against lives.
-                            let film = bare / gap;
-                            let g = series_with_half_cell(
-                                film,
-                                thermal.map_or(f64::INFINITY, |t| t.conductivity.to_si()),
-                                share,
-                                dxs,
-                            );
-                            watts += g * gap;
-                            conductance += g;
-                        }
-                        if watts == 0.0 {
-                            continue;
-                        }
-                        // **The step is re-checked here, against the state the film actually
-                        // meets.** `stability_ratio` reads the temperatures the step *started*
-                        // with, and heat off the bus is spread over every cell before this
-                        // runs — so a slug can make a cell far stiffer than the limit was
-                        // computed for. Measured: a cube at ambient given a 300 K rise in one
-                        // accepted step shed its corner to −137 °C, and 900 K took it to
-                        // −7007 °C, with the ledger balancing perfectly throughout. An explicit
-                        // boundary past its limit does not diverge loudly; it overshoots the
-                        // air it is losing to, and the audit cannot see it because the heat
-                        // really did leave.
-                        if conductance * dts > self.capacity[c] {
-                            return Err(Violation {
-                                quantity: "surface loss ratio".to_string(),
-                                site: format!(
-                                    "{} (cooled face, after this step's heat)",
-                                    self.name
-                                ),
-                                before: self.capacity[c],
-                                after: conductance * dts,
-                                scale: self.capacity[c],
-                                tolerance: 0.0,
-                            });
-                        }
-                        // Removed in enthalpy, the same currency `deposit` adds in, so what
-                        // leaves the cell and what lands in `lost` are the same number and the
-                        // ledger's `stored + lost` is exact rather than nearly so.
-                        let joules = watts * dts;
-                        // The same currency `deposit` adds in, so what leaves the cell and what
-                        // lands in `lost` are the same number and `stored + lost` is exact.
-                        self.add_kelvin(c, -joules / self.capacity[c]);
-                        self.lost += joules;
-                    }
-                }
-            }
-        }
-
+        // The film is applied inside the sweep above, in the same explicit update as
+        // conduction — see . It used to run here, as a pass afterwards, and that
+        // split cost the boundary an order.
         if self.two_phase {
             self.resolve();
         }
