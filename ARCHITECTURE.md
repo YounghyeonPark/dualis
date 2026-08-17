@@ -336,9 +336,18 @@ different quantities, the second separates domains carrying the same one.
      another material rather than by nothing. Insulating it is a substance with a low conductivity,
      which is not the same thing and is wrong for radiation, for contact and for anything with a
      free surface.
-   - **Two parts have no way to touch.** Each rasterises onto its own grid from its own bounding
-     box. Placing them in one grid needs a shared origin and a rule for a cell both of them claim,
-     and neither exists. This is the one that arrives first in practice.
+   - ~~**Two parts have no way to touch.**~~ Done, and it cost one constructor plus nothing.
+     `Voxels::onto` rasterises a mesh onto a grid the *caller* states, so two parts land in one
+     array at the cells their own coordinates put them in — an STL carries absolute positions, so
+     where they sit relative to each other is what their files already say. A mesh that would not
+     fit is refused with both boxes named rather than cropped.
+
+     The other two halves needed no new mechanism, which is the part worth recording. **Contact**
+     is already there: `Solid3D`'s stencil crosses a face between cells of different materials
+     with the harmonic mean of their conductivities, exact for a layered wall at every resolution.
+     And the **rule for a contested cell** is `regions`' own — last writer wins, "how a coating
+     *on* a layer is written and there is no other way to mean it". Inventing one here would have
+     been a second answer to a question this format had already answered.
    - **Nothing chooses the cell size.** The `Loss` report says what a choice cost, which is the
      honest half; picking a cell that resolves the smallest feature and reporting what was traded
      is a layer above this one, and would be the first place in the workspace that *guesses* — so

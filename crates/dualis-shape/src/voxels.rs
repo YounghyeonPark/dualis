@@ -182,7 +182,77 @@ impl Voxels {
             counts.2 as f64 * dx,
         );
         let origin = low - (grid - span) * 0.5;
+        Ok(Voxels::rasterise(mesh, origin, counts, dx))
+    }
 
+    /// Rasterise `mesh` onto a grid somebody else chose: a stated origin, cell count and cell.
+    ///
+    /// **This is what assembly needs.** [`Voxels::of`] gives every mesh its own box and its own
+    /// origin, so two parts come back on two grids that share no cell and cannot be adjacent to
+    /// each other — `ARCHITECTURE.md` names that as the gap that arrives first in practice.
+    /// Rasterised onto one grid, two parts occupy neighbouring cells of the same array, and a
+    /// domain that fills from both gets a conducting interface between them for free, because
+    /// its stencil already crosses a face between cells of different materials.
+    ///
+    /// The grid is the caller's and the mesh's coordinates are read as they are written: an STL
+    /// carries absolute positions, so where two parts sit relative to each other is what their
+    /// files already say. No pose is applied here — `Pose` places a *domain*, and both parts are
+    /// inside one domain now.
+    ///
+    /// **A mesh that does not fit is refused, with both boxes named.** Cropping it silently is
+    /// the failure this workspace keeps finding: a part with its corner cut off runs, audits,
+    /// renders and answers a question about a different shape.
+    pub fn onto(
+        mesh: &Mesh,
+        origin: LengthVec,
+        counts: (usize, usize, usize),
+        cell: Length,
+    ) -> Result<Voxels, String> {
+        let dx = cell.to_si();
+        if !(dx.is_finite() && dx > 0.0) {
+            return Err(format!("a cell size must be finite and positive, is {dx}"));
+        }
+        if counts.0 == 0 || counts.1 == 0 || counts.2 == 0 {
+            return Err(format!("a grid of {counts:?} cells holds nothing"));
+        }
+        if !mesh.is_closed() {
+            return Err(
+                "the mesh is not closed: some edge is not shared by exactly two triangles, so a \
+                 ray can pass through the surface and parity cannot say what is inside"
+                    .to_string(),
+            );
+        }
+        let (low, high) = mesh
+            .bounds()
+            .ok_or_else(|| "an empty mesh has no bounds to rasterise".to_string())?;
+        let (low, high) = (low.to_si(), high.to_si());
+        let o = origin.to_si();
+        let far = o + DVec3::new(
+            counts.0 as f64 * dx,
+            counts.1 as f64 * dx,
+            counts.2 as f64 * dx,
+        );
+        let fits = low.x >= o.x
+            && low.y >= o.y
+            && low.z >= o.z
+            && high.x <= far.x
+            && high.y <= far.y
+            && high.z <= far.z;
+        if !fits {
+            return Err(format!(
+                "the mesh spans ({:.4}, {:.4}, {:.4}) to ({:.4}, {:.4}, {:.4}) m and the grid \
+                 covers ({:.4}, {:.4}, {:.4}) to ({:.4}, {:.4}, {:.4}) m, so part of it would be \
+                 cut off — a part with its corner missing runs and audits and answers about a \
+                 different shape, so it is refused rather than cropped",
+                low.x, low.y, low.z, high.x, high.y, high.z, o.x, o.y, o.z, far.x, far.y, far.z
+            ));
+        }
+        Ok(Voxels::rasterise(mesh, o, counts, dx))
+    }
+
+    /// The scanline itself, on whatever grid it is handed. Shared by [`Voxels::of`] and
+    /// [`Voxels::onto`] so there is one rasteriser and not two that agree until they do not.
+    fn rasterise(mesh: &Mesh, origin: DVec3, counts: (usize, usize, usize), dx: f64) -> Voxels {
         let mut inside = vec![false; counts.0 * counts.1 * counts.2];
         let mut ambiguous_rows = 0;
         let mut retried_rows = 0;
@@ -249,7 +319,7 @@ impl Voxels {
                 volume_error: 0.0,
                 boundary_fraction: 0.0,
                 thin_runs: 0,
-                small_triangles: mesh.triangles_below(cell),
+                small_triangles: mesh.triangles_below(Length::from_si(dx)),
                 retried_rows,
                 ambiguous_rows,
             },
@@ -262,7 +332,7 @@ impl Voxels {
         };
         voxels.loss.boundary_fraction = voxels.boundary_share();
         voxels.loss.thin_runs = voxels.count_thin_runs();
-        Ok(voxels)
+        voxels
     }
 
     /// Cells along each axis.
