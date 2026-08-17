@@ -233,6 +233,8 @@ pub struct Solid3D {
     /// [`max_stable_dt`](Domain::max_stable_dt) for why it is a maximum over cells and not a
     /// function of the fastest material.
     worst_rate: f64,
+    /// Cells that are **not part of the block** — see [`Solid3D::empty`].
+    void: Vec<bool>,
     /// Each cell's conduction sum, `Σ_f k_f`, kept so the stability limit can be rebuilt at
     /// the block's **current** temperature — see [`Solid3D::worst_rate_now`].
     face_sum: Vec<f64>,
@@ -295,6 +297,7 @@ impl Solid3D {
             cap_solid: Vec::new(),
             cap_liquid: Vec::new(),
             worst_rate: 0.0,
+            void: vec![false; counts.0 * counts.1 * counts.2],
             face_sum: Vec::new(),
             exposed: BTreeMap::new(),
             lost: 0.0,
@@ -570,6 +573,13 @@ impl Solid3D {
         // remaining first-order error lives.
         let mixed: Vec<(f64, f64)> = (0..self.cells.len())
             .map(|c| {
+                // Nothing conducts nothing and holds nothing. Zeroing here rather than at every
+                // reader is what makes void fall out of the rest of the arithmetic: the face
+                // mean is already the harmonic one and guarded at zero, so a face touching void
+                // carries zero without knowing what void is.
+                if self.void[c] {
+                    return (0.0, 0.0);
+                }
                 let (solid, liquid) = props[self.which[c] as usize];
                 let phi = self.melted[c];
                 (
@@ -628,7 +638,10 @@ impl Solid3D {
                     let c = i + nx * (j + ny * k);
                     let cap = mixed[c].1;
                     self.capacity[c] = cap;
-                    self.mobility[c] = dx / cap;
+                    // A void cell has no capacity, and `dx/0` is an infinity that would poison
+                    // the limit and the sweep alike. Zero mobility is the honest value: nothing
+                    // moves in a cell that holds nothing.
+                    self.mobility[c] = if self.void[c] { 0.0 } else { dx / cap };
                     let sum = self.kx[i + (nx + 1) * (j + ny * k)]
                         + self.kx[i + 1 + (nx + 1) * (j + ny * k)]
                         + self.ky[i + nx * (j + (ny + 1) * k)]
@@ -655,6 +668,53 @@ impl Solid3D {
         if nowhere {
             self.worst_rate = f64::NAN;
         }
+    }
+
+    /// Mark cells as **nothing** — not a substance, not part of the block.
+    ///
+    /// A grid had no void until now, so the cells a part did not occupy were some other material,
+    /// and an assembly of two parts in air was two parts buried in whatever the block was made
+    /// of. `ARCHITECTURE.md` names it: "insulating it is a substance with a low conductivity,
+    /// which is not the same thing". A low conductivity still conducts, still stores heat, and
+    /// still sets a stability limit; nothing does none of those.
+    ///
+    /// A void cell holds no heat, conducts to nothing — every face it touches carries zero, which
+    /// the harmonic mean already gives for a zero conductivity — takes no share of what arrives
+    /// on the bus, and is left out of every average. Its temperature is **not a number**, because
+    /// there is nothing there to have one, and `temperature_at` says so rather than returning a
+    /// zero somebody would plot.
+    ///
+    /// # What this is not
+    ///
+    /// It is not a fluid, and it is not a surface. Two parts separated by void do not exchange
+    /// heat at all — not by conduction, which is right, and not by radiation or convection
+    /// across the gap, which is a real path this does not model. A part in air loses heat
+    /// through [`Solid3D::losing_from`], which is about the block's **outer** faces; a film on an
+    /// internal void surface is the next thing this needs and is deliberately not guessed at
+    /// here.
+    pub fn empty(mut self, which: impl Fn(usize, usize, usize) -> bool) -> Solid3D {
+        let (nx, ny, nz) = self.counts;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    if which(i, j, k) {
+                        self.void[i + nx * (j + ny * k)] = true;
+                    }
+                }
+            }
+        }
+        self.resolve();
+        self
+    }
+
+    /// Whether this cell is void — nothing rather than a substance.
+    pub fn is_void(&self, i: usize, j: usize, k: usize) -> bool {
+        self.index(i, j, k).map(|c| self.void[c]).unwrap_or(false)
+    }
+
+    /// How many cells hold nothing.
+    pub fn void_cells(&self) -> usize {
+        self.void.iter().filter(|v| **v).count()
     }
 
     /// Expose a face to an environment, so the block can lose heat through it.
@@ -868,6 +928,12 @@ impl Solid3D {
         let idx = self
             .index(i.min(nx - 1), j.min(ny - 1), k.min(nz - 1))
             .expect("clamped indices are in range");
+        // **Not a number where there is nothing.** A void cell has no temperature, and a zero
+        // or an ambient here is a value somebody would plot, average or believe. Every reader in
+        // this workspace that draws a field already skips a non-finite sample.
+        if self.void[idx] {
+            return Temperature::from_si(f64::NAN);
+        }
         Temperature::from_si(self.cells[idx])
     }
 
@@ -913,18 +979,33 @@ impl Solid3D {
 
     /// Mean over every cell. Every cell has the same volume, so this is the volume average.
     pub fn mean_temperature(&self) -> Temperature {
-        Temperature::from_si(self.cells.iter().sum::<f64>() / self.cells.len() as f64)
+        // Over what is there. Averaging in the void's placeholder would drag the number toward
+        // a value nothing holds, and the more of the box is empty the further it would drag.
+        let (sum, n) = (0..self.cells.len())
+            .filter(|c| !self.void[*c])
+            .fold((0.0, 0usize), |(s, n), c| (s + self.cells[c], n + 1));
+        Temperature::from_si(if n == 0 { f64::NAN } else { sum / n as f64 })
     }
 
     /// The hottest cell — the number a hot spot exists to produce, and the one a lumped model
     /// reports as the mean.
     pub fn peak_temperature(&self) -> Temperature {
-        Temperature::from_si(self.cells.iter().copied().fold(f64::MIN, f64::max))
+        Temperature::from_si(
+            (0..self.cells.len())
+                .filter(|c| !self.void[*c])
+                .map(|c| self.cells[c])
+                .fold(f64::MIN, f64::max),
+        )
     }
 
     /// The coldest cell.
     pub fn coldest_temperature(&self) -> Temperature {
-        Temperature::from_si(self.cells.iter().copied().fold(f64::MAX, f64::min))
+        Temperature::from_si(
+            (0..self.cells.len())
+                .filter(|c| !self.void[*c])
+                .map(|c| self.cells[c])
+                .fold(f64::MAX, f64::min),
+        )
     }
 
     /// Heat taken from the bus over the run.
@@ -1276,6 +1357,12 @@ impl Domain for Solid3D {
             self.absorbed += gained;
             let rise = gained / self.capacity.iter().sum::<f64>();
             for c in 0..self.cells.len() {
+                // Void takes no share: it has no capacity to contribute to the sum above and no
+                // temperature to raise. Warming it would put joules where there is nothing to
+                // hold them, and the ledger would then disagree with the block.
+                if self.void[c] {
+                    continue;
+                }
                 self.add_kelvin(c, rise);
             }
         }

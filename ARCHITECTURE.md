@@ -332,10 +332,24 @@ different quantities, the second separates domains carrying the same one.
 
    The rest of it is not done, and the three that remain are the ones that block a real assembly:
 
-   - **A grid has no void.** Every cell is some substance, so a part in a box is surrounded by
-     another material rather than by nothing. Insulating it is a substance with a low conductivity,
-     which is not the same thing and is wrong for radiation, for contact and for anything with a
-     free surface.
+   - ~~**A grid has no void.**~~ Done. `Solid3D::empty` marks cells as nothing: no capacity, no
+     conduction across any face they touch, no share of what arrives on the bus, no vote in any
+     average, and **no temperature** — `temperature_at` returns `NaN` there, because a zero or an
+     ambient is a value somebody would plot and believe.
+
+     It cost almost no new arithmetic, which is worth recording: the face mean is already the
+     harmonic one and already guarded at zero, so a face touching a zero conductivity carries
+     zero without the face knowing what void is. The one special case is that a cell with no
+     capacity has no `dx/C` either.
+
+     The measurement that says a low conductivity is not the same answer: three copper bars
+     differing only in the middle cell — copper, the catalogue's poorest insulator, and nothing.
+     The far end warms by 50 K through the first, **still warms** through the second, and sits
+     exactly where it started through the third.
+
+     What void is not is a fluid or a surface. Two parts separated by it exchange no heat at
+     all — no conduction, which is right, and no radiation or convection across the gap, which is
+     a real path and the next thing this layer is short of.
    - ~~**Two parts have no way to touch.**~~ Done, and it cost one constructor plus nothing.
      `Voxels::onto` rasterises a mesh onto a grid the *caller* states, so two parts land in one
      array at the cells their own coordinates put them in — an STL carries absolute positions, so
