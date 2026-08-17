@@ -235,6 +235,13 @@ pub struct Solid3D {
     worst_rate: f64,
     /// Cells that are **not part of the block** — see [`Solid3D::empty`].
     void: Vec<bool>,
+    /// Pairs of solid cells that face each other across a run of void, with the radiative
+    /// exchange coefficient between them. Rebuilt whenever the void or the materials change.
+    ///
+    /// `(a, b, coefficient)` where the coefficient is `σA/(1/ε₁ + 1/ε₂ − 1)`, so the exchange is
+    /// `coefficient · (Tₐ⁴ − T_b⁴)` — see [`Solid3D::empty`] for what this models and what it
+    /// does not.
+    gaps: Vec<(usize, usize, f64)>,
     /// Each cell's conduction sum, `Σ_f k_f`, kept so the stability limit can be rebuilt at
     /// the block's **current** temperature — see [`Solid3D::worst_rate_now`].
     face_sum: Vec<f64>,
@@ -298,6 +305,7 @@ impl Solid3D {
             cap_liquid: Vec::new(),
             worst_rate: 0.0,
             void: vec![false; counts.0 * counts.1 * counts.2],
+            gaps: Vec::new(),
             face_sum: Vec::new(),
             exposed: BTreeMap::new(),
             lost: 0.0,
@@ -668,6 +676,70 @@ impl Solid3D {
         if nowhere {
             self.worst_rate = f64::NAN;
         }
+        self.find_gaps();
+    }
+
+    /// Which solid cells face each other across void, and how strongly they radiate.
+    ///
+    /// Along each grid line, a run of void with solid at both ends is a gap, and the two cells
+    /// at its ends see each other. Diagonals are not paired: a face is what radiates, and the
+    /// grid's faces are axis-aligned.
+    fn find_gaps(&mut self) {
+        self.gaps.clear();
+        if !self.void.iter().any(|v| *v) {
+            return;
+        }
+        let (nx, ny, nz) = self.counts;
+        let dx = self.dx.to_si();
+        let area = dx * dx;
+        let emissivity = |c: usize| {
+            self.materials[self.which[c] as usize]
+                .thermal
+                .map_or(0.0, |t| t.emissivity)
+        };
+
+        // One pass per axis. `line` walks the indices of a single row, column or pillar.
+        let mut walk = |line: Vec<usize>| {
+            let mut last_solid: Option<usize> = None;
+            let mut void_between = false;
+            for c in line {
+                if self.void[c] {
+                    void_between = last_solid.is_some();
+                    continue;
+                }
+                if let (Some(a), true) = (last_solid, void_between) {
+                    let (ea, eb) = (emissivity(a), emissivity(c));
+                    // The parallel-plate series: `1/ε₁ + 1/ε₂ − 1`. A surface that does not
+                    // radiate at all makes the pair carry nothing, which is the right limit and
+                    // also keeps the reciprocal finite.
+                    if ea > 0.0 && eb > 0.0 {
+                        let resistance = 1.0 / ea + 1.0 / eb - 1.0;
+                        if resistance > 0.0 {
+                            self.gaps
+                                .push((a, c, STEFAN_BOLTZMANN.to_si() * area / resistance));
+                        }
+                    }
+                }
+                last_solid = Some(c);
+                void_between = false;
+            }
+        };
+
+        for k in 0..nz {
+            for j in 0..ny {
+                walk((0..nx).map(|i| i + nx * (j + ny * k)).collect());
+            }
+        }
+        for k in 0..nz {
+            for i in 0..nx {
+                walk((0..ny).map(|j| i + nx * (j + ny * k)).collect());
+            }
+        }
+        for j in 0..ny {
+            for i in 0..nx {
+                walk((0..nz).map(|k| i + nx * (j + ny * k)).collect());
+            }
+        }
     }
 
     /// Mark cells as **nothing** — not a substance, not part of the block.
@@ -684,14 +756,27 @@ impl Solid3D {
     /// there is nothing there to have one, and `temperature_at` says so rather than returning a
     /// zero somebody would plot.
     ///
-    /// # What this is not
+    /// # What crosses a gap, and what does not
     ///
-    /// It is not a fluid, and it is not a surface. Two parts separated by void do not exchange
-    /// heat at all — not by conduction, which is right, and not by radiation or convection
-    /// across the gap, which is a real path this does not model. A part in air loses heat
-    /// through [`Solid3D::losing_from`], which is about the block's **outer** faces; a film on an
-    /// internal void surface is the next thing this needs and is deliberately not guessed at
-    /// here.
+    /// **Radiation does.** Two solid cells facing each other along a grid line across a run of
+    /// void exchange `σA(T₁⁴ − T₂⁴)/(1/ε₁ + 1/ε₂ − 1)`, the parallel-plate series — exact for
+    /// two facing surfaces that see only each other, and the assumption is worth stating because
+    /// it is where this is wrong: a gap **wide** compared with the faces has a view factor well
+    /// under one, and this charges it as one, so a wide gap is coupled harder here than it
+    /// really is. A narrow gap, which is what a joint or a clearance is, is the case this gets
+    /// right. Nothing computes view factors; that is a radiative-exchange solver and would be a
+    /// domain, not a boundary condition.
+    ///
+    /// **Convection does not.** A gap full of air carries heat by moving that air, which needs a
+    /// Rayleigh number and a correlation, and a correlation is not a closed form. So a gap in
+    /// air is coupled *less* here than it really is, by however much the convection would have
+    /// carried — and for a millimetre-scale gap at modest temperatures that is the same order as
+    /// the radiation, so the answer is a lower bound rather than an estimate.
+    ///
+    /// **Conduction does not**, and that is right: there is nothing there to conduct through.
+    ///
+    /// It is still not a fluid. A part in air also loses heat to the room, and that is
+    /// [`Solid3D::losing_from`], which is about the block's **outer** faces.
     pub fn empty(mut self, which: impl Fn(usize, usize, usize) -> bool) -> Solid3D {
         let (nx, ny, nz) = self.counts;
         for k in 0..nz {
@@ -766,12 +851,29 @@ impl Solid3D {
     /// Costs a pass over the boundary cells and nothing at all for an unexposed block, which is
     /// every scene that existed before this.
     fn worst_rate_now(&self) -> f64 {
-        if self.exposed.is_empty() || self.worst_rate.is_nan() {
+        // Gaps as well as films: a pair of plates facing each other across void may have no
+        // conducting face at all, so the radiative exchange is the *only* thing setting their
+        // step. Returning early on `exposed` alone handed such a pair an infinite limit, and a
+        // march at infinity is a NaN block reported as a substance with no diffusivity.
+        if (self.exposed.is_empty() && self.gaps.is_empty()) || self.worst_rate.is_nan() {
             return self.worst_rate;
         }
         let (nx, ny, nz) = self.counts;
         let dx = self.dx.to_si();
         let mut worst = self.worst_rate;
+        // A gap's radiative conductance, linearised at the **hotter** of the pair, which is the
+        // conservative end: `dq/dT = 4σA T³/(1/ε₁+1/ε₂−1)` grows with temperature, so the hotter
+        // cell's tangent bounds the pair's. Charged to both cells, because either could be the
+        // one the step is too long for.
+        for (a, b, coefficient) in &self.gaps {
+            let hotter = self.cells[*a].max(self.cells[*b]);
+            let g = 4.0 * coefficient * hotter.powi(3);
+            for c in [*a, *b] {
+                if self.capacity[c] > 0.0 {
+                    worst = worst.max(g / self.capacity[c]);
+                }
+            }
+        }
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..nx {
@@ -1425,6 +1527,30 @@ impl Domain for Solid3D {
                         self.lost += dts * self.mobility[c] * shed * self.capacity[c];
                     }
                 }
+            }
+        }
+
+        // **What the gaps carry.** A pair of solid cells facing each other across void exchange
+        // radiation, and it is applied here — in the same explicit pass as the conduction sweep,
+        // read off the same `old` state — for the reason the surface film moved into the sweep:
+        // a separate pass is Lie splitting, whose error carries a coefficient growing as `1/dx`
+        // against a step falling as `dx²`, and the boundary comes out an order worse than the
+        // interior.
+        //
+        // **Antisymmetric**, so the pair conserves exactly: what leaves one arrives in the
+        // other, in the same statement, and `Σ Cᵢ Tᵢ` is unchanged to the last bit as it is for
+        // a conduction face.
+        if !self.gaps.is_empty() {
+            let dts = dt.to_si();
+            for (a, b, coefficient) in self.gaps.clone() {
+                let (ta, tb) = (old[a], old[b]);
+                let watts = coefficient * (ta.powi(4) - tb.powi(4));
+                if watts == 0.0 {
+                    continue;
+                }
+                let joules = watts * dts;
+                self.add_kelvin(a, -joules / self.capacity[a]);
+                self.add_kelvin(b, joules / self.capacity[b]);
             }
         }
 

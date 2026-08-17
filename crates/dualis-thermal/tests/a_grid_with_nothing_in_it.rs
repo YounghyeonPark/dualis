@@ -38,9 +38,16 @@ fn march(block: &mut Solid3D, steps: usize) {
 /// **Void breaks the conduction path, and a low-conductivity substance does not.**
 ///
 /// Three bars, identical but for what sits in the middle cell: copper, the poorest insulator the
-/// catalogue has, and nothing. The far end must warm through the first two and not through the
-/// third, and the middle case is the one that matters — it is what somebody does when the grid
-/// has no void, and it is why "use a bad conductor" is not the same answer.
+/// catalogue has, and nothing. The middle case is the one that matters — it is what somebody
+/// does when the grid has no void, and it is why "use a bad conductor" is not the same answer.
+///
+/// **The gap is not zero, and this test learned that by failing.** When void arrived it carried
+/// nothing at all and this asserted the far end had not moved by a bit. Then gaps started
+/// radiating, which is real physics a vacuum clearance always has, and the assertion became
+/// false — correctly. What it pins now is the **ordering**, which is the stronger statement:
+/// metal carries the most, a poor conductor carries a fraction of that, and a gap carries only
+/// what radiation gives, which is less again. The conductances say so too — for these cells
+/// PLA's `kA/dx` is 6.5e-4 W/K against radiation's `4σT³A/(1/ε₁+1/ε₂−1)` of 1.25e-4.
 #[test]
 fn void_breaks_the_path_and_a_poor_conductor_only_slows_it() {
     let steps = 4000;
@@ -71,8 +78,45 @@ fn void_breaks_the_path_and_a_poor_conductor_only_slows_it() {
         "a poor conductor still conducts, which is the whole point: {through_plastic:.2} K"
     );
     assert!(
-        (through_nothing - start).abs() < 1e-9,
-        "nothing carries nothing: the far end should be exactly where it started, {through_nothing:.6} K"
+        through_nothing > start,
+        "a gap radiates, so the far end is not untouched: {through_nothing:.4} K"
+    );
+    assert!(
+        through_plastic < through_copper && through_nothing < through_plastic,
+        "metal, then a poor conductor, then only radiation: {through_copper:.2} /          {through_plastic:.2} / {through_nothing:.2} K"
+    );
+}
+
+/// **A gap with a non-radiating surface really does carry nothing.**
+///
+/// The control for the test above: set the emissivity to zero and the parallel-plate series has
+/// no conductance in it, so the two parts are as uncoupled as void alone used to make them. It
+/// is also the check that the gap's exchange is the *radiative* one and not some residue of the
+/// conduction stencil leaking across a cell it should not see.
+#[test]
+fn a_gap_between_mirrors_carries_nothing() {
+    let mut mirror = Substance::copper();
+    if let Some(thermal) = mirror.thermal.as_mut() {
+        thermal.emissivity = 0.0;
+    }
+    let mut block = Solid3D::new(
+        "bar",
+        mirror,
+        (1, 1, 5),
+        Length::mm(5.0),
+        Temperature::celsius(20.0),
+    );
+    for k in 0..2 {
+        block.set_temperature(0, 0, k, Temperature::celsius(300.0));
+    }
+    let mut gapped = block.empty(|_, _, k| k == 2);
+    march(&mut gapped, 4000);
+
+    let start = Temperature::celsius(20.0).to_si();
+    assert!(
+        (gapped.temperature_at(0, 0, 4).to_si() - start).abs() < 1e-9,
+        "two perfect mirrors exchange nothing: {:.6} K",
+        gapped.temperature_at(0, 0, 4).to_si()
     );
 }
 

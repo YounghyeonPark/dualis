@@ -347,9 +347,18 @@ different quantities, the second separates domains carrying the same one.
      The far end warms by 50 K through the first, **still warms** through the second, and sits
      exactly where it started through the third.
 
-     What void is not is a fluid or a surface. Two parts separated by it exchange no heat at
-     all — no conduction, which is right, and no radiation or convection across the gap, which is
-     a real path and the next thing this layer is short of.
+     A gap now **radiates**: two solid cells facing each other along a grid line across void
+     exchange `σA(T₁⁴ − T₂⁴)/(1/ε₁ + 1/ε₂ − 1)`, the parallel-plate series, applied inside the
+     sweep and antisymmetrically so the pair conserves to the bit. For a vacuum clearance that is
+     not a correction, it is the whole answer.
+
+     Two limits are pinned by tests rather than left to be found. The view factor is **one at
+     every width**, so a gap wide compared with its faces is coupled harder here than it really
+     is; the narrow gap a joint or a clearance actually is, is the case this gets right. And
+     nothing **convects**, because that needs a Rayleigh number and a correlation rather than a
+     closed form — so a gap in air is coupled less than it really is, and the answer there is a
+     lower bound rather than an estimate. View factors would be a radiative-exchange solver, and
+     that is a domain rather than a boundary condition.
    - ~~**Two parts have no way to touch.**~~ Done, and it cost one constructor plus nothing.
      `Voxels::onto` rasterises a mesh onto a grid the *caller* states, so two parts land in one
      array at the cells their own coordinates put them in — an STL carries absolute positions, so
