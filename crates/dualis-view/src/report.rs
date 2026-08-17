@@ -209,7 +209,14 @@ fn nums(v: &[f64]) -> String {
         if i > 0 {
             s.push(',');
         }
-        s.push_str(&format!("{x:.6e}"));
+        // `NaN` is not a JSON literal and would make the whole document unreadable to a strict
+        // parser; `null` is the spelling for a sample that is not there, and numpy, pandas and
+        // `JSON.parse` all take it.
+        if x.is_finite() {
+            s.push_str(&format!("{x:.6e}"));
+        } else {
+            s.push_str("null");
+        }
     }
     s.push(']');
     s
@@ -279,7 +286,8 @@ var cam = {az:0.7, el:0.4, dist:2.5}, drag = null;
 var range = {};
 F[0].panels.forEach(function(p, i){
   var lo = Infinity, hi = -Infinity;
-  F.forEach(function(f){ f.panels[i].v.forEach(function(x){ if(x<lo)lo=x; if(x>hi)hi=x; }); });
+  F.forEach(function(f){ f.panels[i].v.forEach(function(x){
+    if(x===null||!isFinite(x))return; if(x<lo)lo=x; if(x>hi)hi=x; }); });
   range[p.name] = {lo:lo, hi:hi};
 });
 
@@ -292,6 +300,10 @@ if (F[0].r.length) {
     series[key] = {vals:vals, lo:lo, hi:hi, unit:r.u};
   });
 }
+
+/* A field value that is not there arrives as `null`, and `null` is 0 in arithmetic — so
+   every reader goes through this and every one of them checks. */
+function pv(p, at){ var x = p.v[at]; return x === null ? NaN : x; }
 
 function ramp(t){
   t = t<0?0:t>1?1:t;
@@ -351,7 +363,8 @@ function drawHeat(v, f){
   var pad=14, aw=w-pad*2, ah=h-pad*2-22;
   var s = Math.min(aw/p.nx, ah/p.ny), ox = (w-s*p.nx)/2, oy = pad + (ah-s*p.ny)/2;
   for (var j=0;j<p.ny;j++) for (var i=0;i<p.nx;i++){
-    var val = p.v[j*p.nx+i];
+    var val = pv(p, j*p.nx+i);
+    if(!isFinite(val)) continue;
     x.fillStyle = ramp((val-R.lo)/((R.hi-R.lo)||1));
     x.fillRect(Math.floor(ox+i*s), Math.floor(oy+(p.ny-1-j)*s), Math.ceil(s), Math.ceil(s));
   }
@@ -384,7 +397,8 @@ function drawSlices(v, f){
   for(var k=0;k<p.nz;k++){
     var cx=ox+(k%cols)*(p.nx*s+gap), cy=oy+Math.floor(k/cols)*(p.ny*s+gap);
     for(var j=0;j<p.ny;j++) for(var i=0;i<p.nx;i++){
-      var val=p.v[k*p.nx*p.ny+j*p.nx+i];
+      var val=pv(p, k*p.nx*p.ny+j*p.nx+i);
+      if(!isFinite(val)) continue;
       x.fillStyle=ramp((val-R.lo)/((R.hi-R.lo)||1));
       x.fillRect(Math.floor(cx+i*s), Math.floor(cy+(p.ny-1-j)*s), Math.ceil(s), Math.ceil(s));
     }
@@ -461,14 +475,15 @@ function drawVolume(v, f){
           var i0=Math.floor(gx), j0=Math.floor(gy), k0=Math.floor(gz);
           var i1=Math.min(i0+1,p.nx-1), j1=Math.min(j0+1,p.ny-1), k1=Math.min(k0+1,p.nz-1);
           var fx=gx-i0, fy=gy-j0, fz=gz-k0, nxy=p.nx*p.ny;
-          var c000=p.v[k0*nxy+j0*p.nx+i0], c100=p.v[k0*nxy+j0*p.nx+i1];
-          var c010=p.v[k0*nxy+j1*p.nx+i0], c110=p.v[k0*nxy+j1*p.nx+i1];
-          var c001=p.v[k1*nxy+j0*p.nx+i0], c101=p.v[k1*nxy+j0*p.nx+i1];
-          var c011=p.v[k1*nxy+j1*p.nx+i0], c111=p.v[k1*nxy+j1*p.nx+i1];
+          var c000=pv(p,k0*nxy+j0*p.nx+i0), c100=pv(p,k0*nxy+j0*p.nx+i1);
+          var c010=pv(p,k0*nxy+j1*p.nx+i0), c110=pv(p,k0*nxy+j1*p.nx+i1);
+          var c001=pv(p,k1*nxy+j0*p.nx+i0), c101=pv(p,k1*nxy+j0*p.nx+i1);
+          var c011=pv(p,k1*nxy+j1*p.nx+i0), c111=pv(p,k1*nxy+j1*p.nx+i1);
           var z0=(c000*(1-fx)+c100*fx)*(1-fy)+(c010*(1-fx)+c110*fx)*fy;
           var z1=(c001*(1-fx)+c101*fx)*(1-fy)+(c011*(1-fx)+c111*fx)*fy;
           var val=z0*(1-fz)+z1*fz;
 
+          if(!isFinite(val)) continue;
           var norm=(val-R.lo)/span;
           var a=opacity(norm, signed)*0.16;
           if(a<=0.0008) continue;

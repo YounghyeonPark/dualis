@@ -266,6 +266,112 @@ fn a_region_that_selects_nothing_is_refused_and_absence_is_aluminium() {
     }
 }
 
+/// **A region can be made of nothing, and a scene cannot redefine what nothing means.**
+///
+/// The format could say what a box was made of and could not say it was *empty*, so a clearance
+/// between two parts had to be spelled as some substance with a low conductivity — which still
+/// conducts, still stores heat and still sets a stability limit. `"void"` is the one reserved
+/// spelling here, and it is reserved rather than resolved: a scene that declared a material by
+/// that name would be solid in one file and empty in another.
+#[test]
+fn a_region_can_be_nothing_and_nothing_is_a_reserved_word() {
+    let scene = |extra: &str| {
+        format!(
+            r#"{{ "title": "t", "schedule": "multirate", "duration_s": 1e-4, "frames": 2{extra},
+              "domains": [{{ "kind": "block", "name": "b", "cells": [4, 4, 4],
+                "cell_mm": 5.0, "initial_c": 20.0,
+                "regions": [{{ "material": "void", "from": [0, 0, 1], "to": [4, 4, 3] }}] }}] }}"#
+        )
+    };
+
+    let world = World::build(serde_json::from_str(&scene("")).expect("parses")).expect("builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert_eq!(b.void_cells(), 32, "two layers of sixteen cells are empty");
+    assert!(b.is_void(0, 0, 1) && !b.is_void(0, 0, 0));
+    assert!(
+        b.temperature_at(0, 0, 1).to_si().is_nan(),
+        "there is nothing there to have a temperature"
+    );
+
+    // And the name cannot be taken. The message has to say why, or somebody will simply rename
+    // their material and wonder where the gap went.
+    let declared = r#", "materials": { "void": { "name": "not nothing", "density": 1.0,
+        "thermal": { "conductivity": 1.0, "specific_heat": 1.0,
+                     "expansion": 0.0, "emissivity": 0.5 } } }"#;
+    let Err(err) = World::build(serde_json::from_str(&scene(declared)).expect("parses")) else {
+        panic!("a scene may not redefine nothing");
+    };
+    assert!(
+        err.contains("materials.void") && err.contains("nothing"),
+        "the refusal should name the key and say what the word is for: {err}"
+    );
+}
+
+/// **A region can start at its own temperature**, which is the difference between a scene that
+/// can pose a transient and one that can only pose a source.
+///
+/// Found by writing scene `23`: a hot part under a cold lid is the commonest thermal question
+/// there is, and the format could not state it in either direction. `regions` said what a box was
+/// made of and `initial_c` was a property of the whole block, while the bus — deliberately — has
+/// no location at all, so heat arriving there spreads over everything that can hold it. Neither
+/// could put 300 C in one corner.
+///
+/// Refused on a void region, because nothing has no temperature to start at, and that would
+/// otherwise be a value quietly discarded.
+#[test]
+fn a_region_can_start_hot_and_nothing_cannot() {
+    let block = |regions: &str| {
+        format!(
+            r#"{{ "title": "t", "schedule": "multirate", "duration_s": 1e-6, "frames": 2,
+              "domains": [{{ "kind": "block", "name": "b", "cells": [4, 4, 4],
+                "cell_mm": 5.0, "initial_c": 20.0, "regions": {regions} }}] }}"#
+        )
+    };
+
+    let hot = block(
+        r#"[{ "material": "copper", "from": [0, 0, 0], "to": [4, 4, 1], "initial_c": 300.0 }]"#,
+    );
+    let world = World::build(serde_json::from_str(&hot).expect("parses")).expect("builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert!(
+        (b.temperature_at(0, 0, 0).to_si() - 573.15).abs() < 1e-9,
+        "the region starts where it says: {:.4} K",
+        b.temperature_at(0, 0, 0).to_si()
+    );
+    assert!(
+        (b.temperature_at(0, 0, 3).to_si() - 293.15).abs() < 1e-9,
+        "and the rest starts at the block's own figure: {:.4} K",
+        b.temperature_at(0, 0, 3).to_si()
+    );
+
+    // Omitting it leaves the block's figure, which is what every scene written before the key
+    // existed relies on.
+    let cold = block(r#"[{ "material": "copper", "from": [0, 0, 0], "to": [4, 4, 1] }]"#);
+    let world = World::build(serde_json::from_str(&cold).expect("parses")).expect("builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert!((b.temperature_at(0, 0, 0).to_si() - 293.15).abs() < 1e-9);
+
+    let void = block(
+        r#"[{ "material": "void", "from": [0, 0, 0], "to": [4, 4, 1], "initial_c": 300.0 }]"#,
+    );
+    let Err(err) = World::build(serde_json::from_str(&void).expect("parses")) else {
+        panic!("nothing cannot start at a temperature");
+    };
+    assert!(
+        err.contains("b/regions[0]"),
+        "the refusal should say which region: {err}"
+    );
+}
+
 /// Two domains that do not interact still run, and both are captured.
 #[test]
 fn a_scene_can_hold_more_than_one_domain() {
@@ -1602,6 +1708,102 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                         "{name}: melting continued after the heater was empty"
                     );
                 }
+            }
+            "23-a-part-radiating-to-its-lid.json" => {
+                // A hot part sitting in a sealed housing, surrounded on five sides by **nothing**
+                // and facing a cooled lid across a clearance. The geometry is what makes this
+                // checkable: the part has no conducting face to anywhere, so the only path its
+                // heat has is the parallel-plate exchange across the gap, and the lid's only exit
+                // is the film on `z-max`. That is a two-body lumped system whose closed form is a
+                // pair of ODEs in nothing but constants.
+                const SIGMA: f64 = 5.670_374_419e-8;
+                let cell = 8e-3_f64; // metres, from the scene
+                let (rho, c, emissivity) = (2700.0_f64, 896.0_f64, 0.85_f64);
+                let (h, ambient) = (12.0_f64, 293.15_f64);
+
+                let face = cell * cell;
+                let gap_area = 16.0 * face; // the 4x4 part looking up at the lid
+                let top_area = 36.0 * face; // the whole 6x6 lid looking at the room
+                let part_capacity = 48.0 * cell.powi(3) * rho * c; // 4 x 4 x 3 cells
+                let lid_capacity = 72.0 * cell.powi(3) * rho * c; // 6 x 6 x 2 cells
+                let series = 2.0 / emissivity - 1.0;
+
+                let reading = |f: &dualis_world::Frame, label: &str| {
+                    f.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label} reading"))
+                        .value
+                        + 273.15
+                };
+
+                // **The part really does cool, and only radiation can have done it.** Without the
+                // gap exchange this assertion is false by construction: void breaks conduction, so
+                // a part with no radiating clearance sits at its starting temperature forever.
+                let start = reading(&frames[0], "peak");
+                let end = reading(frames.last().expect("frames"), "peak");
+                assert!(
+                    (start - 573.15).abs() < 0.1,
+                    "{name}: the part starts where the region says, {start:.2} K"
+                );
+                assert!(
+                    start - end > 20.0,
+                    "{name}: the clearance should have carried tens of kelvin, carried              {:.2} K",
+                    start - end
+                );
+
+                // **And the amount is the lumped two-body answer**, integrated here from the
+                // constants above with RK4 — no property is read back from the library, and the
+                // library's own arithmetic is cellwise rather than lumped, so this is a check
+                // against the physics and not against a second copy of the code.
+                let rates = |t_part: f64, t_lid: f64| {
+                    let radiated = SIGMA * gap_area * (t_part.powi(4) - t_lid.powi(4)) / series;
+                    let filmed = h * top_area * (t_lid - ambient);
+                    (
+                        -radiated / part_capacity,
+                        (radiated - filmed) / lid_capacity,
+                    )
+                };
+                let (mut t_part, mut t_lid) = (573.15_f64, 293.15_f64);
+                let dt = 0.01;
+                for _ in 0..60_000 {
+                    let (a1, b1) = rates(t_part, t_lid);
+                    let (a2, b2) = rates(t_part + 0.5 * dt * a1, t_lid + 0.5 * dt * b1);
+                    let (a3, b3) = rates(t_part + 0.5 * dt * a2, t_lid + 0.5 * dt * b2);
+                    let (a4, b4) = rates(t_part + dt * a3, t_lid + dt * b3);
+                    t_part += dt / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
+                    t_lid += dt / 6.0 * (b1 + 2.0 * b2 + 2.0 * b3 + b4);
+                }
+
+                // The lumped model's error is the gradient it assumes away, and both gradients here
+                // are small on purpose: the part's diffusion time over its 24 mm is `L^2/alpha` =
+                // 8 s and the lid's over its 48 mm span is 33 s, against a 600 s run. What is left
+                // is that the library radiates cell by cell on `T^4` where this averages first, and
+                // Jensen's inequality makes that a second-order term in the spread. Judged on the
+                // **cooling**, which is the quantity the scene is about; as a fraction of the
+                // absolute temperature it would be twenty times looser and would notice nothing.
+                //
+                // Measured at **0.20%**, and the bound is 1% rather than the 5% the lag argument
+                // alone would buy, because a tolerance twenty-five times the residual is one that
+                // would sit still through a real change to the exchange.
+                let cooled = start - end;
+                let closed = 573.15 - t_part;
+                println!(
+                    "  {name}: the part shed {cooled:.2} K against a lumped {closed:.2} K — off {:.2}%",
+                    100.0 * (cooled / closed - 1.0).abs()
+                );
+                assert!(
+                    (cooled / closed - 1.0).abs() < 0.01,
+                    "{name}: {cooled:.2} K shed against a closed-form {closed:.2} K"
+                );
+
+                // **The lid warms, and stays far below the part**, which is what says the exchange
+                // ran one way. A gap that conducted rather than radiated would have levelled them.
+                let lid = reading(frames.last().expect("frames"), "coldest");
+                assert!(
+                    lid > 293.15 + 1.0 && lid < end - 100.0,
+                    "{name}: the lid should warm a little and stay cold, {lid:.2} K against              a part at {end:.2} K"
+                );
             }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }

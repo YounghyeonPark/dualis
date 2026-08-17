@@ -157,6 +157,14 @@ pub fn gltf(title: &str, frame: &Frame) -> Exported {
                     for j in 0..*ny {
                         for i in 0..*nx {
                             let v = values[i + nx * (j + ny * k)];
+                            // **A sample that is not a number is not a point.** This is the one
+                            // output that leaves the workspace, and a grid with a clearance in it
+                            // was exported as a solid brick: every empty cell arrived in Blender
+                            // as a vertex with a colour. Skipped rather than drawn dark, because
+                            // dark is a temperature and absence is not.
+                            if !v.is_finite() {
+                                continue;
+                            }
                             mesh.positions
                                 .push([i as f32 + 0.5, j as f32 + 0.5, k as f32 + 0.5]);
                             mesh.colours.push(ramp((v - lo) / (hi - lo)));

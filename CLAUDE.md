@@ -25,6 +25,15 @@ with the old path still baked in through `env!("CARGO_MANIFEST_DIR")` — a loud
 the old directory was gone; had it still existed, six tests would have **passed** against the wrong
 tree. `cargo clean` after moving a checkout.
 
+The ninth reached `main` and sat there: commit `4a3654f` shipped `heat_crosses_a_join_and_not_a_gap`
+failing, and it was found a commit later by a clean worktree at that sha rather than by the gate.
+The mechanism is the tool boundary, not the shell: `cargo test --locked --workspace` takes long
+enough here to be **moved to the background**, and its output file is a transcript that is still
+growing — a `grep` over it for `FAILED` finds nothing, because the failing binary has not run yet.
+Reading a partial file is the same mistake as reading a roll-up. Wait for the exit code, and read
+*that*. The claim that a test suite passed is the one claim in this repository that has never
+survived being inferred.
+
 ```sh
 # Correct in a file, inert when pasted -- see above.
 set -euo pipefail

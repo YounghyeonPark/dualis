@@ -132,7 +132,14 @@ fn numbers(v: &[f64]) -> String {
         if i > 0 {
             s.push(',');
         }
-        s.push_str(&format!("{x:.6e}"));
+        // `NaN` is not a JSON literal and would make the whole document unreadable to a strict
+        // parser; `null` is the spelling for a sample that is not there, and numpy, pandas and
+        // `JSON.parse` all take it.
+        if x.is_finite() {
+            s.push_str(&format!("{x:.6e}"));
+        } else {
+            s.push_str("null");
+        }
     }
     s.push(']');
     s

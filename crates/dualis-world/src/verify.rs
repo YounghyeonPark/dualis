@@ -839,6 +839,9 @@ impl DomainSpec {
                             material: r.material.clone(),
                             from: [r.from[0] * 2, r.from[1] * 2, r.from[2] * 2],
                             to: [r.to[0] * 2, r.to[1] * 2, r.to[2] * 2],
+                            // A temperature is not a length: the same box starts at the same
+                            // degrees whatever the grid.
+                            initial_c: r.initial_c,
                         })
                         .collect(),
                     hot_spot: None,

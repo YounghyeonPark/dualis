@@ -342,6 +342,15 @@ different quantities, the second separates domains carrying the same one.
      zero without the face knowing what void is. The one special case is that a cell with no
      capacity has no `dx/C` either.
 
+     **What it did cost was every reader downstream, and that was not noticed for two commits.**
+     `temperature_at` returned `NaN` from the first day and `ScalarField::at` — which is what
+     every exporter actually calls — read the raw cell array, where an emptied cell still holds
+     whatever it held when it was emptied. So a clearance left this workspace as a piece of the
+     block sitting at its start temperature forever. Measured on scene `23`: the glTF carried
+     **252** points for a grid with **120** solid cells. The lesson generalises past void — an
+     invariant that only the domain's own accessor enforces is an invariant the platform does not
+     have, because the platform reads through the trait.
+
      The measurement that says a low conductivity is not the same answer: three copper bars
      differing only in the middle cell — copper, the catalogue's poorest insulator, and nothing.
      The far end warms by 50 K through the first, **still warms** through the second, and sits

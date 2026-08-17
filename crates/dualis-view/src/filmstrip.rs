@@ -377,6 +377,12 @@ fn raster(
     for j in 0..ny {
         for i in 0..nx {
             let v = values[(j * sy / ny) * sx + (i * sx / nx)] / extent;
+            // A sample that is not a number gets no square, and the background shows through.
+            // Not a cosmetic choice: `NaN as i32` saturates to **zero**, which is the middle
+            // bucket, so an empty cell was drawn in the same colour as one at the mean.
+            if !v.is_finite() {
+                continue;
+            }
             let level = (v.clamp(-1.0, 1.0) * LEVELS as f64).round() as i32;
             // Rows are drawn top-down and the field's y runs up, so flip.
             buckets[(level + LEVELS) as usize].push_str(&format!("M{i} {}h1v1h-1z", ny - 1 - j));

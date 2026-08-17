@@ -1675,10 +1675,17 @@ impl ScalarField for Solid3D {
         "K"
     }
 
-    /// Trilinear between cell centres, clamped at the faces.
+    /// Trilinear between cell centres, clamped at the faces, and **masked over void**.
     ///
     /// Clamped rather than extrapolated: outside an insulated face the temperature is not
     /// defined, and continuing the gradient would draw a block hotter than any cell in it.
+    ///
+    /// Masked because `self.cells` still holds whatever an emptied cell held when it was emptied,
+    /// and reading it raw is how a gap came out of every exporter as a piece of the block sitting
+    /// at ambient forever — a plausible, unchanging number, which is worse than no number. The
+    /// weights are renormalised over the solid corners, so a sample at a cell centre is that cell
+    /// exactly, a sample inside a clearance is `NaN`, and a sample straddling the two is the
+    /// material's own value rather than a blend with something that is not there.
     fn at(&self, p: LengthVec, _t: Time) -> f64 {
         let (nx, ny, nz) = self.counts;
         let q = p.to_si() / self.dx.to_si() - DVec3::splat(0.5);
@@ -1701,25 +1708,44 @@ impl ScalarField for Solid3D {
         let (i, fx) = axis(q.x, nx);
         let (j, fy) = axis(q.y, ny);
         let (k, fz) = axis(q.z, nz);
+
+        // **A sample belongs to the cell it is in**, and if that cell is empty there is nothing
+        // there to sample. Without this the masked weights below still answer — with the value of
+        // whichever solid neighbour the sample leans towards — and a panel that samples across the
+        // extent rather than on cell centres lands most of a clearance's first layer inside the
+        // material's half. Measured on a two-layer gap: 36 of the 72 empty cells came out solid.
+        let nearest = |v: f64, n: usize| (v.round().max(0.0) as usize).min(n.saturating_sub(1));
+        if self.void[nearest(q.x, nx) + nx * (nearest(q.y, ny) + ny * nearest(q.z, nz))] {
+            return f64::NAN;
+        }
         let (i1, j1, k1) = (
             (i + 1).min(nx - 1),
             (j + 1).min(ny - 1),
             (k + 1).min(nz - 1),
         );
 
-        let get = |a: usize, b: usize, c: usize| self.cells[a + nx * (b + ny * c)];
-        let lerp = |lo: f64, hi: f64, t: f64| lo * (1.0 - t) + hi * t;
-        let z0 = lerp(
-            lerp(get(i, j, k), get(i1, j, k), fx),
-            lerp(get(i, j1, k), get(i1, j1, k), fx),
-            fy,
-        );
-        let z1 = lerp(
-            lerp(get(i, j, k1), get(i1, j, k1), fx),
-            lerp(get(i, j1, k1), get(i1, j1, k1), fx),
-            fy,
-        );
-        lerp(z0, z1, fz)
+        let mut sum = 0.0;
+        let mut weight = 0.0;
+        for (a, wa) in [(i, 1.0 - fx), (i1, fx)] {
+            for (b, wb) in [(j, 1.0 - fy), (j1, fy)] {
+                for (c, wc) in [(k, 1.0 - fz), (k1, fz)] {
+                    let w = wa * wb * wc;
+                    let at = a + nx * (b + ny * c);
+                    // A corner with no weight is not a corner, so a sample sitting on a cell
+                    // centre never consults the neighbour it does not use — which is what makes
+                    // an exactly-sampled grid exact rather than nearly so.
+                    if w > 0.0 && !self.void[at] {
+                        sum += w * self.cells[at];
+                        weight += w;
+                    }
+                }
+            }
+        }
+        if weight > 0.0 {
+            sum / weight
+        } else {
+            f64::NAN
+        }
     }
 
     /// Central differences on the cell grid, mirrored at the faces.

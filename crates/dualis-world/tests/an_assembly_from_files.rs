@@ -129,11 +129,20 @@ fn two_parts_from_files_assemble_with_a_gap_of_nothing() {
     );
 }
 
-/// **Heat crosses a join and does not cross a gap.**
+/// **Heat crosses a join, and across a gap only radiation does.**
 ///
 /// The physics that makes void worth having, through the file path. The left part starts hot and
-/// nothing else feeds the block, so the only way the far end warms is conduction across whatever
-/// is between the two parts.
+/// nothing else feeds the block, so the only way the far end warms is whatever the space between
+/// the two parts will carry.
+///
+/// **This assertion has been wrong once and the correction is the interesting part.** It read
+/// "nothing carries nothing" and required the far end not to have moved by a bit, which was true
+/// on the day void arrived and false a commit later, when gaps started radiating — real physics
+/// that a vacuum clearance always has. What it pins now is the **ratio**, which is the stronger
+/// statement and the one a reader can check against the conductances: for these 5 mm cells a
+/// shared copper face is `kA/dx` = **2.005 W/K** against the gap's `4σT³A/(1/ε₁+1/ε₂−1)` =
+/// **2.2e-5 W/K** at the hot end — five orders of magnitude, and most of that is copper's
+/// emissivity of **0.04**, which is the same fact scene `23` is built to ask about.
 ///
 /// **No heater**, and that is a correction rather than a simplification: the first version of
 /// this test drove both cases with one and read the gapped assembly as *hotter*. It has one cell
@@ -192,9 +201,17 @@ fn heat_crosses_a_join_and_not_a_gap() {
         joined > start + 50.0,
         "a shared face should carry the heat: {joined:.2} K from {start:.2} K"
     );
+    // A gap carries something, because two surfaces that see each other radiate — and it carries
+    // so much less than metal that the two cases are not close. Bounded on both sides: a floor,
+    // so a gap that stopped radiating would fail here rather than pass more easily, and a ceiling
+    // three orders of magnitude under the joined rise.
     assert!(
-        (gapped - start).abs() < 1e-9,
-        "and nothing carries nothing: {gapped:.6} K should still be {start:.2} K"
+        gapped > start,
+        "two faces that see each other radiate: {gapped:.6} K from {start:.2} K"
+    );
+    assert!(
+        (gapped - start) < (joined - start) / 100.0,
+        "and radiation across nothing is nothing like a shared face: {gapped:.4} K against          {joined:.4} K"
     );
 }
 

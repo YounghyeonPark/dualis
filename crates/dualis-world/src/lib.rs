@@ -815,6 +815,15 @@ pub enum DomainSpec {
     },
 }
 
+/// The one material name this format reserves: a box or a part of **nothing**.
+///
+/// Not a substance with a very low conductivity, which is what a scene had to write before there
+/// was a void at all — and which still conducts, still stores heat and still sets a stability
+/// limit. Measured, on three identical bars differing only in one cell: the far end warms 50 K
+/// through copper, still warms through the catalogue's poorest insulator, and moves only by what
+/// radiation carries across nothing.
+pub const VOID: &str = "void";
+
 /// The materials a scene may name without declaring them: [`Substance::CATALOGUE`], verbatim.
 ///
 /// It is an alias now and used to be a hand-written copy — eight names beside the catalogue's nine,
@@ -870,6 +879,13 @@ impl Palette {
         for (key, substance) in declared {
             if key.is_empty() {
                 return Err("materials: a declared material needs a name".to_string());
+            }
+            if key == VOID {
+                return Err(format!(
+                    "materials.{key}: {VOID:?} is this format's word for **nothing** and a scene \
+                     may not redefine it as a substance — a region or a part naming it would \
+                     then be solid in one file and empty in another"
+                ));
             }
             if Substance::from_name(key).is_some() {
                 return Err(format!(
@@ -1630,7 +1646,6 @@ impl DomainSpec {
                 }
                 for (n, r) in regions.iter().enumerate() {
                     let site = format!("{name}/regions[{n}]");
-                    let substance = palette.get(&site, &r.material)?;
                     let empty = (0..3).any(|a| r.to[a] <= r.from[a]);
                     let outside = (0..3).any(|a| r.to[a] > cells[a]);
                     if empty || outside {
@@ -1640,10 +1655,44 @@ impl DomainSpec {
                             r.from, r.to, cells[0], cells[1], cells[2]
                         ));
                     }
-                    block.fill(substance, |i, j, k| {
+                    let inside = |i: usize, j: usize, k: usize| {
                         let p = [i, j, k];
                         (0..3).all(|a| p[a] >= r.from[a] && p[a] < r.to[a])
-                    });
+                    };
+                    // A box of nothing, which is how a scene states an air gap without carrying
+                    // a mesh. Applied in the same order as any other region — later wins where
+                    // they overlap — so a gap cut into a part reads the way a coating on a layer
+                    // does.
+                    if r.material == VOID {
+                        if r.initial_c.is_some() {
+                            return Err(format!(
+                                "{site}: a {VOID:?} region cannot start at a temperature,                                  because there is nothing there to have one"
+                            ));
+                        }
+                        block = block.empty(inside);
+                        continue;
+                    }
+                    let substance = palette.get(&site, &r.material)?;
+                    block.fill(substance, inside);
+                    if let Some(celsius) = r.initial_c {
+                        if !celsius.is_finite() {
+                            return Err(format!("{site}: initial_c is {celsius}"));
+                        }
+                        for k in 0..cells[2] {
+                            for j in 0..cells[1] {
+                                for i in 0..cells[0] {
+                                    if inside(i, j, k) {
+                                        block.set_temperature(
+                                            i,
+                                            j,
+                                            k,
+                                            Temperature::celsius(celsius),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 // Exposed faces, before the hot spot so a refusal names the file's own
                 // mistake rather than arriving after the block has been half set up.
@@ -1845,12 +1894,37 @@ impl CoolingSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Region {
-    /// What this box is made of, one of [`MATERIALS`].
+    /// What this box is made of, one of [`MATERIALS`] — or [`VOID`], for a box of nothing.
+    ///
+    /// `"void"` is the one reserved spelling in this format. It is how a scene says *air gap*
+    /// without carrying a mesh: the cells hold no substance, conduct to nothing, take no share
+    /// of the bus and have no temperature. Two parts either side of one exchange **radiation**
+    /// and not conduction — see `Solid3D::empty` for what that models and what it leaves out.
+    ///
+    /// Reserved rather than resolved, so a scene cannot declare a material called `void` and
+    /// quietly mean a solid: [`Palette`] refuses the name for the same reason it refuses a
+    /// catalogue spelling, which is that two files saying the same word have to mean the same
+    /// thing.
     pub material: String,
     /// The first cell, as `[i, j, k]`.
     pub from: [usize; 3],
     /// One past the last cell, as `[i, j, k]`.
     pub to: [usize; 3],
+    /// What this box starts at, in celsius. Absent is the block's own `initial_c`.
+    ///
+    /// **A region could say what a box was made of and not what it held**, and that gap was
+    /// found the way this crate is meant to find things: by trying to write a scene of a hot
+    /// part beside a cool lid and discovering the format could say it in neither direction.
+    /// Heat off the bus is spread over the whole block by design — the plain channel carries an
+    /// amount and no location — so a source cannot warm one part of an assembly either.
+    ///
+    /// Like [`HotSpot`], this is **a statement about the initial state and not a delivery of
+    /// heat**: it moves what the block holds, not what it has absorbed, so the audit's opening
+    /// balance includes it.
+    ///
+    /// Refused on a `void` region, because nothing has no temperature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_c: Option<f64>,
 }
 
 /// One cell of a [`DomainSpec::Block`], warmed at the start.
