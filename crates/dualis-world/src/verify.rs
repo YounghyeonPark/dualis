@@ -816,6 +816,7 @@ impl DomainSpec {
                 material,
                 regions,
                 hot_spot,
+                parts,
                 cooling,
             } => {
                 if hot_spot.is_some() {
@@ -841,6 +842,12 @@ impl DomainSpec {
                         })
                         .collect(),
                     hot_spot: None,
+                    // The same meshes, re-voxelised at the finer cell — which is the whole
+                    // reason a part is stated as geometry rather than as cells. A feature
+                    // thinner than the coarse grid appears at the fine one, and the sweep
+                    // reporting that as discretisation error is correct: it *is* the error,
+                    // and it is the kind with no other symptom.
+                    parts: parts.clone(),
                     // Carried through unchanged, and that is the point of stating a face's
                     // **whole** area rather than a cell's: the same part, exposed the same
                     // way, on a finer grid. A per-cell area would have to be halved here and

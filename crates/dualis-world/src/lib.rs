@@ -735,6 +735,14 @@ pub enum DomainSpec {
         /// — which is the honest bookkeeping and is why it is separate from any source.
         #[serde(default)]
         hot_spot: Option<HotSpot>,
+        /// Designed parts to fill this block from, each an STL and a material. See [`PartSpec`].
+        ///
+        /// **Stating any part makes every cell outside them void** — nothing, rather than the
+        /// block's bulk material. That is what an assembly in air *is*, and the alternative is
+        /// what this format did before there was a void at all: two parts conducting through
+        /// the gap between them as though the gap were metal.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        parts: Vec<PartSpec>,
         /// Faces that lose heat to something, and to what. See [`CoolingSpec`].
         ///
         /// **Absent is a block insulated on all six faces**, which is what every scene written
@@ -1132,6 +1140,7 @@ impl DomainSpec {
         &self,
         palette: &mut Palette,
         environment: Option<&EnvironmentSpec>,
+        notes: &mut Vec<String>,
     ) -> Result<Box<dyn Domain>, String> {
         let domain: Box<dyn Domain> = match self {
             DomainSpec::Room {
@@ -1544,6 +1553,7 @@ impl DomainSpec {
                 material,
                 regions,
                 hot_spot,
+                parts,
                 cooling,
             } => {
                 let bulk = palette.get(name, material.as_deref().unwrap_or("aluminium"))?;
@@ -1554,6 +1564,70 @@ impl DomainSpec {
                     Length::mm(*cell_mm),
                     Temperature::celsius(*initial_c),
                 );
+                // Designed parts first, and everything outside them is nothing. Before
+                // `regions`, because a region is a box stated against the block's own grid and
+                // is the way to say "this corner of that part is something else" — the same
+                // last-writer-wins order the format already documents.
+                if !parts.is_empty() {
+                    let origin = LengthVec::m(0.0, 0.0, 0.0);
+                    let counts = (cells[0], cells[1], cells[2]);
+                    let mut occupied = vec![false; cells[0] * cells[1] * cells[2]];
+                    for (n, part) in parts.iter().enumerate() {
+                        let site = format!("{name}/parts[{n}]");
+                        let bytes = std::fs::read(&part.stl)
+                            .map_err(|e| format!("{site}: {}: {e}", part.stl))?;
+                        let mesh = dualis::shape::Mesh::from_stl(&bytes)
+                            .map_err(|e| format!("{site}: {}: {e}", part.stl))?;
+                        let voxels = dualis::shape::Voxels::onto(
+                            &mesh,
+                            origin,
+                            counts,
+                            Length::mm(*cell_mm),
+                        )
+                        .map_err(|e| format!("{site}: {e}"))?;
+                        let substance = palette.get(&site, &part.material)?;
+                        // What voxelising cost, reported rather than left in the crate. The
+                        // number with no symptom is the volume error: a rib finer than the grid
+                        // does not fail, it disappears, and the run is perfectly well behaved
+                        // about a different object.
+                        let loss = voxels.loss();
+                        notes.push(format!(
+                            "{site}: {} filled {} cells at {cell_mm} mm — volume {:+.2}%, {:.0}% of                              it in boundary cells, {} thin run(s), {} triangle(s) under a cell{}",
+                            part.stl,
+                            voxels.filled(),
+                            loss.volume_error * 100.0,
+                            loss.boundary_fraction * 100.0,
+                            loss.thin_runs,
+                            loss.small_triangles,
+                            if loss.ambiguous_rows > 0 {
+                                format!(", {} ROW(S) THE RASTERISER COULD NOT DECIDE", loss.ambiguous_rows)
+                            } else {
+                                String::new()
+                            }
+                        ));
+                        block.fill(substance, |i, j, k| voxels.contains(i, j, k));
+                        for k in 0..counts.2 {
+                            for j in 0..counts.1 {
+                                for i in 0..counts.0 {
+                                    if voxels.contains(i, j, k) {
+                                        occupied[i + counts.0 * (j + counts.1 * k)] = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // A part that voxelised to nothing at all is refused. It would leave a
+                    // block of pure void that runs, conserves and answers about an empty box —
+                    // the same shape as a region that selects no cells, and refused for the
+                    // same reason.
+                    if !occupied.iter().any(|o| *o) {
+                        return Err(format!(
+                            "{name}: every part voxelised to no cells at {cell_mm} mm. The \
+                             meshes may be smaller than one cell, or outside the block"
+                        ));
+                    }
+                    block = block.empty(|i, j, k| !occupied[i + counts.0 * (j + counts.1 * k)]);
+                }
                 for (n, r) in regions.iter().enumerate() {
                     let site = format!("{name}/regions[{n}]");
                     let substance = palette.get(&site, &r.material)?;
@@ -1607,6 +1681,56 @@ impl DomainSpec {
         };
         Ok(domain)
     }
+}
+
+/// One designed part filled into a [`DomainSpec::Block`] from a mesh.
+///
+/// # An STL is read as millimetres, and this is the way an assembly goes wrong
+///
+/// The format is unitless and every CAD tool writes millimetres, so that is what
+/// `Mesh::from_stl` reads. A file exported in metres arrives a **thousand times too small** and
+/// voxelises to no cells at all, which this format refuses — but the refusal says the meshes
+/// may be smaller than a cell, and the reason it is usually right is this one.
+///
+/// # Where a part sits is what its own file says
+///
+/// An STL carries absolute coordinates, so two parts exported from one assembly land where the
+/// assembly put them, in the block's own axes. There is no offset here to get wrong and no pose:
+/// `poses` places a **domain**, and every part of an assembly is inside one domain.
+///
+/// A part whose mesh reaches outside the block's cells is **refused with both boxes named**,
+/// rather than cropped. A part with its corner cut off runs, audits, renders and answers about a
+/// different shape.
+///
+/// # What the cell size costs, and why the report is printed
+///
+/// Voxelising is where a designed shape meets a grid, and the thing with no symptom is *how much
+/// of the shape survives*: a 0.5 mm rib at 2 mm cells is not a thin rib, it is gone, and the
+/// simulation runs perfectly well without it. `--check` prints the [`dualis::shape::Loss`]
+/// for every part — volume error, the share of the volume in boundary cells, runs one or two
+/// cells thick, and rows the rasteriser could not decide — because a number nobody sees is a
+/// number nobody acts on.
+///
+/// # The file is read from disk, and a browser has no disk
+///
+/// `stl` is a path, resolved when the scene is built. That works for the CLI and the native
+/// editor and **fails in the browser**, where there is no filesystem and the error says which
+/// file it could not find. Stated here rather than discovered: a page that wants geometry has to
+/// carry it, and that is a format decision this key does not make.
+///
+/// ```json
+/// "parts": [
+///   { "stl": "bracket.stl", "material": "aluminium" },
+///   { "stl": "insert.stl",  "material": "copper" }
+/// ]
+/// ```
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartSpec {
+    /// Path to a binary or ASCII STL, relative to wherever the scene is run from.
+    pub stl: String,
+    /// What the part is made of: a catalogue name or one of [`Scene::materials`].
+    pub material: String,
 }
 
 /// One face of a [`DomainSpec::Block`] losing heat to still or moving air.
@@ -1872,7 +1996,8 @@ impl World {
         let mut palette = Palette::with_composites(&scene.materials, &scene.composites)?;
         let mut notes = Vec::new();
         for spec in &scene.domains {
-            sim = sim.with_boxed(spec.build(&mut palette, scene.environment.as_ref())?);
+            sim =
+                sim.with_boxed(spec.build(&mut palette, scene.environment.as_ref(), &mut notes)?);
             // The dismissals — a stated condition a domain ignores for a measured reason.
             // Collected here, in the composition root, because the reason is about the pair
             // (this stage, this domain) and neither owns it alone. Reported by `--check` and
@@ -1912,11 +2037,13 @@ impl World {
         &self.scene
     }
 
-    /// What the build dismissed, with the measurement that earned each dismissal.
+    /// What the build wants a reader to know and the run will not say.
     ///
-    /// Empty for most scenes. Non-empty when a stated condition was correctly ignored — a
-    /// molecular fluid under stated gravity — and the whole point is that "correctly ignored"
-    /// is something a person gets to read rather than something that silently happened.
+    /// Two kinds so far, and both are things that otherwise happen in silence. A **dismissal**:
+    /// a stated condition a domain correctly ignored, with the measurement that earns it — a
+    /// molecular fluid under stated gravity. And a **rasterisation report**: what a designed
+    /// part cost when it met the grid, because a rib finer than a cell does not fail, it
+    /// disappears, and the run is perfectly well behaved about a different object.
     pub fn notes(&self) -> &[String] {
         &self.notes
     }
@@ -1925,6 +2052,21 @@ impl World {
     /// `bus`, `ledger`, `domain_as`, `field`.
     pub fn simulation(&self) -> &Simulation {
         &self.sim
+    }
+
+    /// The simulation underneath, mutably, for a caller that wants to write to a domain
+    /// **between** steps.
+    ///
+    /// The same allowance `Domain::as_any_mut` documents and for the same reason: this is the
+    /// owner of the simulation, outside the step loop, holding `&mut World` already — it could
+    /// drop the world and rebuild it, so denying it a write was never protecting anything. What
+    /// it does *not* do is let one domain read another inside `step`, which is the rule the
+    /// crate split exists to hold.
+    ///
+    /// Setting an initial condition a scene file cannot state is the use that asked for it: a
+    /// whole part warmed rather than one cell, which `hot_spot` cannot say.
+    pub fn simulation_mut(&mut self) -> &mut Simulation {
+        &mut self.sim
     }
 
     /// Where the clock is.
