@@ -816,6 +816,7 @@ impl DomainSpec {
                 material,
                 regions,
                 hot_spot,
+                cooling,
             } => {
                 if hot_spot.is_some() {
                     return Err(format!(
@@ -840,6 +841,11 @@ impl DomainSpec {
                         })
                         .collect(),
                     hot_spot: None,
+                    // Carried through unchanged, and that is the point of stating a face's
+                    // **whole** area rather than a cell's: the same part, exposed the same
+                    // way, on a finer grid. A per-cell area would have to be halved here and
+                    // the sweep would be comparing two different problems.
+                    cooling: cooling.clone(),
                 })
             }
             DomainSpec::Conductor {

@@ -735,6 +735,15 @@ pub enum DomainSpec {
         /// — which is the honest bookkeeping and is why it is separate from any source.
         #[serde(default)]
         hot_spot: Option<HotSpot>,
+        /// Faces that lose heat to something, and to what. See [`CoolingSpec`].
+        ///
+        /// **Absent is a block insulated on all six faces**, which is what every scene written
+        /// before this key existed is — and, until the domain could shed heat at all, what every
+        /// three-dimensional thermal scene in this repository was. Such a scene warms for as long
+        /// as it runs and never settles anywhere, which answers a pulse and not the question a
+        /// designer asks.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        cooling: Vec<CoolingSpec>,
     },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
@@ -1535,6 +1544,7 @@ impl DomainSpec {
                 material,
                 regions,
                 hot_spot,
+                cooling,
             } => {
                 let bulk = palette.get(name, material.as_deref().unwrap_or("aluminium"))?;
                 let mut block = dualis::thermal::Solid3D::new(
@@ -1561,6 +1571,29 @@ impl DomainSpec {
                         (0..3).all(|a| p[a] >= r.from[a] && p[a] < r.to[a])
                     });
                 }
+                // Exposed faces, before the hot spot so a refusal names the file's own
+                // mistake rather than arriving after the block has been half set up.
+                let mut seen = std::collections::BTreeSet::new();
+                for (n, cool) in cooling.iter().enumerate() {
+                    let site = format!("{name}/cooling[{n}]");
+                    cool.check(&site)?;
+                    if !seen.insert(cool.face) {
+                        return Err(format!(
+                            "{site}: {:?} is already cooled by an earlier entry, and a face \
+                             cannot lose heat to two different airs — add the areas, or state \
+                             the one film that is really there",
+                            cool.face
+                        ));
+                    }
+                    block = block.losing_from(
+                        cool.face.to_face(),
+                        Environment {
+                            ambient: Temperature::celsius(cool.ambient_c),
+                            convection_w_per_m2_k: cool.convection_w_per_m2_k,
+                            area: Area::from_si(cool.area_cm2 * 1e-4),
+                        },
+                    );
+                }
                 if let Some(spot) = hot_spot {
                     block.set_temperature(
                         spot.at[0],
@@ -1573,6 +1606,104 @@ impl DomainSpec {
             }
         };
         Ok(domain)
+    }
+}
+
+/// One face of a [`DomainSpec::Block`] losing heat to still or moving air.
+///
+/// # What the numbers mean
+///
+/// `area_cm2` is the **whole face's** area, not a cell's, and the domain charges each boundary
+/// cell its share. That is what keeps the number a scene writes independent of the grid it
+/// chose: refining `cells` does not change what the file says the part exposes, which is the
+/// property `verify`'s resolution sweep needs to compare two grids of one problem rather than
+/// two problems.
+///
+/// `convection_w_per_m2_k` has no default and there is no right one — still air is about 5 to
+/// 10, forced air 25 to 100, water hundreds. The **radiative** half is not stated here at all:
+/// it comes from the material's emissivity, because that is a property of the surface and not
+/// of the air beside it. A black surface at room temperature radiates about 6 W·m⁻²·K⁻¹, the
+/// same order as still air, so a scene that named only convection would be wrong by about a
+/// factor of two and would look reasonable while it was.
+///
+/// ```json
+/// "cooling": [
+///   { "face": "z-max", "ambient_c": 20.0, "convection_w_per_m2_k": 25.0, "area_cm2": 4.0 }
+/// ]
+/// ```
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoolingSpec {
+    /// Which face.
+    pub face: FaceSpec,
+    /// The temperature of whatever it loses to.
+    pub ambient_c: f64,
+    /// Convective coefficient, W·m⁻²·K⁻¹.
+    pub convection_w_per_m2_k: f64,
+    /// The whole face's area, in square centimetres.
+    pub area_cm2: f64,
+}
+
+/// Which outer face of a block a [`CoolingSpec`] is about.
+///
+/// The block's own axes, which a `poses` entry is what places in the world. Spelled out rather
+/// than indexed because a file is read by a person and `faces[3]` is not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FaceSpec {
+    /// The `x = 0` face.
+    XMin,
+    /// The far face along `x`.
+    XMax,
+    /// The `y = 0` face.
+    YMin,
+    /// The far face along `y`.
+    YMax,
+    /// The `z = 0` face.
+    ZMin,
+    /// The far face along `z`.
+    ZMax,
+}
+
+impl FaceSpec {
+    /// The domain's own face.
+    fn to_face(self) -> dualis::thermal::Face {
+        use dualis::thermal::Face;
+        match self {
+            FaceSpec::XMin => Face::XMin,
+            FaceSpec::XMax => Face::XMax,
+            FaceSpec::YMin => Face::YMin,
+            FaceSpec::YMax => Face::YMax,
+            FaceSpec::ZMin => Face::ZMin,
+            FaceSpec::ZMax => Face::ZMax,
+        }
+    }
+}
+
+impl CoolingSpec {
+    /// Refuse a face that does not describe a surface losing heat.
+    fn check(&self, site: &str) -> Result<(), String> {
+        //  first, so the comparison that follows is between two numbers and the
+        // NaN case is not being caught by a negated inequality — which is what clippy asks
+        // for and is also the clearer reading.
+        if !self.area_cm2.is_finite() || self.area_cm2 <= 0.0 {
+            return Err(format!(
+                "{site}: area_cm2 is {}, and a face with no area loses nothing — which would \
+                 run as an insulated block and answer a different question in silence",
+                self.area_cm2
+            ));
+        }
+        if !self.convection_w_per_m2_k.is_finite() || self.convection_w_per_m2_k < 0.0 {
+            return Err(format!(
+                "{site}: convection_w_per_m2_k is {}, and a negative film would carry heat \
+                 uphill",
+                self.convection_w_per_m2_k
+            ));
+        }
+        if !self.ambient_c.is_finite() {
+            return Err(format!("{site}: ambient_c is {}", self.ambient_c));
+        }
+        Ok(())
     }
 }
 
