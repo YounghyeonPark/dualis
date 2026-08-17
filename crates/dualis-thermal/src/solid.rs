@@ -1690,9 +1690,11 @@ impl ScalarField for Solid3D {
         let (nx, ny, nz) = self.counts;
         let q = p.to_si() / self.dx.to_si() - DVec3::splat(0.5);
         // NaN spelled out rather than folded into a comparison: a visualiser can hand one over,
-        // and it must not reach the cast below.
+        // and it must not reach the cast below. Answered with a `NaN` rather than with cell zero —
+        // a question about nowhere has no answer, and cell zero may itself be empty, in which case
+        // the old fallback returned a frozen number for a point that was never asked about.
         if q.is_nan() {
-            return self.cells[0];
+            return f64::NAN;
         }
         let axis = |v: f64, n: usize| -> (usize, f64) {
             let last = n.saturating_sub(1);
@@ -1748,14 +1750,26 @@ impl ScalarField for Solid3D {
         }
     }
 
-    /// Central differences on the cell grid, mirrored at the faces.
+    /// Central differences on the cell grid, mirrored at the faces **and at void**.
+    ///
+    /// A clearance is a boundary, and the block already knows what to do at one: mirror. Walking
+    /// off the outer edge and walking into nothing are the same situation — there is no sample
+    /// that way — so both return the asking cell and the difference becomes one-sided, which is
+    /// the insulated condition rather than a slope towards a number that is not there.
+    ///
+    /// `NaN` inside a clearance, for the same reason [`temperature_at`](Solid3D::temperature_at)
+    /// gives one: a gradient there is a value somebody would plot.
     fn gradient(&self, p: LengthVec, _t: Time, _h: Length) -> DVec3 {
         let (i, j, k) = self.nearest_cell(p);
+        if self.absent(i, j, k) {
+            return DVec3::splat(f64::NAN);
+        }
         let d = 2.0 * self.dx.to_si();
+        let m = |a: isize, b: isize, c: isize| self.mirrored_into(i, j, k, a, b, c);
         DVec3::new(
-            (self.mirrored(i + 1, j, k) - self.mirrored(i - 1, j, k)) / d,
-            (self.mirrored(i, j + 1, k) - self.mirrored(i, j - 1, k)) / d,
-            (self.mirrored(i, j, k + 1) - self.mirrored(i, j, k - 1)) / d,
+            (m(i + 1, j, k) - m(i - 1, j, k)) / d,
+            (m(i, j + 1, k) - m(i, j - 1, k)) / d,
+            (m(i, j, k + 1) - m(i, j, k - 1)) / d,
         )
     }
 
@@ -1767,14 +1781,21 @@ impl ScalarField for Solid3D {
     /// [`rate`](ScalarField::rate) is where that appears.
     fn laplacian(&self, p: LengthVec, _t: Time, _h: Length) -> f64 {
         let (i, j, k) = self.nearest_cell(p);
+        if self.absent(i, j, k) {
+            return f64::NAN;
+        }
         let dx = self.dx.to_si();
         let centre = self.mirrored(i, j, k);
-        let sum = self.mirrored(i - 1, j, k)
-            + self.mirrored(i + 1, j, k)
-            + self.mirrored(i, j - 1, k)
-            + self.mirrored(i, j + 1, k)
-            + self.mirrored(i, j, k - 1)
-            + self.mirrored(i, j, k + 1);
+        // Each neighbour that is not there mirrors back to the centre and contributes nothing to
+        // `sum - 6·centre`, which is exactly what an insulated face does — and exactly what a face
+        // touching a clearance carries, since the harmonic face mean is already zero there.
+        let m = |a: isize, b: isize, c: isize| self.mirrored_into(i, j, k, a, b, c);
+        let sum = m(i - 1, j, k)
+            + m(i + 1, j, k)
+            + m(i, j - 1, k)
+            + m(i, j + 1, k)
+            + m(i, j, k - 1)
+            + m(i, j, k + 1);
         (sum - 6.0 * centre) / (dx * dx)
     }
 
@@ -1791,6 +1812,13 @@ impl ScalarField for Solid3D {
         let clamp = |v: isize, n: usize| v.clamp(0, n as isize - 1) as usize;
         let (i, j, k) = (clamp(i, nx), clamp(j, ny), clamp(k, nz));
         let c = i + nx * (j + ny * k);
+        // Nothing does not warm at a rate, and the `is_finite` guard below would otherwise report
+        // that it warms at **zero** — `mobility` is `1/C`, a cell with no capacity has none, and
+        // `inf * 0.0` is the `NaN` that guard was written to catch coming from somewhere else.
+        // A confident zero here is indistinguishable from a solid cell in equilibrium.
+        if self.void[c] {
+            return f64::NAN;
+        }
         let t = self.cells[c];
         let (xr, yr) = ((nx + 1) * (j + ny * k), nx * (j + (ny + 1) * k));
         let mut flux = 0.0;
@@ -1822,6 +1850,33 @@ impl ScalarField for Solid3D {
 }
 
 impl Solid3D {
+    /// Whether the cell a stencil is asking about is not there — off the grid, or empty.
+    ///
+    /// The two cases are one case for a derivative: neither is a sample. Signed, so a stencil can
+    /// ask about a neighbour it has already walked off the edge to reach.
+    fn absent(&self, i: isize, j: isize, k: isize) -> bool {
+        let (nx, ny, nz) = self.counts;
+        let outside = |v: isize, n: usize| v < 0 || v >= n as isize;
+        if outside(i, nx) || outside(j, ny) || outside(k, nz) {
+            return true;
+        }
+        self.void[i as usize + nx * (j as usize + ny * k as usize)]
+    }
+
+    /// [`mirrored`](Solid3D::mirrored), but a neighbour that is **not there** mirrors back to the
+    /// cell that asked rather than to the edge of the grid.
+    ///
+    /// The distinction only shows up inside a block: `mirrored` clamps, so a stencil at cell 3
+    /// reaching into a clearance at cell 4 would be handed cell 4's frozen value. This hands back
+    /// cell 3, which is the one-sided difference a boundary deserves.
+    fn mirrored_into(&self, ci: isize, cj: isize, ck: isize, i: isize, j: isize, k: isize) -> f64 {
+        if self.absent(i, j, k) {
+            self.mirrored(ci, cj, ck)
+        } else {
+            self.mirrored(i, j, k)
+        }
+    }
+
     /// The value at a cell, with out-of-range indices mirrored back — an insulated face.
     ///
     /// A mirror rather than a zero, and the distinction is the whole boundary condition: a zero
