@@ -1,6 +1,6 @@
 # Scenes
 
-Twenty-three worlds described as data, covering seven of the library's eleven domains — twenty-two of them
+Twenty-four worlds described as data, covering seven of the library's eleven domains — twenty-three of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -16,7 +16,7 @@ pointing at a node the scene defines. It reports a parse failure as `file:line:c
 keys that were expected, which is what an editor puts a squiggle under. CI runs it over every
 scene, because it would otherwise be the one entry point nothing exercises.
 
-Every file carries a `format` number, and **absence means 1** — which is what all twenty-three here
+Every file carries a `format` number, and **absence means 1** — which is what all twenty-four here
 are: nothing has yet changed what an existing key means. A version this build cannot read is refused
 rather than half-run: `deny_unknown_fields` catches a key that was *added*, but not one whose
 meaning changed, and that is what the number is for.
@@ -32,7 +32,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 | `out.gltf` | The geometry of the last frame, for Blender, three.js, Omniverse or any USD tool |
 
-`.csv` is the one that reaches the domains a picture cannot. Twelve of these twenty-three scenes have
+`.csv` is the one that reaches the domains a picture cannot. Twelve of these twenty-four scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -54,7 +54,7 @@ simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` 
 `dualis_scene::capture` produces, and everything the table above describes is available to any
 program without going near a scene file.
 
-`.gltf` is the one that leaves this workspace. Fourteen of the twenty-three scenes have geometry to
+`.gltf` is the one that leaves this workspace. Fifteen of the twenty-four scenes have geometry to
 export — bodies, ray paths, a 3D field as its cell centres — and the other nine are **refused with
 a reason** rather than written as an empty scene: a 1D or 2D field is a graph, not something to put
 in a 3D viewer, and the message says which panel and why.
@@ -111,6 +111,7 @@ presence is itself the check that `"material": "ice"` reached the domain.
 
 | `22-wax-in-an-aluminium-matrix` | The same wax as `21`, now four fifths of a **composite** whose other fifth is aluminium — the scene's `composites` block mixes a declared substance with a catalogue one. It holds the same 28.150 °C, and `melted` climbs **125.8710 mm³/s against 100.6968** for the pure wax: exactly `1/0.8`, a ratio with no material property left in it. 1200.0000 J = 151.2823 warming + 1048.7177 melting, to `1.7e-14` |
 | `23-a-part-radiating-to-its-lid` | A hot part sealed in a housing, surrounded on five sides by **nothing** and facing a cooled lid across a two-cell clearance. The part has no conducting face to anywhere, so the only path its heat has is the parallel-plate exchange across the gap — which makes the whole thing a two-body lumped system with a closed form. It sheds **36.93 K in 600 s against 37.01 K** from an RK4 integration of `σA(T₁⁴−T₂⁴)/(1/ε₁+1/ε₂−1)` and `hA(T−T∞)`, agreeing to **0.20%**. The scene the format could not state until `regions` learned `initial_c` and `"void"`, and the answer is a **surface-finish** answer: the same geometry in polished copper, ε = 0.04, sheds 1.2 K |
+| `24-a-power-module-junction-to-ambient` | A silicon die dissipating **45 W** through the stack under it — solder, alumina DBC, copper, a 3000 W/m^2K cold plate. The scene the format could not state at all before `dissipation`: every other source here hands watts to the *bus*, which carries an amount and no location, so a die's heat would have spread over the baseplate as fast as over the die and there would be no junction temperature to read. At steady state it is a resistance stack, and the test writes every term of it out from the geometry: **181.19 C measured against 181.21 C** for a 3.1379 K/W path, agreeing to `1.1e-4` of the 141 K rise. The ceramic is 0.46 K/W of that and the film 2.31 |
 
 `22` is the pair to read with `21`, and the ratio between them is the whole point. Diluting the wax to four
 fifths by volume makes a cubic millimetre of buffer hold a fifth less latent heat, so the same twenty watts
@@ -284,7 +285,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all twenty-three on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all twenty-four on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

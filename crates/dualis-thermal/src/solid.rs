@@ -65,7 +65,8 @@ use dualis_core::conserved::quantity;
 use dualis_core::Reading;
 use dualis_core::{
     units::{
-        Area, Conductance, Energy, HeatCapacity, Length, LengthVec, Temperature, Time, Volume,
+        Area, Conductance, Energy, HeatCapacity, Length, LengthVec, Power, Temperature, Time,
+        Volume,
     },
     Domain, Exchange, Ledger, ScalarField, Substance, Violation,
 };
@@ -253,6 +254,24 @@ pub struct Solid3D {
     /// counter and the total moves only by what crossed the bus. `LumpedMass` keeps the same
     /// pair for the same reason.
     lost: f64,
+    /// Watts generated in each cell, held per cell rather than per region so a source and a
+    /// material can be cut by different boxes without either knowing about the other.
+    ///
+    /// **The gap this closes is one the bus cannot**, by design: the plain channel carries an
+    /// amount and no location, so heat arriving there spreads to a uniform rise over everything
+    /// that can hold it. That is the only choice that adds no information, and it is the wrong
+    /// answer for a die, a winding, a brake disc or a laser absorber — every real thing that
+    /// dissipates does it *somewhere*. Symmetric with [`Solid3D::losing_from`], which takes energy
+    /// out at a face; this puts it in at a region.
+    source: Vec<f64>,
+    /// Joules generated over the run, and the reason the books still balance: the ledger is
+    /// `stored + lost − supplied`, so a source that adds a joule to a cell adds one here too and
+    /// the total moves only by what crossed the bus.
+    supplied: f64,
+    /// The saved counterpart of [`Solid3D::supplied`], for the same reason [`Solid3D::lost`] has
+    /// one: an iterative sweep that rewinds the cells and not the counter would credit itself a
+    /// sweep of generated heat per retry.
+    saved_supplied: f64,
     /// The saved counterpart of [`Solid3D::lost`].
     ///
     /// Saved because `LumpedMass` learned this the expensive way: rewinding the cells and not
@@ -387,6 +406,9 @@ impl Solid3D {
             cap_liquid: Vec::new(),
             worst_rate: 0.0,
             void: vec![false; counts.0 * counts.1 * counts.2],
+            source: vec![0.0; counts.0 * counts.1 * counts.2],
+            supplied: 0.0,
+            saved_supplied: 0.0,
             gaps: Vec::new(),
             face_sum: Vec::new(),
             exposed: BTreeMap::new(),
@@ -1018,6 +1040,89 @@ impl Solid3D {
         self.exposed.insert(face, environment);
         self.resolve();
         self
+    }
+
+    /// Generate `watts` **spread evenly over the cells `where_` selects**, replacing whatever
+    /// those cells generated before.
+    ///
+    /// The total is the watts given, not watts per cell: a die dissipating 50 W dissipates 50 W
+    /// whether the grid gives it eight cells or eight thousand, so a scene's answer does not move
+    /// when its grid refines. That is what makes a source stated this way survive `verify`'s
+    /// resolution sweep, and it is the opposite of the choice a per-cell figure would force.
+    ///
+    /// Void cells are skipped and do not count toward the spread — nothing generates nothing — so
+    /// a box drawn around a part and its clearance heats the part at the full rate rather than
+    /// losing a share of it to the gap.
+    ///
+    /// Selecting no solid cell is not an error here, because a caller building an assembly cell by
+    /// cell passes through that state; the watts simply have nowhere to go and none are generated.
+    /// A *scene* refuses it, because a scene saying 50 W and meaning none is a different mistake.
+    pub fn dissipating(
+        mut self,
+        watts: f64,
+        where_: impl Fn(usize, usize, usize) -> bool,
+    ) -> Solid3D {
+        let (nx, ny, nz) = self.counts;
+        let mut chosen = Vec::new();
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let c = i + nx * (j + ny * k);
+                    if !self.void[c] && where_(i, j, k) {
+                        chosen.push(c);
+                    }
+                }
+            }
+        }
+        if chosen.is_empty() {
+            return self;
+        }
+        let each = watts / chosen.len() as f64;
+        for c in chosen {
+            self.source[c] = each;
+        }
+        self.resolve();
+        self
+    }
+
+    /// How many **solid** cells a predicate selects.
+    ///
+    /// What a caller needs in order to refuse a source that would be generated nowhere: the block
+    /// itself allows that state, because assembling cell by cell passes through it, and a scene
+    /// does not.
+    pub fn cells_on_where(&self, where_: &dyn Fn(usize, usize, usize) -> bool) -> usize {
+        let (nx, ny, nz) = self.counts;
+        let mut n = 0;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    if !self.void[i + nx * (j + ny * k)] && where_(i, j, k) {
+                        n += 1;
+                    }
+                }
+            }
+        }
+        n
+    }
+
+    /// Whether anything in this block generates at all, so a block with no source pays nothing for
+    /// the feature — which every scene written before it existed relies on.
+    fn supplies(&self) -> bool {
+        self.source.iter().any(|w| *w != 0.0)
+    }
+
+    /// Total watts generated, summed over the cells.
+    ///
+    /// What a caller gets back is what it asked for, which is worth being able to check: a source
+    /// spread over cells and then read back through a different route is exactly where a factor of
+    /// the cell count hides.
+    pub fn generated_power(&self) -> Power {
+        Power::from_si(self.source.iter().sum())
+    }
+
+    /// Joules generated over the run.
+    pub fn generated_energy(&self) -> Energy {
+        Energy::from_si(self.supplied)
     }
 
     /// Heat given up to the exposed faces' environments over the run.
@@ -1730,6 +1835,34 @@ impl Domain for Solid3D {
         // **Antisymmetric**, so the pair conserves exactly: what leaves one arrives in the
         // other, in the same statement, and `Σ Cᵢ Tᵢ` is unchanged to the last bit as it is for
         // a conduction face.
+        // **Heat that does have a place**, added after the sweep rather than before it.
+        //
+        // The distinction is not cosmetic and this learned it by measuring. A forward step is
+        // `T′ = T + (dt/C)(P + F(T))`: the source and the conduction are both evaluated at the
+        // state the step *began* with. The first version applied the source to `cells` before
+        // `old` was taken, so the stencil saw the generated joules and conducted a share of them
+        // away inside the same step — a share equal to `G·dt/C`, which for an explicit sweep at
+        // its own stability limit is about a half. **The steady state then depended on the
+        // timestep**, which is the failure that matters: a bar generating at one end and cooled at
+        // the other dropped `P·dx/(kA)` across every gap except the first, and exactly half of it
+        // across that one.
+        //
+        // Splitting it costs nothing in order, unlike the film and the gap exchange above. Those
+        // are fluxes proportional to `T`, so applying them separately is Lie splitting with a real
+        // error; a constant source commutes with everything and `dT/dt = S` is solved exactly by
+        // adding `S·dt`.
+        if self.supplies() {
+            let dts = dt.to_si();
+            for c in 0..self.cells.len() {
+                if self.source[c] == 0.0 || self.void[c] {
+                    continue;
+                }
+                let joules = self.source[c] * dts;
+                self.add_kelvin(c, joules / self.capacity[c]);
+                self.supplied += joules;
+            }
+        }
+
         if !self.gaps.is_empty() {
             let dts = dt.to_si();
             for (a, b, coefficient) in self.gaps.clone() {
@@ -1773,7 +1906,24 @@ impl Domain for Solid3D {
         // `books_balance` survives a block that sheds heat to air. `LumpedMass` carries the
         // same pair for the same reason; what differs is that this one keeps the claim,
         // because every joule it sheds is counted here in the same step it leaves a cell.
-        Ledger::new().with(quantity::ENERGY, self.stored_heat() + self.lost)
+        // `stored + lost − supplied`. A source is energy entering from outside the domain, so it
+        // is subtracted here for the same reason `lost` is added: the ledger is what the *bus*
+        // moved, and a joule this block generated for itself never crossed it. Without the term a
+        // dissipating block's books grow by its own output every step and the audit stops the run.
+        // Three contributions rather than their sum, and the difference is the whole reason
+        // `Ledger` records a scale. `add` raises that scale to the largest single entry, and the
+        // audit judges a change against it — which is what makes a relative tolerance mean
+        // anything when the net is near zero.
+        //
+        // Adding them here first threw that away. A block that starts at its own reference
+        // temperature stores nothing, so a scene stating a source opened its books at **exactly
+        // zero**, and the first 3.7e-11 J of rounding was judged a 100% change: the audit stopped
+        // a correct run on its first step. The sum is the same; the scale is now the size of the
+        // numbers the rounding actually lives on.
+        Ledger::new()
+            .with(quantity::ENERGY, self.stored_heat())
+            .with(quantity::ENERGY, self.lost)
+            .with(quantity::ENERGY, -self.supplied)
     }
 
     /// The temperatures **and** the phase, because a temperature alone is not a state.
@@ -1789,12 +1939,14 @@ impl Domain for Solid3D {
         // that rewinds the cells and not the counter grows its books by one sweep of shed heat
         // per iteration, and the audit reports energy created from nothing.
         self.saved_lost = self.lost;
+        self.saved_supplied = self.supplied;
     }
 
     fn restore(&mut self) {
         self.cells.clone_from(&self.saved);
         self.melted.clone_from(&self.saved_melted);
         self.lost = self.saved_lost;
+        self.supplied = self.saved_supplied;
     }
 
     fn supports_restore(&self) -> bool {
@@ -1829,6 +1981,20 @@ impl Domain for Solid3D {
             ),
             Reading::new(&self.name, "absorbed", self.absorbed_energy().to_si(), "J"),
         ];
+        // What the block made for itself, and **only** for a block that makes any. A source
+        // nobody can see in the report is the shape this workspace calls a silent failure: the
+        // run would be right and the reader would have no way to tell 45 W from 45 mW. Conditional
+        // for the same reason `melted` is — a column of zeros in every other report costs a line
+        // in all of them and tells nobody anything — and the condition is fixed at construction,
+        // so it is not a mode that can surprise somebody mid-run.
+        if self.supplies() {
+            out.push(Reading::new(
+                &self.name,
+                "generated",
+                self.generated_energy().to_si(),
+                "J",
+            ));
+        }
         // The melted volume, and **only** for a block that can melt. A column of zeros in every
         // report tells a reader nothing and costs a line in all of them; the condition is a property
         // of the block's materials fixed at construction, so it is not a mode that can surprise

@@ -753,6 +753,16 @@ pub enum DomainSpec {
         /// designer asks.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         cooling: Vec<CoolingSpec>,
+        /// Boxes that **generate** heat, and how many watts. See [`DissipationSpec`].
+        ///
+        /// The key without which no real application can be written. Every other source in this
+        /// format hands watts to the bus, and the bus carries an amount and no location by
+        /// design — heat arriving there spreads to a uniform rise over everything that can hold
+        /// it, which is the only choice that adds no information and the wrong answer for a die,
+        /// a winding, a brake disc or a laser absorber. All of them dissipate *somewhere*, and
+        /// the gradient between there and the heatsink is the question.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        dissipation: Vec<DissipationSpec>,
     },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
@@ -1659,6 +1669,7 @@ impl DomainSpec {
                 hot_spot,
                 parts,
                 cooling,
+                dissipation,
             } => {
                 let bulk = palette.get(name, material.as_deref().unwrap_or("aluminium"))?;
                 let mut block = dualis::thermal::Solid3D::new(
@@ -1821,6 +1832,39 @@ impl DomainSpec {
                 // the two agree only when the gap is narrow compared with the surfaces. Reported
                 // rather than chosen: which reading is right is a statement about the geometry
                 // that the grid cannot make, and a number is worth more than a caveat.
+                for (n, d) in dissipation.iter().enumerate() {
+                    let site = format!("{name}/dissipation[{n}]");
+                    let empty = (0..3).any(|a| d.to[a] <= d.from[a]);
+                    let outside = (0..3).any(|a| d.to[a] > cells[a]);
+                    if empty || outside {
+                        return Err(format!(
+                            "{site}: {:?}..{:?} selects no cells of a {}x{}x{} block; `to` is one \
+                             past the last cell, so a single cell is `to = from + 1`",
+                            d.from, d.to, cells[0], cells[1], cells[2]
+                        ));
+                    }
+                    if !d.watts.is_finite() {
+                        return Err(format!("{site}: {} is not a number of watts", d.watts));
+                    }
+                    let inside = |i: usize, j: usize, k: usize| {
+                        let p = [i, j, k];
+                        (0..3).all(|a| p[a] >= d.from[a] && p[a] < d.to[a])
+                    };
+                    // Everything in the box is nothing, so the watts have nowhere to go. The
+                    // library allows that state because a caller building an assembly cell by cell
+                    // passes through it; a scene may not, because a file saying 45 W and meaning
+                    // none is the quiet kind of wrong.
+                    let solid = block.cells_on_where(&inside);
+                    if solid == 0 {
+                        return Err(format!(
+                            "{site}: every cell in {:?}..{:?} is empty, so the {} W it states \
+                             would be generated nowhere",
+                            d.from, d.to, d.watts
+                        ));
+                    }
+                    block = block.dissipating(d.watts, inside);
+                }
+
                 for patch in block.gap_patches() {
                     let f = patch.view_factor();
                     if f >= 0.95 {
@@ -1897,6 +1941,37 @@ pub struct PartSpec {
     pub stl: String,
     /// What the part is made of: a catalogue name or one of [`Scene::materials`].
     pub material: String,
+}
+
+/// A box of cells that generates heat, in watts.
+///
+/// ```json
+/// "dissipation": [
+///   { "watts": 45.0, "from": [3, 3, 6], "to": [6, 6, 7] }
+/// ]
+/// ```
+///
+/// The watts are the **total** for the box, not a figure per cell: a die dissipating 45 W
+/// dissipates 45 W whether the grid gives it eight cells or eight thousand. That is what makes a
+/// dissipating scene survive `verify`'s resolution sweep, and it is the opposite of the choice a
+/// per-cell figure would force — the answer would then grow with the mesh and there would be no
+/// convergence to measure.
+///
+/// Void cells inside the box generate nothing and take no share, so a box drawn around a part and
+/// its clearance heats the part at the full rate. A box that selects only void, or no cell at all,
+/// is **refused**: a scene that says 45 W and means none is a mistake worth naming.
+///
+/// Boxes may overlap. Later wins, the same last-writer rule `regions` and `parts` follow, because
+/// two files saying the same thing have to mean the same thing.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DissipationSpec {
+    /// Total watts generated in this box.
+    pub watts: f64,
+    /// The first cell of the box, inclusive.
+    pub from: [usize; 3],
+    /// One past the last cell, so a single cell is `to = from + 1`.
+    pub to: [usize; 3],
 }
 
 /// One face of a [`DomainSpec::Block`] losing heat to still or moving air.

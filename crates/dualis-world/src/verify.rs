@@ -57,7 +57,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{DomainSpec, OnDisk, Parts, Scene, World};
+use crate::{DissipationSpec, DomainSpec, OnDisk, Parts, Scene, World};
 use dualis::core::Reading;
 use dualis::prelude::*;
 
@@ -827,6 +827,7 @@ impl DomainSpec {
                 hot_spot,
                 parts,
                 cooling,
+                dissipation,
             } => {
                 if hot_spot.is_some() {
                     return Err(format!(
@@ -865,6 +866,18 @@ impl DomainSpec {
                     // way, on a finer grid. A per-cell area would have to be halved here and
                     // the sweep would be comparing two different problems.
                     cooling: cooling.clone(),
+                    // The box doubles with the grid and the **watts do not**: a die dissipating
+                    // 45 W dissipates 45 W at any resolution. Getting this backwards is the
+                    // mistake the resolution sweep exists to catch, and it would have looked like
+                    // a physics finding rather than a refinement bug.
+                    dissipation: dissipation
+                        .iter()
+                        .map(|d| DissipationSpec {
+                            watts: d.watts,
+                            from: [d.from[0] * 2, d.from[1] * 2, d.from[2] * 2],
+                            to: [d.to[0] * 2, d.to[1] * 2, d.to[2] * 2],
+                        })
+                        .collect(),
                 })
             }
             DomainSpec::Conductor {

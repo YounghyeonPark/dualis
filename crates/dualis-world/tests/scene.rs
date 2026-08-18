@@ -372,6 +372,95 @@ fn a_region_can_start_hot_and_nothing_cannot() {
     );
 }
 
+/// **A scene can say where the heat is made, and is refused when it says nowhere.**
+///
+/// The gap this key closes is structural rather than cosmetic. Every other source in this format
+/// hands watts to the bus, and the bus carries an amount and no location *by design* — heat
+/// arriving there spreads to a uniform rise over everything that can hold it, which is the only
+/// choice that adds no information and the wrong answer for every real thing that dissipates.
+///
+/// The refusals matter as much as the key. A box that selects no cell, or only void, is a scene
+/// that states watts and generates none — and it would run, conserve, and answer a question about
+/// a different object.
+#[test]
+fn a_scene_can_state_where_its_heat_is_made() {
+    let block = |extra: &str| {
+        format!(
+            r#"{{ "title": "t", "schedule": "multirate", "duration_s": 1e-3, "frames": 2,
+              "domains": [{{ "kind": "block", "name": "b", "cells": [4, 4, 4],
+                "cell_mm": 5.0, "initial_c": 20.0{extra} }}] }}"#
+        )
+    };
+
+    let good = block(r#", "dissipation": [{ "watts": 30.0, "from": [0, 0, 0], "to": [2, 2, 2] }]"#);
+    let world = World::build(serde_json::from_str(&good).expect("parses")).expect("builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert!(
+        (b.generated_power().to_si() - 30.0).abs() < 1e-12,
+        "the watts stated are the watts held: {} W",
+        b.generated_power().to_si()
+    );
+
+    // **The total is the box's, not the cell's.** Eight cells or one, the block generates 30 W —
+    // which is what lets `verify` refine the grid without changing the physics.
+    let one = block(r#", "dissipation": [{ "watts": 30.0, "from": [0, 0, 0], "to": [1, 1, 1] }]"#);
+    let world = World::build(serde_json::from_str(&one).expect("parses")).expect("builds");
+    let b = world
+        .simulation()
+        .domain_as::<dualis::thermal::Solid3D>("b")
+        .expect("it is a block");
+    assert!((b.generated_power().to_si() - 30.0).abs() < 1e-12);
+
+    // Absence generates nothing, which every scene written before this key existed relies on.
+    let none = World::build(serde_json::from_str(&block("")).expect("parses")).expect("builds");
+    assert_eq!(
+        none.simulation()
+            .domain_as::<dualis::thermal::Solid3D>("b")
+            .expect("it is a block")
+            .generated_power()
+            .to_si(),
+        0.0
+    );
+
+    for (why, spec) in [
+        (
+            "an empty range",
+            r#", "dissipation": [{ "watts": 30.0, "from": [0, 0, 0], "to": [0, 4, 4] }]"#,
+        ),
+        (
+            "a cell the block does not have",
+            r#", "dissipation": [{ "watts": 30.0, "from": [0, 0, 0], "to": [4, 4, 5] }]"#,
+        ),
+        (
+            "watts that are not a number",
+            r#", "dissipation": [{ "watts": null, "from": [0, 0, 0], "to": [4, 4, 4] }]"#,
+        ),
+    ] {
+        let parsed: Result<Scene, _> = serde_json::from_str(&block(spec));
+        let refused = match parsed {
+            Err(_) => true, // `null` is not a number and never reaches the builder
+            Ok(scene) => World::build(scene).is_err(),
+        };
+        assert!(refused, "{why} must be refused");
+    }
+
+    // A box entirely inside a clearance states watts that would be generated nowhere.
+    let in_void = block(
+        r#", "regions": [{ "material": "void", "from": [0, 0, 0], "to": [4, 4, 2] }],
+             "dissipation": [{ "watts": 30.0, "from": [0, 0, 0], "to": [4, 4, 2] }]"#,
+    );
+    let Err(err) = World::build(serde_json::from_str(&in_void).expect("parses")) else {
+        panic!("watts generated in nothing must be refused");
+    };
+    assert!(
+        err.contains("b/dissipation[0]") && err.contains("nowhere"),
+        "the refusal should say which box and why: {err}"
+    );
+}
+
 /// Two domains that do not interact still run, and both are captured.
 #[test]
 fn a_scene_can_hold_more_than_one_domain() {
@@ -1803,6 +1892,90 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 assert!(
                     lid > 293.15 + 1.0 && lid < end - 100.0,
                     "{name}: the lid should warm a little and stay cold, {lid:.2} K against a part at {end:.2} K"
+                );
+            }
+            "24-a-power-module-junction-to-ambient.json" => {
+                // A die dissipating 45 W through the stack under it — solder, DBC ceramic, copper,
+                // a cold plate. The scene the format could not state at all until `dissipation`
+                // existed: every other source here hands watts to the bus, and the bus carries an
+                // amount and no location, so a die's heat would have spread over the baseplate as
+                // fast as over the die and there would have been no junction temperature to read.
+                //
+                // **At steady state the answer is a resistance stack**, and every term in it is
+                // written out below from the geometry and the conductivities. Nothing is read back
+                // from the scene: the layers are named here, the harmonic face mean is the two
+                // half-cells in series, and the film carries the last half cell of copper.
+                let dx = 1.5e-3;
+                let area = (8.0 * dx) * (8.0 * dx);
+                let watts = 45.0;
+                let ambient = 40.0;
+                // k = 0,1,2 copper baseplate | 3 alumina | 4 copper | 5 solder | 6,7 silicon
+                let k_of = |layer: usize| match layer {
+                    3 => 24.0,      // Al2O3 96%
+                    5 => 58.0,      // SAC305
+                    6 | 7 => 148.0, // Si
+                    _ => 401.0,     // Cu ETP
+                };
+
+                // Centre to centre, half a cell of each material per face. This *is* the harmonic
+                // mean the sweep uses, written the other way round — as two resistances in series
+                // rather than as one averaged conductivity — so agreeing with it is a statement
+                // about the physics and not a repeat of the implementation.
+                let mut resistance = 0.0;
+                for upper in (1..8).rev() {
+                    resistance +=
+                        (dx / 2.0) / (k_of(upper) * area) + (dx / 2.0) / (k_of(upper - 1) * area);
+                }
+                // The bottom cell's own half, then the film.
+                resistance += (dx / 2.0) / (k_of(0) * area);
+                resistance += 1.0 / (3000.0 * area);
+
+                let junction = ambient + watts * resistance;
+                let peak = frames
+                    .last()
+                    .expect("frames")
+                    .readings
+                    .iter()
+                    .find(|r| r.label == "peak")
+                    .expect("a block reports its peak")
+                    .value;
+                println!(
+                    "  {name}: junction {peak:.2} C against a {resistance:.4} K/W stack giving                      {junction:.2} C — off {:.2e}",
+                    (peak - junction).abs() / (junction - ambient)
+                );
+                assert!(
+                    (peak - junction).abs() / (junction - ambient) < 2e-3,
+                    "{name}: {peak:.3} C against the stack's {junction:.3} C"
+                );
+
+                // **And it is steady**, or the agreement above is a coincidence of run length.
+                // The last two frames are 15 s apart and the junction must have stopped moving.
+                let earlier = frames[frames.len() - 2]
+                    .readings
+                    .iter()
+                    .find(|r| r.label == "peak")
+                    .expect("a peak")
+                    .value;
+                assert!(
+                    (peak - earlier).abs() < 0.05,
+                    "{name}: still climbing at the end, {earlier:.3} then {peak:.3} C"
+                );
+
+                // **The heat leaves where the scene said it does.** A stack whose film was on the
+                // wrong face would still reach a steady temperature, and a wrong one; the die must
+                // be the hottest thing and the baseplate the coldest.
+                let block = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("module")
+                    .expect("the module is a block");
+                assert!(
+                    block.temperature_at(4, 4, 7).to_si() > block.temperature_at(4, 4, 0).to_si(),
+                    "{name}: the die should be hotter than the baseplate"
+                );
+                assert!(
+                    (block.generated_power().to_si() - watts).abs() < 1e-12,
+                    "{name}: the scene states {watts} W and the block has {} W",
+                    block.generated_power().to_si()
                 );
             }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
