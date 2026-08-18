@@ -57,7 +57,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{DomainSpec, Scene, World};
+use crate::{DomainSpec, OnDisk, Parts, Scene, World};
 use dualis::core::Reading;
 use dualis::prelude::*;
 
@@ -117,8 +117,8 @@ pub struct Measured {
 /// The loop is `World::run`'s — advance, close the feedback, capture — with the ledger read
 /// before and after each advance and the stability limits read before each. A violation aborts
 /// with the kernel's own message, because a run the audit refused has no margins to report.
-fn run_measured(scene: &Scene) -> Result<Measured, String> {
-    let mut world = World::build(scene.clone())?;
+fn run_measured(scene: &Scene, files: &dyn Parts) -> Result<Measured, String> {
+    let mut world = World::build_with(scene.clone(), files)?;
     let dt = Time::from_si(scene.duration_s / scene.frames as f64);
     let placed = world.placements();
 
@@ -468,11 +468,11 @@ pub struct Battery {
 /// base run from finishing at all: a staggered or one-way schedule takes the whole window in
 /// one step, and a window past a wave domain's CFL limit amplifies every mode it has. Waiting
 /// for the run to measure this would report the crash and not the cause.
-fn stability_hazard(scene: &Scene) -> Result<Vec<String>, String> {
+fn stability_hazard(scene: &Scene, files: &dyn Parts) -> Result<Vec<String>, String> {
     if matches!(scene.schedule, crate::ScheduleSpec::Multirate) {
         return Ok(Vec::new());
     }
-    let world = World::build(scene.clone())?;
+    let world = World::build_with(scene.clone(), files)?;
     let window_s = scene.duration_s / scene.frames as f64;
     let mut hazards = Vec::new();
     for d in world.sim.domains() {
@@ -500,9 +500,18 @@ fn stability_hazard(scene: &Scene) -> Result<Vec<String>, String> {
 /// `2³ × 4` the base for a three-dimensional multirate domain. That cost is the price of the
 /// measurements; a battery that only read the one run could only repeat what the audit said.
 pub fn verify(scene: &Scene, deep: bool) -> Result<Battery, String> {
-    let mut findings = stability_hazard(scene)?;
+    verify_with(scene, deep, &OnDisk)
+}
 
-    let base = match run_measured(scene) {
+/// The battery, with `parts` taken from `files` rather than from a disk.
+///
+/// The same battery. A scene assembled from uploaded CAD has to be verifiable or the browser is
+/// a viewer rather than an IDE — the refinement runs need the same bytes the base run had, and
+/// there is nowhere in a page to put them.
+pub fn verify_with(scene: &Scene, deep: bool, files: &dyn Parts) -> Result<Battery, String> {
+    let mut findings = stability_hazard(scene, files)?;
+
+    let base = match run_measured(scene, files) {
         Ok(b) => b,
         // A base run the audit refused still gets the hazard reported, because the hazard is
         // usually *why*: an over-limit staggered window amplifies until the books cannot close.
@@ -511,7 +520,7 @@ pub fn verify(scene: &Scene, deep: bool) -> Result<Battery, String> {
         }
         Err(e) => return Err(e),
     };
-    let again = run_measured(scene)?;
+    let again = run_measured(scene, files)?;
     let deterministic = base.digest == again.digest;
 
     if !deterministic {
@@ -548,8 +557,8 @@ pub fn verify(scene: &Scene, deep: bool) -> Result<Battery, String> {
         )
     } else {
         (
-            window_sweep(scene, &base, deep),
-            resolution_sweep(scene, &base, deep),
+            window_sweep(scene, &base, deep, files),
+            resolution_sweep(scene, &base, deep, files),
         )
     };
 
@@ -612,13 +621,13 @@ fn deepen(sweep: &mut Sweep, base: &Measured, middle: &Measured, finest: &Measur
     }
 }
 
-fn window_sweep(scene: &Scene, base: &Measured, deep: bool) -> SweepOutcome {
+fn window_sweep(scene: &Scene, base: &Measured, deep: bool, files: &dyn Parts) -> SweepOutcome {
     let halve = |s: &Scene, factor: usize| {
         let mut finer = s.clone();
         finer.frames *= factor;
         finer
     };
-    let half = match run_measured(&halve(scene, 2)) {
+    let half = match run_measured(&halve(scene, 2), files) {
         Ok(m) => m,
         Err(e) => return SweepOutcome::Failed(format!("with the window halved, {e}")),
     };
@@ -627,7 +636,7 @@ fn window_sweep(scene: &Scene, base: &Measured, deep: bool) -> SweepOutcome {
         sweep.broken.push(format!("in the halved-window run: {a}"));
     }
     if deep {
-        match run_measured(&halve(scene, 4)) {
+        match run_measured(&halve(scene, 4), files) {
             Ok(quarter) => deepen(&mut sweep, base, &half, &quarter),
             Err(e) => return SweepOutcome::Failed(format!("with the window quartered, {e}")),
         }
@@ -635,12 +644,12 @@ fn window_sweep(scene: &Scene, base: &Measured, deep: bool) -> SweepOutcome {
     SweepOutcome::Ran(sweep)
 }
 
-fn resolution_sweep(scene: &Scene, base: &Measured, deep: bool) -> SweepOutcome {
+fn resolution_sweep(scene: &Scene, base: &Measured, deep: bool, files: &dyn Parts) -> SweepOutcome {
     let twice = match scene.refined() {
         Ok(s) => s,
         Err(why) => return SweepOutcome::Skipped(why),
     };
-    let fine = match run_measured(&twice) {
+    let fine = match run_measured(&twice, files) {
         Ok(m) => m,
         Err(e) => return SweepOutcome::Failed(format!("refined 2x, {e}")),
     };
@@ -655,7 +664,7 @@ fn resolution_sweep(scene: &Scene, base: &Measured, deep: bool) -> SweepOutcome 
             Ok(s) => s,
             Err(why) => return SweepOutcome::Skipped(why),
         };
-        match run_measured(&four) {
+        match run_measured(&four, files) {
             Ok(finer) => deepen(&mut sweep, base, &fine, &finer),
             Err(e) => return SweepOutcome::Failed(format!("refined 4x, {e}")),
         }

@@ -10,6 +10,35 @@ cd site && python -m http.server 8000      # any static server; wasm needs http,
 Then open `http://localhost:8000`. Edit the scene on the left, **run**, scrub the frames, and
 **verify**. The physics is running in the tab: there is no backend, and nothing is uploaded.
 
+## CAD
+
+**add CAD**, or drop the files on the window. A `.json` dropped here is a scene and anything else
+is a part, because guessing wrong about which is which is worse than having two ways in.
+
+The bytes go into the wasm module and stay there. A scene's `parts` names a file:
+
+```json
+"parts": [
+  { "stl": "bracket.stl", "material": "aluminium" },
+  { "stl": "insert.stl",  "material": "copper" }
+]
+```
+
+On a machine that string is a path. Here there is no filesystem, so it is the **name the file was
+dropped under** — and the two are the same scene, which is the point rather than a convenience.
+`World::build` reads from a disk, `World::build_with` reads from wherever it is given, and a test
+asserts the same STL voxelises to the same block cell by cell from either source. If those could
+diverge this page would be a demo: a thing that looks like the product and answers a slightly
+different question.
+
+Naming a file that is not here is refused, and the refusal lists the names that **are** — somebody
+with three files in a tab and one misspelling should be told which spellings exist rather than
+"not found".
+
+Everything a part costs is reported the way the CLI reports it: filled cells, volume error, how
+much of it is in boundary cells, thin runs, triangles under a cell. A rib finer than the grid does
+not fail, it *disappears*, and the run is perfectly well behaved about a different object.
+
 ## Why there is no server
 
 The whole library compiles to `wasm32-unknown-unknown` — kernel, eleven domains, the scene
@@ -32,6 +61,13 @@ a run produces its frames, the field becomes cells with **Planck's colours** and
 so, a cool field says *false colour* instead, and the battery returns its report. The module
 imports nothing, so any host can run it — and a page nobody clicks proves as little as a window
 nobody photographs.
+
+The CAD path is in there too, end to end in a host that is not a browser: the test writes a
+**binary STL from the format's own layout**, hands it across the boundary, and checks that a
+20 mm box on a 20 mm block fills all 64 cells — which is the claim that says the bytes were read
+as millimetres and landed where the scene put them, rather than merely parsing. Then it forgets
+the file and asserts the same scene is refused again, because a page that lets somebody remove a
+part and keeps running the old bytes shows a stale answer as a fresh one.
 
 That test earned its place immediately: it found that `run` would happily execute the last text
 handed to `check` **even when the check had failed**, because the page's disabled button was the

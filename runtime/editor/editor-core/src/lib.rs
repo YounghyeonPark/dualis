@@ -29,7 +29,13 @@
 #![deny(missing_docs)]
 
 use dualis::units::LengthVec;
-use dualis_world::{Scene, World};
+use dualis_world::{Parts, Scene, World};
+
+/// Where a scene's `parts` come from, re-exported so a shell talks to this crate and not past it.
+///
+/// The native editor has a filesystem and uses [`OnDisk`]; the browser has uploads and uses
+/// [`Uploaded`]. Both are the same scene format and the same builder — see [`Parts`].
+pub use dualis_world::{OnDisk, Uploaded};
 
 /// One placed extent, as the eight corners of its box in world coordinates, in metres.
 ///
@@ -91,7 +97,7 @@ pub struct Checked {
 /// CLI cannot disagree about what a valid scene is. Geometry is laid out from the *parsed*
 /// scene even when the build fails, because "the beam's face count disagrees with the bar's"
 /// is exactly when a person wants to be looking at the boxes.
-pub fn check(text: &str) -> Checked {
+pub fn check(text: &str, files: &dyn Parts) -> Checked {
     let scene: Scene = match serde_json::from_str(text) {
         Ok(s) => s,
         Err(e) => {
@@ -102,7 +108,7 @@ pub fn check(text: &str) -> Checked {
         }
     };
 
-    let (error, notes) = match World::build(scene.clone()) {
+    let (error, notes) = match World::build_with(scene.clone(), files) {
         Ok(world) => (None, world.notes().to_vec()),
         Err(e) => (Some(e), Vec::new()),
     };
@@ -172,11 +178,11 @@ pub fn check(text: &str) -> Checked {
 /// Run the scene and return the run as JSON — the same bytes `dualis-world scene.json out.json`
 /// writes, which is the format `viewer-core` reads. A violation is the error, worded by the
 /// kernel.
-pub fn run(text: &str) -> Result<String, String> {
+pub fn run(text: &str, files: &dyn Parts) -> Result<String, String> {
     let scene: Scene =
         serde_json::from_str(text).map_err(|e| format!("{}:{}: {e}", e.line(), e.column()))?;
     let title = scene.title.clone();
-    let mut world = World::build(scene)?;
+    let mut world = World::build_with(scene, files)?;
     let frames = world.run().map_err(|v| {
         format!(
             "the audit stopped the run at t = {:.4} s: {v}",
@@ -216,6 +222,7 @@ pub enum RunEnd {
 /// debugging a violation wants.
 pub fn run_streaming(
     text: &str,
+    files: &dyn Parts,
     stop: &std::sync::atomic::AtomicBool,
     mut emit: impl FnMut(String),
 ) -> Result<RunEnd, String> {
@@ -224,7 +231,7 @@ pub fn run_streaming(
     let scene: Scene =
         serde_json::from_str(text).map_err(|e| format!("{}:{}: {e}", e.line(), e.column()))?;
     let title = scene.title.clone();
-    let mut world = World::build(scene.clone())?;
+    let mut world = World::build_with(scene.clone(), files)?;
     let dt = dualis::units::Time::from_si(scene.duration_s / scene.frames as f64);
     let placed = world.placements();
 
@@ -250,10 +257,10 @@ pub fn run_streaming(
 
 /// Run the verification battery and return its rendered report, with the findings count so
 /// the shell can be as loud as the CLI's exit code.
-pub fn verify(text: &str, deep: bool) -> Result<(String, usize), String> {
+pub fn verify(text: &str, deep: bool, files: &dyn Parts) -> Result<(String, usize), String> {
     let scene: Scene =
         serde_json::from_str(text).map_err(|e| format!("{}:{}: {e}", e.line(), e.column()))?;
-    let battery = dualis_world::verify::verify(&scene, deep)?;
+    let battery = dualis_world::verify::verify_with(&scene, deep, files)?;
     Ok((battery.render(), battery.findings.len()))
 }
 
@@ -274,7 +281,7 @@ mod tests {
     /// The check mirrors `--check`: a valid scene has no error, a summary, and geometry.
     #[test]
     fn a_valid_scene_checks_clean_and_lays_out() {
-        let c = check(ROOM);
+        let c = check(ROOM, &OnDisk);
         assert!(c.error.is_none(), "{:?}", c.error);
         assert_eq!(c.boxes.len(), 1);
         let b = c.bounds.expect("a room has geometry");
@@ -286,7 +293,7 @@ mod tests {
     /// and the failure must not blank the rest of the state, it IS the state.
     #[test]
     fn a_parse_error_names_its_line_and_column() {
-        let c = check("{ \"title\": ");
+        let c = check("{ \"title\": ", &OnDisk);
         let e = c.error.expect("truncated JSON is an error");
         assert!(
             e.starts_with("1:"),
@@ -304,7 +311,7 @@ mod tests {
             r#""domains": [
     { "kind": "room", "name": "room", "width_m": 1.0, "height_m": 1.0, "cells_across": 5 },"#,
         );
-        let c = check(&two_names);
+        let c = check(&two_names, &OnDisk);
         assert!(
             c.error
                 .as_deref()
@@ -335,7 +342,7 @@ mod tests {
     /// it back whole. This is the editor standing on the same contract the viewer proved.
     #[test]
     fn a_run_round_trips_through_the_wire_format() {
-        let json = run(ROOM).expect("the room runs");
+        let json = run(ROOM, &OnDisk).expect("the room runs");
         let run = viewer_core::Run::from_json(&json).expect("the viewer's reader accepts it");
         assert_eq!(run.frames.len(), 3, "two frames plus the initial capture");
         assert!(run.frames[0].panels.iter().any(|p| p.name() == "room"));
@@ -344,7 +351,7 @@ mod tests {
     /// The verify pass returns the same report the CLI prints, findings counted.
     #[test]
     fn verify_reports_and_counts_findings() {
-        let (report, findings) = verify(ROOM, false).expect("the battery runs");
+        let (report, findings) = verify(ROOM, false, &OnDisk).expect("the battery runs");
         assert_eq!(findings, 0, "{report}");
         assert!(report.contains("determinism     two runs, identical bytes"));
     }
@@ -356,7 +363,7 @@ mod tests {
     fn a_streamed_run_is_watchable_and_lands_on_the_batch_answer() {
         let stop = std::sync::atomic::AtomicBool::new(false);
         let mut payloads = Vec::new();
-        let end = run_streaming(ROOM, &stop, |j| payloads.push(j)).expect("the room runs");
+        let end = run_streaming(ROOM, &OnDisk, &stop, |j| payloads.push(j)).expect("the room runs");
         assert_eq!(end, RunEnd::Finished);
         // The initial capture, one per frame, and the settled final.
         assert_eq!(payloads.len(), 4);
@@ -365,7 +372,7 @@ mod tests {
         }
         assert_eq!(
             payloads.last().unwrap(),
-            &run(ROOM).unwrap(),
+            &run(ROOM, &OnDisk).unwrap(),
             "the stream must land on the batch answer to the byte"
         );
     }
@@ -377,7 +384,7 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         let stop = AtomicBool::new(false);
         let mut emitted = 0;
-        let end = run_streaming(ROOM, &stop, |_| {
+        let end = run_streaming(ROOM, &OnDisk, &stop, |_| {
             emitted += 1;
             stop.store(true, Ordering::Relaxed);
         })

@@ -98,7 +98,7 @@ fn a_run_carries_temperatures_the_viewport_can_colour() {
       "initial_c": 1200.0 }
   ]
 }"#;
-    let json = editor_core::run(scene).expect("the scene runs");
+    let json = editor_core::run(scene, &editor_core::OnDisk).expect("the scene runs");
     let run = viewer_core::Run::from_json(&json).expect("the viewer's reader accepts it");
     let panel = run.frames[0]
         .panels

@@ -35,6 +35,9 @@ struct State {
     checked: editor_core::Checked,
     run: Option<viewer_core::Run>,
     text: String,
+    /// CAD the page has handed over, by the name the scene will use for it. There is no
+    /// filesystem here, so this is the only place a part's bytes can live.
+    files: editor_core::Uploaded,
 }
 
 static mut STATE: Option<State> = None;
@@ -53,6 +56,7 @@ fn state() -> &'static mut State {
                 checked: editor_core::Checked::default(),
                 run: None,
                 text: String::new(),
+                files: editor_core::Uploaded::new(),
             });
         }
         STATE.as_mut().expect("just set")
@@ -78,6 +82,79 @@ pub unsafe extern "C" fn dualis_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
         drop(Vec::from_raw_parts(ptr, len, len));
     }
+}
+
+/// The uploaded set, cloned so a `&mut` state borrow is not held across the call.
+fn s_files() -> editor_core::Uploaded {
+    state().files.clone()
+}
+
+/// Take one uploaded file: a name and its bytes.
+///
+/// This is the whole reason the browser can do CAD at all. A scene's `parts` name a file, and on
+/// a machine that means a path — in a page there is no path and no filesystem, only bytes that
+/// arrived because somebody dropped a file on the window. The name is whatever the page calls it,
+/// and a scene that says `"stl": "bracket.stl"` finds it if the page uploaded it under that name.
+///
+/// Replaces silently on a repeat, which is what re-dropping an edited export should do.
+///
+/// # Safety
+///
+/// `name` must be valid for `name_len` bytes of UTF-8 and `data` for `data_len` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn dualis_part(
+    name: *const u8,
+    name_len: usize,
+    data: *const u8,
+    data_len: usize,
+) -> *mut u8 {
+    let label = borrow(name, name_len);
+    if label.is_empty() {
+        return give(serde_json::json!({ "error": "a part needs a name" }).to_string());
+    }
+    let bytes = if data.is_null() || data_len == 0 {
+        Vec::new()
+    } else {
+        std::slice::from_raw_parts(data, data_len).to_vec()
+    };
+    // An empty upload is refused here rather than at build time. A zero-byte file is what a
+    // failed read in the page looks like, and `Mesh::from_stl` would report it as a malformed
+    // mesh — true, and about the wrong thing.
+    if bytes.is_empty() {
+        return give(
+            serde_json::json!({ "error": format!("{label}: the upload was empty") }).to_string(),
+        );
+    }
+    let s = state();
+    s.files.insert(label, bytes);
+    give(parts_summary(&s.files))
+}
+
+/// Forget one uploaded file, or all of them when given an empty name.
+///
+/// # Safety
+///
+/// `name` must be valid for `name_len` bytes of UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn dualis_forget_part(name: *const u8, name_len: usize) -> *mut u8 {
+    let label = borrow(name, name_len);
+    let s = state();
+    if label.is_empty() {
+        s.files = editor_core::Uploaded::new();
+    } else {
+        s.files.remove(&label);
+    }
+    give(parts_summary(&s.files))
+}
+
+/// What the page shows in its upload list: the names, in order, and the total size.
+fn parts_summary(files: &editor_core::Uploaded) -> String {
+    serde_json::json!({
+        "error": serde_json::Value::Null,
+        "names": files.names(),
+        "bytes": files.total_bytes(),
+    })
+    .to_string()
 }
 
 /// Read a caller's buffer as a string, replacing invalid UTF-8 rather than refusing it: a
@@ -117,7 +194,7 @@ fn give(s: String) -> *mut u8 {
 #[no_mangle]
 pub unsafe extern "C" fn dualis_check(ptr: *const u8, len: usize) -> *mut u8 {
     let text = borrow(ptr, len);
-    let checked = editor_core::check(&text);
+    let checked = editor_core::check(&text, &s_files());
     let boxes: Vec<serde_json::Value> = checked
         .boxes
         .iter()
@@ -150,7 +227,7 @@ pub extern "C" fn dualis_run() -> *mut u8 {
     if let Some(why) = &s.checked.error {
         return give(serde_json::json!({ "error": why }).to_string());
     }
-    let out = match editor_core::run(&s.text) {
+    let out = match editor_core::run(&s.text, &s.files.clone()) {
         Ok(json) => match viewer_core::Run::from_json(&json) {
             Ok(run) => {
                 let n = run.frames.len();
@@ -182,7 +259,7 @@ pub extern "C" fn dualis_verify(deep: u32) -> *mut u8 {
     if let Some(why) = &s.checked.error {
         return give(serde_json::json!({ "error": why }).to_string());
     }
-    let out = match editor_core::verify(&s.text, deep != 0) {
+    let out = match editor_core::verify(&s.text, deep != 0, &s.files.clone()) {
         Ok((report, findings)) => serde_json::json!({ "report": report, "findings": findings }),
         Err(e) => serde_json::json!({ "error": e }),
     };

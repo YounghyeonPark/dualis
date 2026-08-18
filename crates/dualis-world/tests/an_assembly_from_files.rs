@@ -274,3 +274,106 @@ fn a_missing_file_and_an_empty_assembly_are_both_refused() {
     .expect("an assembly of nothing must refuse");
     assert!(why.contains("no cells"), "{why}");
 }
+
+/// **The same bytes give the same block whether they came from a disk or from a page.**
+///
+/// The claim the browser rests on. A scene's `parts` names a file, and on a machine that string is
+/// a path; in a tab there is no filesystem and it is a label for bytes somebody dropped on the
+/// window. If those two paths could diverge then the web editor would be a demo — a thing that
+/// looks like the product and answers a slightly different question — so this asserts they do not,
+/// cell by cell rather than by a summary that could agree while the grids differed.
+#[test]
+fn an_assembly_reads_the_same_from_memory_as_from_a_disk() {
+    let dir = scratch("both-ways");
+    let path = brick_stl(&dir, "part.stl", [0.0, 0.0, 0.0], [15.0, 10.0, 10.0]);
+    let bytes = std::fs::read(&path).expect("the fixture is there");
+
+    let json = |named: &str| {
+        format!(
+            r#"{{
+  "title": "one part, two sources",
+  "duration_s": 1.0, "frames": 2,
+  "domains": [
+    {{ "kind": "block", "name": "assembly", "cells": [4, 2, 2], "cell_mm": 5.0,
+      "initial_c": 20.0,
+      "parts": [{{ "stl": {named}, "material": "copper" }}] }}
+  ]
+}}"#
+        )
+    };
+
+    let block_of = |world: &dualis_world::World| {
+        let b = world
+            .simulation()
+            .domain_as::<dualis::thermal::Solid3D>("assembly")
+            .expect("the block is there");
+        let mut cells = Vec::new();
+        for k in 0..2 {
+            for j in 0..2 {
+                for i in 0..4 {
+                    cells.push((
+                        b.is_void(i, j, k),
+                        b.substance_at(i, j, k).name.to_string(),
+                        b.temperature_at(i, j, k).to_si().to_bits(),
+                    ));
+                }
+            }
+        }
+        cells
+    };
+
+    // The path is quoted by the JSON writer rather than by hand: a Windows path is full of
+    // separators that a hand-written string literal would have to escape, and getting that wrong
+    // is a test that fails for a reason unrelated to what it is about.
+    let quoted = serde_json::to_string(&path).expect("a path is a string");
+    let from_disk = World::build(scene(&json(&quoted))).expect("builds");
+    let uploaded = dualis_world::Uploaded::new().with("part.stl", bytes.clone());
+    let from_page = World::build_with(scene(&json("\"part.stl\"")), &uploaded).expect("builds");
+
+    assert_eq!(
+        block_of(&from_disk),
+        block_of(&from_page),
+        "the same STL must voxelise to the same block from either source"
+    );
+    // And it is not two empty blocks agreeing: a 15x10x10 mm brick fills three of the four
+    // columns of a 20x10x10 mm block, so twelve of sixteen cells are solid.
+    let solid = block_of(&from_page).iter().filter(|c| !c.0).count();
+    assert_eq!(solid, 12, "the brick should fill three columns of four");
+}
+
+/// **A part nobody uploaded is refused, and the refusal says what *is* there.**
+///
+/// The message is the feature. Somebody with three files in a tab and one misspelt name gets told
+/// which spellings exist, rather than "not found" and an afternoon.
+#[test]
+fn a_missing_upload_is_refused_by_name_and_lists_what_is_held() {
+    let json = r#"{
+  "title": "a part that is not here",
+  "duration_s": 1.0, "frames": 2,
+  "domains": [
+    { "kind": "block", "name": "assembly", "cells": [2, 2, 2], "cell_mm": 5.0,
+      "initial_c": 20.0,
+      "parts": [{ "stl": "bracket.stl", "material": "copper" }] }
+  ]
+}"#;
+
+    let empty = dualis_world::Uploaded::new();
+    let Err(err) = World::build_with(scene(json), &empty) else {
+        panic!("a part that was never uploaded must be refused");
+    };
+    assert!(
+        err.contains("assembly/parts[0]") && err.contains("nothing has been uploaded"),
+        "the site and the state, both: {err}"
+    );
+
+    let wrong = dualis_world::Uploaded::new()
+        .with("Bracket.STL", vec![0u8; 84])
+        .with("insert.stl", vec![0u8; 84]);
+    let Err(err) = World::build_with(scene(json), &wrong) else {
+        panic!("a near miss is still a miss");
+    };
+    assert!(
+        err.contains("Bracket.STL") && err.contains("insert.stl"),
+        "a near miss should show the spellings that are here: {err}"
+    );
+}

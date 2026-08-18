@@ -39,6 +39,7 @@
 
 <header>
   <label class="file">open<input id="open" type="file" accept=".json" hidden></label>
+  <label class="file">add CAD<input id="cad" type="file" accept=".stl" multiple hidden></label>
   <button id="save">save</button>
   <button id="run">run</button>
   <button id="verify">verify</button>
@@ -62,7 +63,7 @@
   </div>
 </main>
 
-<footer><span id="status">loading the physics…</span></footer>
+<footer><span id="status">loading the physics…</span><span class="sp"></span><span id="parts" style="color:var(--dim);font:11px ui-monospace,monospace">no CAD uploaded</span></footer>
 
 <script type="module">
 // The page paints and decides nothing. Every geometric and physical decision — what a scene
@@ -109,6 +110,23 @@ function call(fn, str) {
   const [ptr, len] = put(str);
   const out = take(fn(ptr, len));
   wasm.dualis_free(ptr, len);
+  return out;
+}
+
+// A part is a name and its bytes, and the bytes are not text — an STL is binary and encoding it
+// as UTF-8 would corrupt every float in it. Two buffers, both freed here.
+function putBytes(u8) {
+  const ptr = wasm.dualis_alloc(u8.length);
+  new Uint8Array(mem.buffer, ptr, u8.length).set(u8);
+  return [ptr, u8.length];
+}
+
+function sendPart(name, u8) {
+  const [np, nl] = put(name);
+  const [dp, dl] = putBytes(u8);
+  const out = take(wasm.dualis_part(np, nl, dp, dl));
+  wasm.dualis_free(np, nl);
+  wasm.dualis_free(dp, dl);
   return out;
 }
 
@@ -282,6 +300,55 @@ $('open').onchange = async e => {
   draw();
   status(`opened ${file.name}`);
 };
+// --- CAD -------------------------------------------------------------------------------------
+// The bytes go to the module and stay there. Nothing is uploaded anywhere: this page has no
+// server, the physics is a wasm module in the tab, and a scene that says `"stl": "bracket.stl"`
+// finds it because a file called that was handed over here.
+function showParts(out) {
+  if (out.error) { status(out.error, true); return; }
+  const n = out.names.length;
+  $('parts').textContent = n
+    ? `${n} part file(s): ${out.names.join(', ')} — ${(out.bytes / 1024).toFixed(0)} kB`
+    : 'no CAD uploaded';
+}
+
+async function addCad(files) {
+  let last = null;
+  for (const file of files) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    last = sendPart(file.name, buf);
+    if (last.error) break;
+  }
+  if (last) showParts(last);
+  if (last && !last.error) {
+    status(`${files.length} file(s) ready — name them in the scene's \`parts\``);
+    // A part that is now present may make a scene that was refused build, so re-check.
+    recheck();
+    draw();
+  }
+}
+
+$('cad').onchange = e => { addCad(e.target.files); e.target.value = ''; };
+
+// Dropping is what somebody with a CAD export in a folder actually does. A `.json` dropped here
+// is a scene and anything else is a part, because guessing wrong about which is which is worse
+// than having two ways in.
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  const all = [...e.dataTransfer.files];
+  const scenes = all.filter(f => f.name.toLowerCase().endsWith('.json'));
+  const parts = all.filter(f => !f.name.toLowerCase().endsWith('.json'));
+  if (parts.length) await addCad(parts);
+  if (scenes.length) {
+    $('text').value = await scenes[0].text();
+    recheck();
+    needsFit = true;
+    draw();
+    status(`opened ${scenes[0].name}`);
+  }
+});
+
 $('save').onclick = () => {
   const blob = new Blob([$('text').value], { type: 'application/json' });
   const a = document.createElement('a');

@@ -121,5 +121,116 @@ ok('verify returns a report', typeof verified.report === 'string' && verified.re
 ok('the report carries the determinism line', (verified.report || '').includes('determinism'));
 ok('a clean scene has no findings', verified.findings === 0, `${verified.findings} findings`);
 
+
+// --- CAD, which is the whole reason this page is an IDE and not a viewer ----------------------
+// A scene's `parts` names a file. On a machine that is a path; here there is no filesystem, so
+// the page hands the bytes over and the name is a label. The claims below run that path end to
+// end -- a real binary STL, built here from the format's own layout, through the boundary, into
+// the voxeliser -- in a host that is not a browser.
+
+function putBytes(u8) {
+  const ptr = w.dualis_alloc(u8.length);
+  new Uint8Array(mem.buffer, ptr, u8.length).set(u8);
+  return [ptr, u8.length];
+}
+function sendPart(name, u8) {
+  const nb = enc.encode(name);
+  const np = w.dualis_alloc(nb.length);
+  new Uint8Array(mem.buffer, np, nb.length).set(nb);
+  const [dp, dl] = putBytes(u8);
+  const out = take(w.dualis_part(np, nb.length, dp, dl));
+  w.dualis_free(np, nb.length);
+  w.dualis_free(dp, dl);
+  return out;
+}
+function forgetPart(name) {
+  const nb = enc.encode(name);
+  const np = w.dualis_alloc(Math.max(1, nb.length));
+  if (nb.length) new Uint8Array(mem.buffer, np, nb.length).set(nb);
+  const out = take(w.dualis_forget_part(np, nb.length));
+  w.dualis_free(np, Math.max(1, nb.length));
+  return out;
+}
+
+// A binary STL of an axis-aligned box, written from the format: 80 bytes of header, a
+// little-endian triangle count, then 50 bytes per triangle. Millimetres, which is what
+// `Mesh::from_stl` reads -- a fixture in metres voxelises to nothing, which is a mistake this
+// repository has already made once.
+function boxStl(lo, hi) {
+  const c = [
+    [lo[0], lo[1], lo[2]], [hi[0], lo[1], lo[2]], [hi[0], hi[1], lo[2]], [lo[0], hi[1], lo[2]],
+    [lo[0], lo[1], hi[2]], [hi[0], lo[1], hi[2]], [hi[0], hi[1], hi[2]], [lo[0], hi[1], hi[2]],
+  ];
+  const quads = [[0,1,2,3],[5,4,7,6],[4,5,1,0],[3,2,6,7],[4,0,3,7],[1,5,6,2]];
+  const tris = [];
+  for (const [a, b, cc, d] of quads) { tris.push([c[a], c[b], c[cc]]); tris.push([c[a], c[cc], c[d]]); }
+  const buf = new ArrayBuffer(84 + tris.length * 50);
+  const dv = new DataView(buf);
+  dv.setUint32(80, tris.length, true);
+  tris.forEach((t, i) => {
+    let o = 84 + i * 50 + 12;               // the normal is left at zero; the reader recomputes
+    for (const v of t) for (const x of v) { dv.setFloat32(o, x, true); o += 4; }
+  });
+  return new Uint8Array(buf);
+}
+
+const ASSEMBLY = JSON.stringify({
+  title: 'one uploaded part',
+  duration_s: 0.1, frames: 2,
+  domains: [{
+    kind: 'block', name: 'assembly', cells: [4, 4, 4], cell_mm: 5.0, initial_c: 20.0,
+    parts: [{ stl: 'bracket.stl', material: 'copper' }],
+  }],
+});
+
+// **A scene naming a file nobody uploaded is refused, and the refusal says what is here.**
+// The failure this prevents is the one that wastes an afternoon: a misspelt name and a message
+// that says only "not found", with three files sitting in the tab under other spellings.
+forgetPart('');
+const missing = call(w.dualis_check, ASSEMBLY);
+ok('an un-uploaded part is refused', !!missing.error && missing.error.includes('bracket.stl'),
+   JSON.stringify(missing.error));
+ok('and the refusal says nothing has been uploaded',
+   !!missing.error && missing.error.includes('nothing has been uploaded'), missing.error);
+
+// **Uploading reports what the module now holds**, which is what the page's list shows.
+const stl = boxStl([0, 0, 0], [20, 20, 20]);
+const added = sendPart('bracket.stl', stl);
+ok('an upload is acknowledged by name', !added.error && added.names.length === 1
+   && added.names[0] === 'bracket.stl', JSON.stringify(added));
+ok('and by size', added.bytes === stl.length, `${added.bytes} against ${stl.length}`);
+
+// **And now the same scene builds** -- same bytes, same builder, same voxeliser as the CLI.
+const built = call(w.dualis_check, ASSEMBLY);
+ok('the scene builds once its part is here', !built.error, JSON.stringify(built.error));
+ok('and the voxeliser reports what it cost',
+   built.notes.some(n => n.includes('bracket.stl') && n.includes('filled')),
+   JSON.stringify(built.notes));
+ok('and the block is drawn', built.boxes.length === 1, String(built.boxes.length));
+
+// **A 20 mm box on a 20 mm grid fills every cell**, the claim that says the bytes were read as
+// millimetres and landed where the scene put them rather than merely parsing.
+ok('a 20 mm part on a 20 mm block fills all 64 cells',
+   built.notes.some(n => n.includes('filled 64 cells')), JSON.stringify(built.notes));
+
+// **The run is the CLI's run.** A check that builds and a run that does not is the failure worth
+// separating, because the page shows the first and the user asked for the second.
+const ranOut = take(w.dualis_run());
+ok('an uploaded assembly runs', !ranOut.error, JSON.stringify(ranOut.error));
+
+// **Forgetting is real**, or a page that lets somebody remove a file would keep running the old
+// bytes and show a stale answer as a fresh one.
+const cleared = forgetPart('bracket.stl');
+ok('forgetting empties the list', !cleared.error && cleared.names.length === 0, JSON.stringify(cleared));
+const gone = call(w.dualis_check, ASSEMBLY);
+ok('and the scene is refused again', !!gone.error && gone.error.includes('bracket.stl'), gone.error);
+
+// **An empty upload is refused where it can be named.** A zero-byte file is what a failed read in
+// the page looks like; `Mesh::from_stl` would call it a malformed mesh, which is true and about
+// the wrong thing.
+const empty = sendPart('nothing.stl', new Uint8Array(0));
+ok('an empty upload is refused as an upload', !!empty.error && empty.error.includes('empty'),
+   JSON.stringify(empty.error));
+
 console.log(failures ? `\n${failures} failed` : '\nall claims held');
 process.exit(failures ? 1 : 0);

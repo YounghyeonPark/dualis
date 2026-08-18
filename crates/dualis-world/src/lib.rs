@@ -815,6 +815,92 @@ pub enum DomainSpec {
     },
 }
 
+/// Where a scene's `parts` find their bytes.
+///
+/// A scene names a part with a string, and on a machine with a filesystem that string is a path.
+/// In a browser it is not: there is no filesystem, the page already **has** the bytes because
+/// somebody dropped a file on it, and the string is a label. Both are the same question — *give me
+/// the bytes called this* — so the scene format does not have to know which world it is in, and
+/// the same file runs in both.
+///
+/// The default is [`OnDisk`], which is what [`World::build`] uses and what the CLI has always
+/// done. [`Uploaded`] is the other one, and it is not a browser-only convenience: it is how a test
+/// builds an assembly without writing a fixture to a temporary directory, which is how the tests
+/// for this trait are written.
+pub trait Parts {
+    /// The bytes for `name`, or why not — the message reaches the user with the scene's own site
+    /// prefix in front of it, so it should say what was looked for and where.
+    fn bytes(&self, name: &str) -> Result<Vec<u8>, String>;
+}
+
+/// [`Parts`] backed by the filesystem: the name is a path.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OnDisk;
+
+impl Parts for OnDisk {
+    fn bytes(&self, name: &str) -> Result<Vec<u8>, String> {
+        std::fs::read(name).map_err(|e| format!("{name}: {e}"))
+    }
+}
+
+/// [`Parts`] held in memory: the name is a label somebody chose.
+///
+/// What a browser has after a drop, and what a test has instead of a temporary directory. The
+/// refusal names what *is* here, because "no such part" with nothing else in it is the least
+/// useful thing this can say to somebody who has just uploaded three files and misspelled one.
+#[derive(Debug, Clone, Default)]
+pub struct Uploaded {
+    files: BTreeMap<String, Vec<u8>>,
+}
+
+impl Uploaded {
+    /// An empty set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add or replace one file. Returns `self` so a caller can chain.
+    pub fn with(mut self, name: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
+        self.files.insert(name.into(), bytes.into());
+        self
+    }
+
+    /// Add or replace one file in place.
+    pub fn insert(&mut self, name: impl Into<String>, bytes: impl Into<Vec<u8>>) {
+        self.files.insert(name.into(), bytes.into());
+    }
+
+    /// Forget one file, and say whether there was one.
+    pub fn remove(&mut self, name: &str) -> bool {
+        self.files.remove(name).is_some()
+    }
+
+    /// The names held, in order.
+    pub fn names(&self) -> Vec<&str> {
+        self.files.keys().map(String::as_str).collect()
+    }
+
+    /// How many bytes are held in total, which is the number a page showing an upload list wants.
+    pub fn total_bytes(&self) -> usize {
+        self.files.values().map(Vec::len).sum()
+    }
+}
+
+impl Parts for Uploaded {
+    fn bytes(&self, name: &str) -> Result<Vec<u8>, String> {
+        self.files.get(name).cloned().ok_or_else(|| {
+            if self.files.is_empty() {
+                format!("{name}: no file by that name, and nothing has been uploaded")
+            } else {
+                format!(
+                    "{name}: no file by that name; uploaded are {}",
+                    self.names().join(", ")
+                )
+            }
+        })
+    }
+}
+
 /// The one material name this format reserves: a box or a part of **nothing**.
 ///
 /// Not a substance with a very low conductivity, which is what a scene had to write before there
@@ -1156,6 +1242,7 @@ impl DomainSpec {
         &self,
         palette: &mut Palette,
         environment: Option<&EnvironmentSpec>,
+        files: &dyn Parts,
         notes: &mut Vec<String>,
     ) -> Result<Box<dyn Domain>, String> {
         let domain: Box<dyn Domain> = match self {
@@ -1590,8 +1677,7 @@ impl DomainSpec {
                     let mut occupied = vec![false; cells[0] * cells[1] * cells[2]];
                     for (n, part) in parts.iter().enumerate() {
                         let site = format!("{name}/parts[{n}]");
-                        let bytes = std::fs::read(&part.stl)
-                            .map_err(|e| format!("{site}: {}: {e}", part.stl))?;
+                        let bytes = files.bytes(&part.stl).map_err(|e| format!("{site}: {e}"))?;
                         let mesh = dualis::shape::Mesh::from_stl(&bytes)
                             .map_err(|e| format!("{site}: {}: {e}", part.stl))?;
                         let voxels = dualis::shape::Voxels::onto(
@@ -1949,12 +2035,25 @@ pub struct World {
 }
 
 impl World {
-    /// Build a simulation from a scene.
+    /// Build a simulation from a scene, reading any `parts` from the **filesystem**.
     ///
     /// Fails only on a scene that cannot describe a simulation at all — no domains, a
     /// non-positive duration, no frames. Physical nonsense inside a domain is the domain's
     /// business and is reported by the audit at run time, which is where it belongs.
+    ///
+    /// See [`World::build_with`] for a scene whose parts are not on a disk, which is every scene
+    /// in a browser.
     pub fn build(scene: Scene) -> Result<World, String> {
+        Self::build_with(scene, &OnDisk)
+    }
+
+    /// Build a simulation from a scene, taking `parts` from `files`.
+    ///
+    /// The same builder, the same audit, the same messages — the only thing that changes is where
+    /// a part's bytes come from. That is deliberate: a scene that runs from a page and a scene that
+    /// runs from a terminal have to be the *same scene*, or the browser is a demo rather than the
+    /// product.
+    pub fn build_with(scene: Scene, files: &dyn Parts) -> Result<World, String> {
         // Before anything else, and before any field is read: a file from a newer build must not
         // be half-run.
         scene.check_version()?;
@@ -2070,8 +2169,12 @@ impl World {
         let mut palette = Palette::with_composites(&scene.materials, &scene.composites)?;
         let mut notes = Vec::new();
         for spec in &scene.domains {
-            sim =
-                sim.with_boxed(spec.build(&mut palette, scene.environment.as_ref(), &mut notes)?);
+            sim = sim.with_boxed(spec.build(
+                &mut palette,
+                scene.environment.as_ref(),
+                files,
+                &mut notes,
+            )?);
             // The dismissals — a stated condition a domain ignores for a measured reason.
             // Collected here, in the composition root, because the reason is about the pair
             // (this stage, this domain) and neither owns it alone. Reported by `--check` and

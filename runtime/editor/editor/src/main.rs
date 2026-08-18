@@ -39,6 +39,7 @@
 //! painted below is painted from a *shape* (a box, points, paths, a reading) with the domain
 //! name used only as a label. A domain added next year is drawn by the code below unchanged.
 
+use editor_core::OnDisk;
 use eframe::egui;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
@@ -134,7 +135,7 @@ impl App {
                 String::from("the built-in scene"),
             ),
         };
-        let checked = editor_core::check(&text);
+        let checked = editor_core::check(&text, &OnDisk);
         let known_mtime = mtime_of(&path);
         App {
             text,
@@ -159,7 +160,7 @@ impl App {
     }
 
     fn recheck(&mut self) {
-        self.checked = editor_core::check(&self.text);
+        self.checked = editor_core::check(&self.text, &OnDisk);
         self.run = None;
     }
 
@@ -180,7 +181,7 @@ impl App {
         self.stop = Arc::new(AtomicBool::new(false));
         let stop = self.stop.clone();
         self.spawn("running", move |tx| {
-            let end = editor_core::run_streaming(&text, &stop, |json| {
+            let end = editor_core::run_streaming(&text, &OnDisk, &stop, |json| {
                 let _ = tx.send(Job::Frames(json));
             });
             let _ = tx.send(Job::RunEnded(end));
@@ -191,7 +192,7 @@ impl App {
         let text = self.text.clone();
         let deep = self.deep;
         self.spawn("verifying", move |tx| {
-            let _ = tx.send(Job::Verified(editor_core::verify(&text, deep)));
+            let _ = tx.send(Job::Verified(editor_core::verify(&text, deep, &OnDisk)));
         });
     }
 

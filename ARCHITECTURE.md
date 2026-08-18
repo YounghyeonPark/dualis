@@ -708,6 +708,21 @@ allowed to name them — it is the composition root, which is already true today
    obligation that transfers is the writing-down: every place the format or the library cannot
    say what a user just tried to do becomes a finding before it becomes a feature.
 
+   The sixth source has now produced one of its own, and it is a *platform* finding rather than a
+   physics one: **a scene said where a part's bytes were, when it should have said which bytes.**
+   `parts` named a path and the builder called `std::fs::read`, which is a sentence with no
+   meaning in a browser — there is no filesystem in a tab, and the page already holds the bytes
+   because somebody dropped a file on the window. Dragging a CAD export onto the editor is the
+   thing a user tries first, and it could not be done at all.
+
+   The seam is [`Parts`]: `World::build` reads from a disk and `World::build_with` reads from
+   wherever it is given. What matters is not the trait but the assertion beside it — the same STL
+   voxelises to the same block, cell by cell, from either source. Without that the web editor is a
+   demo, which is a thing that looks like the product and answers a slightly different question.
+   The general form is worth keeping: **an interface that names a location has assumed a machine.**
+
+   [`Parts`]: crates/dualis-world/src/lib.rs
+
 ---
 
 ## How to judge a proposed change
