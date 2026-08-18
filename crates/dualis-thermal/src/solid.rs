@@ -267,6 +267,88 @@ pub struct Solid3D {
     two_phase: bool,
 }
 
+/// One patch of a clearance: two facing surfaces and how far apart they are.
+///
+/// A gap is found pair by pair, along one axis, one cell face against the one directly across
+/// from it. A *patch* is what those pairs add up to — a connected sheet of facing area at one
+/// separation, which is the shape a view factor is a statement about.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GapPatch {
+    /// How many facing cell pairs are in it.
+    pub pairs: usize,
+    /// The patch's extent across the gap, in metres — the bounding box of the facing cells.
+    pub span: (f64, f64),
+    /// How far the two surfaces are apart, in metres.
+    pub distance: f64,
+    /// Whether the facing cells fill their bounding box.
+    ///
+    /// [`view_factor`](GapPatch::view_factor) is exact for a rectangle and an **upper bound** for
+    /// anything else, because a patch with a bite out of it sees less of itself than its bounding
+    /// box does. Reported rather than corrected: an L-shaped clearance is not a shape the closed
+    /// form covers, and a number invented for it would be worth less than knowing it is a bound.
+    pub rectangular: bool,
+}
+
+impl GapPatch {
+    /// The view factor from one of the facing surfaces to the other, `F₁₂`.
+    ///
+    /// The exact closed form for two equal, parallel, directly-opposed rectangles — which is the
+    /// geometry the pairing produces by construction, since a pair is a cell and the cell across
+    /// from it. With `X = a/c` and `Y = b/c`:
+    ///
+    /// ```text
+    /// F = 2/(πXY) · [ ln √((1+X²)(1+Y²)/(1+X²+Y²))
+    ///                 + X√(1+Y²)·atan(X/√(1+Y²)) + Y√(1+X²)·atan(Y/√(1+X²))
+    ///                 − X·atan X − Y·atan Y ]
+    /// ```
+    ///
+    /// **This is not what the exchange is charged**, and the difference is the point. What the
+    /// block charges is `F̄ = 1`, which is exact when the sides of the gap are mirrors — and the
+    /// block's own outer faces are exactly that, because an insulated boundary is implemented as
+    /// a mirror and a mirror extends the two surfaces to infinity. `F₁₂` is what the same pair
+    /// would exchange with **nothing** at the sides, open to space. The two agree when the gap is
+    /// narrow compared with the surfaces and diverge without limit when it is not, so this is the
+    /// number that says how much of the answer is resting on reading the boundary one way.
+    pub fn view_factor(&self) -> f64 {
+        let (x, y) = (self.span.0 / self.distance, self.span.1 / self.distance);
+        // A patch with no extent sees nothing; two surfaces with nothing between them see each
+        // other entirely. Both are limits of the form rather than sentinels, and both are here
+        // because this is public: a caller can build a `GapPatch` this block would never produce.
+        if !self.distance.is_finite() || self.span.0.is_nan() || self.span.1.is_nan() {
+            return 0.0;
+        }
+        if self.distance <= 0.0 {
+            return if self.span.0 > 0.0 && self.span.1 > 0.0 {
+                1.0
+            } else {
+                0.0
+            };
+        }
+        if x <= 0.0 || y <= 0.0 {
+            return 0.0;
+        }
+        let (x2, y2) = (x * x, y * y);
+        // **The closed form cancels itself away for a distant patch.** The bracket below is a
+        // small difference of terms of order `X`, and the answer is of order `X²` — so at `X` of
+        // 1e-3 four digits are already gone and the ratio to the exact `A/πc²` limit *turns
+        // around*: measured 0.999993 at X = 1/300, 1.00009 at 1/1000 and 1.007 at 1/3000, growing
+        // where it should be converging. A function that is quietly worse the further apart two
+        // surfaces are is the shape of defect this repository looks for, so the small-argument
+        // regime gets the series instead, `F = XY/π · (1 − (X²+Y²)/3 + O(X⁴))`, which is exact to
+        // 1e-8 either side of the crossover.
+        if x < 0.01 && y < 0.01 {
+            return (x * y / std::f64::consts::PI * (1.0 - (x2 + y2) / 3.0)).clamp(0.0, 1.0);
+        }
+        let (rx, ry) = ((1.0 + x2).sqrt(), (1.0 + y2).sqrt());
+        let t = ((1.0 + x2) * (1.0 + y2) / (1.0 + x2 + y2)).sqrt().ln()
+            + x * ry * (x / ry).atan()
+            + y * rx * (y / rx).atan()
+            - x * x.atan()
+            - y * y.atan();
+        (2.0 / (std::f64::consts::PI * x * y) * t).clamp(0.0, 1.0)
+    }
+}
+
 impl Solid3D {
     /// A block of `counts` cubic cells of side `dx`, all starting at `initial`.
     ///
@@ -742,6 +824,99 @@ impl Solid3D {
         }
     }
 
+    /// The clearances in this block, as sheets of facing area rather than as cell pairs.
+    ///
+    /// A pair is what the exchange is computed on; a patch is what a **view factor** is a
+    /// statement about, and the two are not the same object. Grouped by axis and separation, then
+    /// by connectivity across the gap, so two unrelated clearances at the same width do not
+    /// average into one patch that describes neither.
+    ///
+    /// Empty for a block with no void, which is every block that existed before there was one.
+    pub fn gap_patches(&self) -> Vec<GapPatch> {
+        let (nx, ny, _) = self.counts;
+        let dx = self.dx.to_si();
+        // A pair's axis and separation are recoverable from the two indices: the stride between
+        // them says which way it ran, and the multiple of that stride says how far.
+        let strides = [(0usize, 1usize), (1, nx), (2, nx * ny)];
+        let mut sheets: BTreeMap<(usize, usize), Vec<(usize, usize)>> = BTreeMap::new();
+        for (a, b, _) in &self.gaps {
+            let delta = b - a;
+            let Some(&(axis, stride)) = strides.iter().find(|(ax, st)| {
+                delta % st == 0
+                    && delta / st > 1
+                    && match ax {
+                        0 => delta < nx,
+                        1 => delta < nx * ny,
+                        _ => true,
+                    }
+            }) else {
+                continue;
+            };
+            // The **void** between them, not the distance between their centres. A view factor is
+            // a statement about two surfaces, and the surfaces are the faces bounding the gap: a
+            // one-cell clearance puts them one cell apart while their centres are two.
+            let cells = delta / stride - 1;
+            let (i, j, k) = (a % nx, (a / nx) % ny, a / (nx * ny));
+            // The two coordinates *across* the gap, which is what a patch is measured in.
+            let across = match axis {
+                0 => (j, k),
+                1 => (i, k),
+                _ => (i, j),
+            };
+            sheets.entry((axis, cells)).or_default().push(across);
+        }
+
+        let mut out = Vec::new();
+        for ((_, cells), mut face) in sheets {
+            face.sort_unstable();
+            let mut seen = vec![false; face.len()];
+            let index: BTreeMap<(usize, usize), usize> =
+                face.iter().enumerate().map(|(n, p)| (*p, n)).collect();
+            for start in 0..face.len() {
+                if seen[start] {
+                    continue;
+                }
+                // Four-connected flood fill over the facing cells, so a patch is a sheet somebody
+                // could point at rather than every pair that happens to share a width.
+                let mut stack = vec![start];
+                seen[start] = true;
+                let mut members = Vec::new();
+                while let Some(n) = stack.pop() {
+                    let (u, v) = face[n];
+                    members.push((u, v));
+                    for (du, dv) in [(1i64, 0i64), (-1, 0), (0, 1), (0, -1)] {
+                        let (nu, nv) = (u as i64 + du, v as i64 + dv);
+                        if nu < 0 || nv < 0 {
+                            continue;
+                        }
+                        if let Some(&m) = index.get(&(nu as usize, nv as usize)) {
+                            if !seen[m] {
+                                seen[m] = true;
+                                stack.push(m);
+                            }
+                        }
+                    }
+                }
+                let (u0, u1) = (
+                    members.iter().map(|m| m.0).min().unwrap_or(0),
+                    members.iter().map(|m| m.0).max().unwrap_or(0),
+                );
+                let (v0, v1) = (
+                    members.iter().map(|m| m.1).min().unwrap_or(0),
+                    members.iter().map(|m| m.1).max().unwrap_or(0),
+                );
+                let (wu, wv) = (u1 + 1 - u0, v1 + 1 - v0);
+                out.push(GapPatch {
+                    pairs: members.len(),
+                    span: (wu as f64 * dx, wv as f64 * dx),
+                    distance: cells as f64 * dx,
+                    rectangular: members.len() == wu * wv,
+                });
+            }
+        }
+        out
+    }
+
     /// Mark cells as **nothing** — not a substance, not part of the block.
     ///
     /// A grid had no void until now, so the cells a part did not occupy were some other material,
@@ -759,13 +934,28 @@ impl Solid3D {
     /// # What crosses a gap, and what does not
     ///
     /// **Radiation does.** Two solid cells facing each other along a grid line across a run of
-    /// void exchange `σA(T₁⁴ − T₂⁴)/(1/ε₁ + 1/ε₂ − 1)`, the parallel-plate series — exact for
-    /// two facing surfaces that see only each other, and the assumption is worth stating because
-    /// it is where this is wrong: a gap **wide** compared with the faces has a view factor well
-    /// under one, and this charges it as one, so a wide gap is coupled harder here than it
-    /// really is. A narrow gap, which is what a joint or a clearance is, is the case this gets
-    /// right. Nothing computes view factors; that is a radiative-exchange solver and would be a
-    /// domain, not a boundary condition.
+    /// void exchange `σA(T₁⁴ − T₂⁴)/(1/ε₁ + 1/ε₂ − 1)`, the parallel-plate series, with an
+    /// exchange factor of **one**.
+    ///
+    /// That factor was written down here as a known approximation — a wide gap has a view factor
+    /// well under one, so charging it as one was said to couple a wide gap too hard. Measuring it
+    /// says otherwise, and the correction is worth more than the caveat was. The sides of a gap in
+    /// this model are the **block's own outer faces**, and an insulated boundary is implemented
+    /// as a mirror; a mirror puts an image of each surface beyond it and the images tile the
+    /// plane, so the pair *is* two infinite parallel plates and one is exact at every width. What
+    /// the old note described was a different geometry from the one the model has.
+    ///
+    /// The geometry it described is a real one, though — two parts floating in vacuum, open to
+    /// space, where most of what leaves one surface does miss the other. Which of the two a scene
+    /// means is a statement about its boundary that a grid cannot infer, so it is not chosen here.
+    /// It is *reported*: [`gap_patches`](Solid3D::gap_patches) groups a clearance into the sheets
+    /// a view factor is a statement about and [`GapPatch::view_factor`] gives the open-gap number,
+    /// so the difference between the two readings is a factor somebody can see. For a 32 mm square
+    /// part 16 mm under a lid it is **2.4x**.
+    ///
+    /// Still not here: a radiative-exchange solver. Side walls that are real material at a real
+    /// temperature do not radiate into the gap at all, and that is a domain rather than a boundary
+    /// condition.
     ///
     /// **Convection does not.** A gap full of air carries heat by moving that air, which needs a
     /// Rayleigh number and a correlation, and a correlation is not a closed form. So a gap in

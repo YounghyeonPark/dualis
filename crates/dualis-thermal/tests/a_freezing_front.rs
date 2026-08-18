@@ -573,7 +573,7 @@ fn the_ledger_counts_the_latent_heat_and_not_only_the_cooling() {
         sensible + fusion
     );
     println!(
-        "  the latent heat is {:.1}x the sensible, so a ledger that dropped it would be wrong by          more than a factor of two",
+        "  the latent heat is {:.1}x the sensible, so a ledger that dropped it would be wrong by more than a factor of two",
         fusion.abs() / sensible.abs()
     );
     assert!(

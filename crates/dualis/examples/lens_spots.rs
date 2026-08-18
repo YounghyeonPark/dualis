@@ -393,7 +393,7 @@ fn draw(lens: &[Surface], d: Length, f: Length, c: Length) -> String {
     plot.title("a cemented achromat, traced");
     plot.caption("z (mm) against ray height (mm) — red C, yellow d, blue F");
     plot.footnote(
-        "the three colours cross the axis within a tenth of a millimetre of each other,          which is what makes it an achromat",
+        "the three colours cross the axis within a tenth of a millimetre of each other, which is what makes it an achromat",
     );
     document(880.0, 420.0, [plot.finish()])
 }

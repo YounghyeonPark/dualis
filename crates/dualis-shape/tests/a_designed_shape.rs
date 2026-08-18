@@ -183,7 +183,7 @@ fn a_box_measures_exactly_and_survives_both_stl_flavours() {
     println!("  the binary round-trip costs {f32_error:.3e}, which is f32 and not the reader");
     assert!(
         f32_error > 1e-9 && f32_error < 1e-6,
-        "the file stores f32, so this should be near 1e-7 -- and *nonzero*, or the coordinates chosen          are dyadic and the check has no content: {f32_error:e}"
+        "the file stores f32, so this should be near 1e-7 -- and *nonzero*, or the coordinates chosen are dyadic and the check has no content: {f32_error:e}"
     );
 
     let mut ascii = String::from("solid box\n");
@@ -577,7 +577,7 @@ fn a_cube_keeps_the_rows_its_face_diagonal_runs_through() {
         // for one. `ambiguous_rows` cannot serve here: no mesh in this suite has ever produced one.
         assert!(
             loss.retried_rows > 0,
-            "{side_mm} mm at {cell_mm} mm: a cube on cell boundaries sends rows through its face              diagonals, so some row must have needed a moved ray"
+            "{side_mm} mm at {cell_mm} mm: a cube on cell boundaries sends rows through its face diagonals, so some row must have needed a moved ray"
         );
         assert!(
             loss.volume_error.abs() < 1e-12,
@@ -670,7 +670,7 @@ fn a_plate_thinner_than_a_cell_is_reported_rather_than_lost() {
     );
     assert!(
         !voxels.loss().is_clean(),
-        "so the report is not clean even though the volume is exact — which is the whole point of          having a thin-run count beside a volume error: {:?}",
+        "so the report is not clean even though the volume is exact — which is the whole point of having a thin-run count beside a volume error: {:?}",
         voxels.loss()
     );
 

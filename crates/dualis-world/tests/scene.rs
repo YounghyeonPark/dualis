@@ -979,7 +979,7 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 );
                 assert!(
                     peak - 20.0 > mean,
-                    "{name}: the fed end should still be above the mean,                      peak {:.4} against mean {mean:.4}",
+                    "{name}: the fed end should still be above the mean, peak {:.4} against mean {mean:.4}",
                     peak - 20.0
                 );
             }
@@ -1802,7 +1802,7 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                 let lid = reading(frames.last().expect("frames"), "coldest");
                 assert!(
                     lid > 293.15 + 1.0 && lid < end - 100.0,
-                    "{name}: the lid should warm a little and stay cold, {lid:.2} K against              a part at {end:.2} K"
+                    "{name}: the lid should warm a little and stay cold, {lid:.2} K against a part at {end:.2} K"
                 );
             }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),

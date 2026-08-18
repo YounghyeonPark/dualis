@@ -136,7 +136,7 @@ fn multirate_now_beats_staggered_because_a_substep_takes_only_its_share() {
     let multi = (rise_after(Schedule::Multirate, coarse, 2) - analytic).abs();
     assert!(
         multi * 5.0 < stag,
-        "subcycling should now be worth something: staggered off by {stag:.4} K,          multirate by {multi:.4} K"
+        "subcycling should now be worth something: staggered off by {stag:.4} K, multirate by {multi:.4} K"
     );
 
     // What the fix does *not* change: the substep, not the outer step, now sets the answer.

@@ -120,12 +120,27 @@ fn two_parts_from_files_assemble_with_a_gap_of_nothing() {
         dualis::prelude::Substance::copper().name
     );
 
-    // And the build reported what voxelising cost, per part.
-    assert_eq!(world.notes().len(), 2, "{:?}", world.notes());
+    // And the build reported what it cost, note by note rather than by counting them — a count
+    // fails whenever anything new is worth saying, which is not the same as something being wrong.
+    let notes = world.notes();
+    let costs: Vec<&String> = notes.iter().filter(|n| n.contains("volume")).collect();
+    assert_eq!(costs.len(), 2, "one cost per part: {notes:?}");
+    for note in &costs {
+        assert!(note.contains("boundary cells"), "{note}");
+    }
+
+    // **And what the clearance's answer is resting on.** These two 10 x 10 mm faces are 5 mm
+    // apart, so `X = Y = 2` and a gap open to space would see 0.415 of itself — the block charges
+    // the infinite-plate exchange, which is exact for the mirrored sides it has, and the note says
+    // how much that reading is worth so a user who meant *open* can see the factor rather than
+    // discover it.
+    let clearance = notes
+        .iter()
+        .find(|n| n.contains("clearance"))
+        .unwrap_or_else(|| panic!("the gap should be reported: {notes:?}"));
     assert!(
-        world.notes()[0].contains("volume") && world.notes()[0].contains("boundary cells"),
-        "{}",
-        world.notes()[0]
+        clearance.contains("0.415") && clearance.contains("2.4x"),
+        "{clearance}"
     );
 }
 

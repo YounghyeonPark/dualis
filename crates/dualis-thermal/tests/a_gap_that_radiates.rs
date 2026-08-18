@@ -131,18 +131,27 @@ fn an_isolated_pair_settles_at_the_mean() {
     );
 }
 
-/// **A wider gap carries the same, and that is the assumption showing.**
+/// **A wider gap carries the same, and that is the boundary condition, not a bug.**
 ///
-/// The parallel-plate form has a view factor of one, which two facing surfaces have when the gap
-/// is small compared with them and do not when it is large. This charges every gap as one, so a
-/// gap five cells wide carries exactly what a gap one cell wide does — and physically it should
-/// carry far less, because most of what leaves one plate misses the other.
+/// This assertion used to be labelled as a known defect: the parallel-plate form has a view factor
+/// of one, two facing plates only see all of each other when the gap is narrow, so charging every
+/// width as one looked like an approximation waiting to be fixed. Measuring it says otherwise.
 ///
-/// Pinned rather than hidden. The doc on `Solid3D::empty` says the same thing in words; this says
-/// it in a number, so the day somebody adds view factors this test fails and tells them the
-/// old behaviour was the thing they came to fix.
+/// The gap here is bounded sideways by the **block's own outer faces**, and those are insulated —
+/// implemented, literally, as a mirror in `Solid3D::mirrored`. A mirror puts an image of each
+/// plate beyond it, and the images tile the plane, so the pair *is* two infinite parallel plates
+/// and `F̄ = 1` is exact at every width. The old comment described a different geometry from the
+/// one the model has.
+///
+/// What is worth knowing is how different the answer would be for somebody who meant the gap to be
+/// open to space — two small plates floating in vacuum, where most of what leaves one does miss
+/// the other. That is the ordinary view factor, and `GapPatch::view_factor` computes it: for these
+/// 5 mm cells it is **0.1998** at one cell of clearance and **0.0124** at five, a factor of
+/// sixteen between two cases this model calls identical. The number is reported rather than
+/// charged, because which reading is right is the user's statement about their boundary and not
+/// something the grid can infer.
 #[test]
-fn a_wide_gap_carries_the_same_as_a_narrow_one_and_should_not() {
+fn a_wide_gap_carries_the_same_because_the_sides_are_mirrors() {
     let step_once = |gap: usize| {
         let mut block = plates(gap, 0.8, 500.0, 20.0);
         let cold_index = 1 + gap;
@@ -158,7 +167,26 @@ fn a_wide_gap_carries_the_same_as_a_narrow_one_and_should_not() {
     let wide = step_once(5);
     assert!(
         (narrow - wide).abs() / narrow < 1e-12,
-        "the view factor is one at every width today: {narrow:e} against {wide:e}"
+        "mirrored sides make every width the infinite-plate answer: {narrow:e} against {wide:e}"
+    );
+
+    // And the open-gap factors, which say how much that reading is worth. Both computed from the
+    // closed form rather than read back, and both far from one — which is exactly why the reading
+    // has to be stated instead of assumed.
+    let factor_of = |gap: usize| {
+        dualis_thermal::GapPatch {
+            pairs: 1,
+            span: (5e-3, 5e-3),
+            distance: gap as f64 * 5e-3,
+            rectangular: true,
+        }
+        .view_factor()
+    };
+    assert!(
+        (factor_of(1) - 0.199_82).abs() < 5e-6 && (factor_of(5) - 0.012_4).abs() < 5e-5,
+        "open to space these would differ by sixteen: {:.5} and {:.5}",
+        factor_of(1),
+        factor_of(5)
     );
 }
 

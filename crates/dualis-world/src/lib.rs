@@ -259,7 +259,7 @@ impl PoseSpec {
         let axis = glam::DVec3::new(turn.axis[0], turn.axis[1], turn.axis[2]);
         if axis.length() < 1e-12 {
             return Err(format!(
-                "poses.{site}: the turn's axis is {:?}, which has no direction — a rotation                  needs one, and normalising a zero vector gives a NaN rather than an error",
+                "poses.{site}: the turn's axis is {:?}, which has no direction — a rotation needs one, and normalising a zero vector gives a NaN rather than an error",
                 turn.axis
             ));
         }
@@ -1694,7 +1694,8 @@ impl DomainSpec {
                         // about a different object.
                         let loss = voxels.loss();
                         notes.push(format!(
-                            "{site}: {} filled {} cells at {cell_mm} mm — volume {:+.2}%, {:.0}% of                              it in boundary cells, {} thin run(s), {} triangle(s) under a cell{}",
+                            "{site}: {} filled {} cells at {cell_mm} mm — volume {:+.2}%, {:.0}% of it \
+                             in boundary cells, {} thin run(s), {} triangle(s) under a cell{}",
                             part.stl,
                             voxels.filled(),
                             loss.volume_error * 100.0,
@@ -1752,7 +1753,7 @@ impl DomainSpec {
                     if r.material == VOID {
                         if r.initial_c.is_some() {
                             return Err(format!(
-                                "{site}: a {VOID:?} region cannot start at a temperature,                                  because there is nothing there to have one"
+                                "{site}: a {VOID:?} region cannot start at a temperature, because there is nothing there to have one"
                             ));
                         }
                         block = block.empty(inside);
@@ -1810,6 +1811,35 @@ impl DomainSpec {
                         spot.at[2],
                         Temperature::celsius(initial_c + spot.above_k),
                     );
+                }
+                // **How much of a clearance's answer is a boundary condition.** A gap is charged
+                // as two infinite parallel plates, which is exact when the sides of the gap are
+                // mirrors — and the block's own outer faces are, because an insulated boundary is
+                // implemented as one. A user who meant the gap to be *open* — two parts floating
+                // in vacuum rather than inside a housing — would get the plain view factor, and
+                // the two agree only when the gap is narrow compared with the surfaces. Reported
+                // rather than chosen: which reading is right is a statement about the geometry
+                // that the grid cannot make, and a number is worth more than a caveat.
+                for patch in block.gap_patches() {
+                    let f = patch.view_factor();
+                    if f >= 0.95 {
+                        continue;
+                    }
+                    notes.push(format!(
+                        "{name}: a clearance of {:.1} mm across {:.1} x {:.1} mm carries the infinite-plate \
+                         exchange, exact for the mirrored sides this block has. Open to space the \
+                         same pair would see {:.3} of each other, so that reading is worth {:.1}x here{}",
+                        patch.distance * 1e3,
+                        patch.span.0 * 1e3,
+                        patch.span.1 * 1e3,
+                        f,
+                        1.0 / f.max(1e-12),
+                        if patch.rectangular {
+                            ""
+                        } else {
+                            ", and the sheet is not a rectangle so that factor is an upper bound"
+                        }
+                    ));
                 }
                 Box::new(block)
             }
