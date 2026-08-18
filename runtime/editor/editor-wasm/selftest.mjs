@@ -232,5 +232,74 @@ const empty = sendPart('nothing.stl', new Uint8Array(0));
 ok('an empty upload is refused as an upload', !!empty.error && empty.error.includes('empty'),
    JSON.stringify(empty.error));
 
+
+// --- fitting a grid, which is the step between "I dropped a file on this" and "here is a scene"
+// A user who uploads CAD has no way to know what `cells` and `cell_mm` hold it, and getting it
+// wrong does not fail -- a part finer than the grid rasterises to nothing and the run is well
+// behaved about a different object.
+
+function fitGrid(budget, material) {
+  const mb = enc.encode(material);
+  const mp = w.dualis_alloc(Math.max(1, mb.length));
+  if (mb.length) new Uint8Array(mem.buffer, mp, mb.length).set(mb);
+  const out = take(w.dualis_fit(budget, mp, mb.length));
+  w.dualis_free(mp, Math.max(1, mb.length));
+  return out;
+}
+
+forgetPart('');
+sendPart('bracket.stl', boxStl([0, 0, 0], [45, 30, 4]));
+sendPart('boss.stl', boxStl([18, 12, 4], [27, 18, 12]));
+
+const fitted = fitGrid(400000, 'aluminium');
+ok('a fit comes back with a table', !fitted.error && fitted.table.includes('cell_mm'),
+   JSON.stringify(fitted.error || fitted.table.slice(0, 60)));
+
+// **The extent is the union of the parts**, which is the first thing that would be wrong if the
+// two files were being fitted separately rather than onto one grid.
+ok('the assembly is the union of its parts',
+   fitted.table.includes('45.0 x 30.0 x 12.0 mm'), fitted.table.split('\n')[0]);
+
+// **The ladder resolves the thinnest feature by powers of two.** The boss is 4 mm through, so the
+// rows are 4, 2, 1, 0.5 mm -- each one a sentence about the assembly rather than a round number.
+for (const mm of ['4.000', '2.000', '1.000', '0.500']) {
+  ok(`the ladder has a ${mm} mm row`, fitted.table.includes(mm), fitted.table);
+}
+
+// **A coarse row loses the small part and the table says so**, which is the failure this whole
+// step exists to prevent: at 4 mm the boss fills four cells and is 40% short by volume.
+const coarse = fitted.table.split('\n').find(l => l.includes('4.000'));
+ok('the coarsest row is charged 100% boundary', coarse.includes('100.0'), coarse);
+
+// **The recommendation is a scene fragment that names every uploaded part.**
+ok('a fragment comes back', !!fitted.fragment, JSON.stringify(fitted.fragment));
+ok('and it names both parts',
+   fitted.fragment.includes('bracket.stl') && fitted.fragment.includes('boss.stl'),
+   fitted.fragment);
+ok('and carries the grid it measured',
+   fitted.fragment.includes(`"cells": [${fitted.cells.join(', ')}]`), fitted.fragment);
+
+// **And the fragment builds.** A table nobody can act on is a table; this is the round trip from
+// two dropped files to a running scene with nothing in between to get wrong.
+const assembled = call(w.dualis_check, `{ "title": "from the fitter", "duration_s": 1.0, "frames": 2,
+  "domains": [{ "kind": "block", "name": "assembly", "initial_c": 20.0,
+${fitted.fragment} }] }`);
+ok('the suggested grid builds', !assembled.error, JSON.stringify(assembled.error));
+ok('with both parts in it',
+   assembled.notes.filter(n => n.includes('filled')).length === 2, JSON.stringify(assembled.notes));
+
+// **A budget too small to hold anything is an answer, not a crash.** `fragment` is null and the
+// table still says what each row cost, which is what a user needs in order to raise it.
+const starved = fitGrid(50, 'aluminium');
+ok('an impossible budget still returns a table', !starved.error && !!starved.table,
+   JSON.stringify(starved.error));
+ok('and recommends nothing rather than guessing', starved.fragment === null,
+   JSON.stringify(starved.fragment));
+
+forgetPart('');
+const nothing = fitGrid(400000, 'aluminium');
+ok('fitting nothing is refused by name', !!nothing.error && nothing.error.includes('at least one'),
+   JSON.stringify(nothing.error));
+
 console.log(failures ? `\n${failures} failed` : '\nall claims held');
 process.exit(failures ? 1 : 0);

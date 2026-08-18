@@ -130,6 +130,44 @@ pub unsafe extern "C" fn dualis_part(
     give(parts_summary(&s.files))
 }
 
+/// Measure a ladder of grids for the uploaded parts.
+///
+/// The step between "I dropped a CAD file on this" and "here is a scene": a user has no way to
+/// know what `cells` and `cell_mm` hold their part, and getting it wrong does not fail — a part
+/// finer than the grid rasterises to **nothing** and the run is well behaved about a different
+/// object. Every row in the table was rasterised rather than predicted, because
+/// `Loss::volume_error` is erratic under refinement and extrapolating it would be confidently
+/// wrong.
+///
+/// Returns `{table, fragment, cell_mm, cells}` or `{error}`. `fragment` is null when no grid holds
+/// every part under half its volume in boundary cells, which is an answer and not a failure.
+///
+/// # Safety
+///
+/// `material` must be valid for `material_len` bytes of UTF-8.
+#[no_mangle]
+pub unsafe extern "C" fn dualis_fit(
+    budget_cells: u32,
+    material: *const u8,
+    material_len: usize,
+) -> *mut u8 {
+    let name = borrow(material, material_len);
+    let name = if name.is_empty() {
+        "aluminium".to_string()
+    } else {
+        name
+    };
+    let budget = if budget_cells == 0 {
+        2_000_000
+    } else {
+        budget_cells as usize
+    };
+    match editor_core::fit(&s_files(), budget, &name) {
+        Ok(json) => give(json),
+        Err(e) => give(serde_json::json!({ "error": e }).to_string()),
+    }
+}
+
 /// Forget one uploaded file, or all of them when given an empty name.
 ///
 /// # Safety

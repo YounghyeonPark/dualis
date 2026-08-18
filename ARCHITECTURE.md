@@ -330,7 +330,7 @@ different quantities, the second separates domains carrying the same one.
    measures it, and rasterises it into the predicate a domain's `fill` already took. Nothing in the
    physics changed.
 
-   The rest of it is not done, and the three that remain are the ones that block a real assembly:
+   The three that blocked a real assembly are done, and each closed differently:
 
    - ~~**A grid has no void.**~~ Done. `Solid3D::empty` marks cells as nothing: no capacity, no
      conduction across any face they touch, no share of what arrives on the bus, no vote in any
@@ -380,10 +380,29 @@ different quantities, the second separates domains carrying the same one.
      And the **rule for a contested cell** is `regions`' own — last writer wins, "how a coating
      *on* a layer is written and there is no other way to mean it". Inventing one here would have
      been a second answer to a question this format had already answered.
-   - **Nothing chooses the cell size.** The `Loss` report says what a choice cost, which is the
-     honest half; picking a cell that resolves the smallest feature and reporting what was traded
-     is a layer above this one, and would be the first place in the workspace that *guesses* — so
-     it has to guess visibly.
+   - ~~**Nothing chooses the cell size.**~~ Done, and without the guess this entry was worried
+     about. `dualis_world::fit` **rasterises every candidate** and prints what each one cost —
+     filled cells, volume error, boundary fraction, thin runs, features below the cell, undecidable
+     rows — so the numbers are measurements and the only judgement left is which row to recommend.
+     That rule is one sentence: the coarsest grid on which every part is present, nothing was
+     undecidable, and the worst boundary fraction is under the bar. It can be disagreed with by
+     reading the table it came from, which is what "guess visibly" was asking for.
+
+     Predicting would have been wrong in a way `Loss` documents about itself: `volume_error` is a
+     lattice-point count after the bulges and the cuts cancel, and a sphere at 2.5, 2.0 and 1.5 mm
+     gives `+4.9%, +5.8%, −2.3%` — the first refinement makes it worse and the second changes its
+     sign. A tool that extrapolated one row to the next would be confidently wrong on the commonest
+     shape there is. So the rule steers by **boundary fraction**, which is the rasterisation's
+     uncertainty rather than its error, and does fall monotonically.
+
+     The ladder is a statement about the assembly rather than about millimetres: the thinnest
+     dimension of any part gets 1, 2, 4, 8 … cells. Measured on a 45 x 30 x 4 mm bracket with a
+     9 x 6 x 8 mm boss, the 4 mm row leaves the boss **four cells and 41% short by volume** and the
+     0.5 mm row is exact with 35% of its volume in boundary cells. That first row is the failure the
+     whole step exists to prevent, and it is not an error: a part finer than the grid rasterises to
+     nothing and the run is perfectly well behaved about a different object.
+
+     All three of this section's gaps are now closed.
 
 Beyond these, the physics itself is open-ended, and two of the three that list named are done.
 

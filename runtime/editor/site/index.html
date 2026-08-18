@@ -40,6 +40,7 @@
 <header>
   <label class="file">open<input id="open" type="file" accept=".json" hidden></label>
   <label class="file">add CAD<input id="cad" type="file" accept=".stl" multiple hidden></label>
+  <button id="fit" disabled>fit grid</button>
   <button id="save">save</button>
   <button id="run">run</button>
   <button id="verify">verify</button>
@@ -63,6 +64,7 @@
   </div>
 </main>
 
+<pre id="fitout" hidden style="margin:0;padding:10px 14px;overflow:auto;max-height:44vh;border-top:1px solid #26303c;background:#0c1117;color:#cbd5e1;font:11px/1.45 ui-monospace,Consolas,monospace;white-space:pre"></pre>
 <footer><span id="status">loading the physics…</span><span class="sp"></span><span id="parts" style="color:var(--dim);font:11px ui-monospace,monospace">no CAD uploaded</span></footer>
 
 <script type="module">
@@ -310,7 +312,28 @@ function showParts(out) {
   $('parts').textContent = n
     ? `${n} part file(s): ${out.names.join(', ')} — ${(out.bytes / 1024).toFixed(0)} kB`
     : 'no CAD uploaded';
+  $('fit').disabled = n === 0;
 }
+
+// **fit grid** answers the question a scene cannot: what `cells` and `cell_mm` hold these parts.
+// Every row was rasterised rather than predicted — a part finer than the grid does not fail, it
+// disappears — so the table is measurements and the only judgement is which row to recommend.
+$('fit').onclick = () => {
+  status('rasterising every candidate grid…');
+  const [mp, ml] = put('aluminium');
+  const out = take(wasm.dualis_fit(2000000, mp, ml));
+  wasm.dualis_free(mp, ml);
+  if (out.error) { status(out.error, true); return; }
+  const box = $('fitout');
+  box.textContent = out.table + (out.fragment
+    ? `\n\n  paste this into a "block" domain:\n\n${out.fragment}\n`
+    : `\n  no grid holds every part under half its volume in boundary cells. The parts
+  have detail this grid cannot carry, so refine by hand from the table above.\n`);
+  box.hidden = false;
+  status(out.fragment
+    ? `a ${out.cells.join(' x ')} grid at ${out.cell_mm.toFixed(3)} mm holds every part`
+    : 'no row qualified; the table says why');
+};
 
 async function addCad(files) {
   let last = null;

@@ -33,6 +33,7 @@ use dualis::molecular as dualis_molecular;
 use dualis::prelude::Room as AcousticRoom;
 
 pub mod beam;
+pub mod fit;
 pub mod heater;
 pub mod light;
 pub mod verify;

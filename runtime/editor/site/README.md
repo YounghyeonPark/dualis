@@ -35,6 +35,24 @@ Naming a file that is not here is refused, and the refusal lists the names that 
 with three files in a tab and one misspelling should be told which spellings exist rather than
 "not found".
 
+### fit grid
+
+The step between dropping a file and having a scene. A `parts` entry needs `cells` and `cell_mm`,
+and nothing about a CAD file says what those should be — while getting them wrong does not fail:
+a part finer than the grid rasterises to **nothing**, and the run is perfectly well behaved about a
+different object.
+
+**fit grid** rasterises the uploaded parts at every candidate cell size and prints what each one
+cost. The ladder is a statement about the assembly rather than about millimetres — the thinnest
+dimension of any part gets 1, 2, 4, 8 … cells — and every number in the table was measured rather
+than predicted, because `Loss::volume_error` is a lattice-point count that can get *worse* under
+refinement and change sign. The rule for the recommended row is one sentence, so it can be
+disagreed with by reading the table: the coarsest grid on which every part is present, nothing was
+undecidable, and the worst boundary fraction is under a half. The fragment it prints goes straight
+into a `block` domain.
+
+The same thing from a terminal is `dualis-world fit part.stl [more.stl …] --cells N`.
+
 Everything a part costs is reported the way the CLI reports it: filled cells, volume error, how
 much of it is in boundary cells, thin runs, triangles under a cell. A rib finer than the grid does
 not fail, it *disappears*, and the run is perfectly well behaved about a different object.

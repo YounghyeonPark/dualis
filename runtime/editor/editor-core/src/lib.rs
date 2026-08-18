@@ -175,6 +175,29 @@ pub fn check(text: &str, files: &dyn Parts) -> Checked {
     out
 }
 
+/// Measure a ladder of grids for the uploaded parts, and say which row to use.
+///
+/// `dualis_world::fit` with the shell's own framing: the names come from `files` rather than from a
+/// scene, because this is the step *before* there is a scene — somebody has dropped CAD on the
+/// window and does not yet know what `cells` and `cell_mm` to write.
+pub fn fit(files: &Uploaded, budget_cells: usize, material: &str) -> Result<String, String> {
+    let mut parts = Vec::new();
+    for name in files.names() {
+        let bytes = files.bytes(name)?;
+        let mesh = dualis::shape::Mesh::from_stl(&bytes).map_err(|e| format!("{name}: {e}"))?;
+        parts.push((name.to_string(), mesh));
+    }
+    let fit = dualis_world::fit::propose(&parts, budget_cells)?;
+    let picked = fit.recommended(0.5);
+    Ok(serde_json::json!({
+        "table": fit.render(),
+        "fragment": picked.map(|c| fit.scene_fragment(c, material)),
+        "cell_mm": picked.map(|c| c.cell_m * 1e3),
+        "cells": picked.map(|c| [c.counts.0, c.counts.1, c.counts.2]),
+    })
+    .to_string())
+}
+
 /// Run the scene and return the run as JSON — the same bytes `dualis-world scene.json out.json`
 /// writes, which is the format `viewer-core` reads. A violation is the error, worded by the
 /// kernel.

@@ -130,6 +130,65 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Choosing a grid, which `ARCHITECTURE.md` left open as the third assembly gap because it
+    // "would be the first place in the workspace that guesses". It does not guess: it rasterises
+    // at every candidate and prints what each one cost. See `dualis_world::fit`.
+    if args.first().map(String::as_str) == Some("fit") {
+        let mut paths = Vec::new();
+        let mut budget = 2_000_000usize;
+        let mut material = "aluminium".to_string();
+        let mut rest = args[1..].iter();
+        while let Some(a) = rest.next() {
+            match a.as_str() {
+                "--cells" => {
+                    budget = rest
+                        .next()
+                        .ok_or("--cells needs a number")?
+                        .parse()
+                        .map_err(|e| format!("--cells: {e}"))?;
+                }
+                "--material" => material = rest.next().ok_or("--material needs a name")?.clone(),
+                other if other.starts_with("--") => {
+                    return Err(format!(
+                        "fit takes STL paths, --cells N and --material NAME, not {other}"
+                    )
+                    .into());
+                }
+                other => paths.push(other.to_string()),
+            }
+        }
+        if paths.is_empty() {
+            return Err("fit needs at least one STL".into());
+        }
+        let mut parts = Vec::new();
+        for path in &paths {
+            let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            let mesh = dualis::shape::Mesh::from_stl(&bytes).map_err(|e| format!("{path}: {e}"))?;
+            // The name a scene will use is the file name, not the path it was read from, so a
+            // fragment printed here is one a browser can use as well as a terminal.
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+            parts.push((name, mesh));
+        }
+        let fit = dualis_world::fit::propose(&parts, budget)?;
+        print!("{}", fit.render());
+        match fit.recommended(0.5) {
+            Some(c) => {
+                println!(
+                    "  the coarsest grid that holds every part with under half its volume in \
+                     boundary cells:\n"
+                );
+                println!("{}", fit.scene_fragment(c, &material));
+            }
+            None => println!(
+                "  no row holds every part under half boundary — raise --cells, or the parts have \
+                 detail this grid cannot carry"
+            ),
+        }
+        return Ok(());
+    }
+
     // The measurements a passing audit does not make: margins, determinism, and what moves
     // when the coupling window halves or every grid refines. See `dualis_world::verify` for
     // what each is and which shipped error it exists because of.
