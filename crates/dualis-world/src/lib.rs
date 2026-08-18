@@ -764,6 +764,59 @@ pub enum DomainSpec {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         dissipation: Vec<DissipationSpec>,
     },
+    /// A solid body under load, solved for its displacement — `dualis-elastic`'s `Block`.
+    ///
+    /// The first domain in this format whose unknown is a **vector**, and the first that answers
+    /// what a shape *does* rather than what it holds. Elliptic: there is no time in it, so every
+    /// frame is the answer for that frame's loads and the run is a sequence of static solves.
+    ///
+    /// # What makes it worth having beside a thermal block
+    ///
+    /// `follows` names a `block` whose temperature field becomes this body's **stress-free
+    /// strain**, `α(T − T_ref)` element by element. That is the coupling a digital twin is for:
+    /// the platform could already compute a power module's temperature field to four figures and
+    /// could do nothing with it, and the failure mode of a real module is not its temperature but
+    /// the solder fatigue that comes of silicon at 2.6e-6 per kelvin sitting on solder at 2.15e-5.
+    ///
+    /// The two grids must match, and a mismatch is refused rather than interpolated: an element
+    /// and a cell are the same box or the coupling is a guess about which cell a corner belongs to.
+    Structure {
+        /// Domain name.
+        name: String,
+        /// Elements along x, y and z.
+        cells: [usize; 3],
+        /// The side of one cubic element.
+        cell_mm: f64,
+        /// What it is made of, one of [`MATERIALS`]. Absent is `aluminium`.
+        #[serde(default)]
+        material: Option<String>,
+        /// Boxes of elements made of something else — a layer, a joint, an inclusion. Same rules
+        /// as a block's [`Region`], and `initial_c` is refused because a structure has no
+        /// temperature of its own.
+        #[serde(default)]
+        regions: Vec<Region>,
+        /// Faces that are held, and how. See [`HeldSpec`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        held: Vec<HeldSpec>,
+        /// Faces under pressure. See [`PressedSpec`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pressed: Vec<PressedSpec>,
+        /// The name of a `block` whose temperature drives this body's expansion.
+        ///
+        /// Absent is a body with no thermal strain at all, which is every structure loaded only
+        /// by what `pressed` states.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        follows: Option<String>,
+        /// The temperature at which the body is the size it was drawn — its stress-free state.
+        ///
+        /// **Not the same as the block's starting temperature**, and conflating them is the
+        /// commonest way to get a thermal-stress answer that is confidently wrong: a power module
+        /// is assembled at its solder's reflow temperature and *starts* at whatever the room is,
+        /// so it is already stressed before it is switched on. Required when `follows` is stated,
+        /// because there is no sensible default for it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reference_c: Option<f64>,
+    },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
     /// `dualis-electrical`. Every other source in this format states its watts; this one
@@ -1212,6 +1265,7 @@ impl DomainSpec {
             DomainSpec::Room { name, .. }
             | DomainSpec::Bar { name, .. }
             | DomainSpec::Block { name, .. }
+            | DomainSpec::Structure { name, .. }
             | DomainSpec::Hall { name, .. }
             | DomainSpec::Conductor { name, .. }
             | DomainSpec::Puck { name, .. }
@@ -1659,6 +1713,167 @@ impl DomainSpec {
                     dualis::units::Pressure::from_si(*amplitude_pa),
                 ),
             ),
+            DomainSpec::Structure {
+                name,
+                cells,
+                cell_mm,
+                material,
+                regions,
+                held,
+                pressed,
+                follows,
+                reference_c,
+            } => {
+                if cells.contains(&0) {
+                    return Err(format!("{name}: a structure needs at least one element"));
+                }
+                // NaN spelled out rather than folded into a negated comparison, which clippy is
+                // right to object to and which this format has been caught by before.
+                if cell_mm.is_nan() || *cell_mm <= 0.0 {
+                    return Err(format!("{name}: cell_mm must be positive, got {cell_mm}"));
+                }
+                let base = palette.get(name, material.as_deref().unwrap_or("aluminium"))?;
+                let elastic_of = |substance: &Substance, site: &str| {
+                    substance
+                        .mechanical
+                        .map(|m| dualis::elastic::Elastic {
+                            youngs_modulus: m.youngs_modulus,
+                            poisson_ratio: m.poisson_ratio,
+                            density: substance.density,
+                        })
+                        .ok_or_else(|| {
+                            format!(
+                        "{site}: {} has no mechanical properties, so it cannot be a structure — \
+                         state `youngs_modulus`, `poisson_ratio` and `yield_strength` in its \
+                         `mechanical` block",
+                        substance.name
+                    )
+                        })
+                };
+
+                let counts = (cells[0], cells[1], cells[2]);
+                let mut body = dualis::elastic::Block::new(
+                    name.clone(),
+                    counts,
+                    Length::mm(*cell_mm),
+                    elastic_of(&base, name)?,
+                );
+                // Expansion coefficients per element, kept beside the body because `Elastic` has
+                // no place for one — an elastic domain that carried a thermal coefficient would be
+                // a domain that knew about temperature.
+                let mut alpha = vec![
+                    base.thermal.map_or(0.0, |t| t.expansion.to_si());
+                    counts.0 * counts.1 * counts.2
+                ];
+
+                for (n, r) in regions.iter().enumerate() {
+                    let site = format!("{name}/regions[{n}]");
+                    if r.initial_c.is_some() {
+                        return Err(format!(
+                            "{site}: a structure has no temperature of its own, so a region \
+                             cannot start at one — its expansion comes from the block it `follows`"
+                        ));
+                    }
+                    if r.material == VOID {
+                        return Err(format!(
+                            "{site}: a structure has no void — an element with nothing in it has \
+                             no stiffness, and an unsupported node is a rigid-body mode the solve \
+                             cannot resolve"
+                        ));
+                    }
+                    let empty = (0..3).any(|a| r.to[a] <= r.from[a]);
+                    let outside = (0..3).any(|a| r.to[a] > cells[a]);
+                    if empty || outside {
+                        return Err(format!(
+                            "{site}: {:?}..{:?} selects no elements of a {}x{}x{} body; `to` is \
+                             one past the last, so a single element is `to = from + 1`",
+                            r.from, r.to, cells[0], cells[1], cells[2]
+                        ));
+                    }
+                    let substance = palette.get(&site, &r.material)?;
+                    let inside = |i: usize, j: usize, k: usize| {
+                        let p = [i, j, k];
+                        (0..3).all(|a| p[a] >= r.from[a] && p[a] < r.to[a])
+                    };
+                    body.fill(elastic_of(&substance, &site)?, inside);
+                    let expansion = substance.thermal.map_or(0.0, |t| t.expansion.to_si());
+                    for k in 0..counts.2 {
+                        for j in 0..counts.1 {
+                            for i in 0..counts.0 {
+                                if inside(i, j, k) {
+                                    alpha[i + counts.0 * (j + counts.1 * k)] = expansion;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for h in held {
+                    let face = match h.face {
+                        FaceSpec::XMin => dualis::elastic::Face::XLow,
+                        FaceSpec::XMax => dualis::elastic::Face::XHigh,
+                        FaceSpec::YMin => dualis::elastic::Face::YLow,
+                        FaceSpec::YMax => dualis::elastic::Face::YHigh,
+                        FaceSpec::ZMin => dualis::elastic::Face::ZLow,
+                        FaceSpec::ZMax => dualis::elastic::Face::ZHigh,
+                    };
+                    match h.how {
+                        Hold::Clamp => body.clamp(face),
+                        Hold::Roller => body.roller(face),
+                    }
+                }
+                if body.free_dofs()
+                    == body.node_counts().0 * body.node_counts().1 * body.node_counts().2 * 3
+                {
+                    return Err(format!(
+                        "{name}: nothing is held, so this body has six rigid-body modes and no \
+                         unique displacement. Hold at least three faces — rollers on three that \
+                         meet at a corner leave it free to change size in every direction"
+                    ));
+                }
+
+                for pr in pressed {
+                    let face = match pr.face {
+                        FaceSpec::XMin => dualis::elastic::Face::XLow,
+                        FaceSpec::XMax => dualis::elastic::Face::XHigh,
+                        FaceSpec::YMin => dualis::elastic::Face::YLow,
+                        FaceSpec::YMax => dualis::elastic::Face::YHigh,
+                        FaceSpec::ZMin => dualis::elastic::Face::ZLow,
+                        FaceSpec::ZMax => dualis::elastic::Face::ZHigh,
+                    };
+                    if !pr.mpa.is_finite() {
+                        return Err(format!("{name}: {} is not a pressure", pr.mpa));
+                    }
+                    body.press(face, Pressure::from_si(pr.mpa * 1e6));
+                }
+
+                match (follows, reference_c) {
+                    (Some(_), None) => {
+                        return Err(format!(
+                            "{name}: a structure that follows a block needs `reference_c`, the \
+                             temperature at which it is the size it was drawn. There is no \
+                             default — a module assembled at its solder's reflow temperature is \
+                             already stressed at room temperature, and guessing which is meant \
+                             would change the answer without saying so"
+                        ));
+                    }
+                    (None, Some(_)) => {
+                        return Err(format!(
+                            "{name}: `reference_c` says when this body is stress-free, which only \
+                             means something if it `follows` a block whose temperature moves it"
+                        ));
+                    }
+                    _ => {}
+                }
+                if follows.is_some() && alpha.iter().all(|a| *a == 0.0) {
+                    notes.push(format!(
+                        "{name}: follows a block, and nothing it is made of has an expansion \
+                         coefficient — the temperature will move it by exactly nothing"
+                    ));
+                }
+
+                Box::new(body)
+            }
             DomainSpec::Block {
                 name,
                 cells,
@@ -1943,6 +2158,64 @@ pub struct PartSpec {
     pub material: String,
 }
 
+/// How a face of a structure is held.
+///
+/// The distinction is not decoration and it changes the answer by a factor: a **clamp** holds all
+/// three components, a **roller** holds only the one normal to the face. A bar between two rollers
+/// cannot lengthen and is free to fatten, which is what "held along one axis" means and gives
+/// `σ = −Eε₀`; the same bar between two clamps also has its ends held sideways, and comes out
+/// **1.82 times** stiffer — a three-dimensional answer to a different question.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Hold {
+    /// All three components held: a built-in support.
+    Clamp,
+    /// Only the normal component held: a symmetry plane, or a surface it can slide along.
+    Roller,
+}
+
+/// A face of a structure that is held, and how.
+///
+/// ```json
+/// "held": [
+///   { "face": "z-min", "as": "clamp" },
+///   { "face": "x-min", "as": "roller" }
+/// ]
+/// ```
+///
+/// **A structure with nothing held cannot be solved**, and is refused rather than returning a
+/// number: an elliptic system with no support has six rigid-body modes, the operator is singular
+/// along them, and a solver asked for a displacement would answer with whatever the iteration
+/// happened to drift into. Three rollers on three faces meeting at a corner is the minimum, and
+/// leaves a body free to change size in every direction.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HeldSpec {
+    /// Which face. Same spelling as [`FaceSpec`].
+    pub face: FaceSpec,
+    /// Clamp or roller.
+    #[serde(rename = "as")]
+    pub how: Hold,
+}
+
+/// A face of a structure under pressure, in megapascals.
+///
+/// ```json
+/// "pressed": [ { "face": "z-max", "mpa": 1.5 } ]
+/// ```
+///
+/// Positive presses **into** the body and negative pulls on it, which is the sign convention of
+/// pressure everywhere else and the opposite of the stress convention — stated because getting it
+/// backwards produces a perfectly well-behaved answer to the other question.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PressedSpec {
+    /// Which face.
+    pub face: FaceSpec,
+    /// Pressure in megapascals, positive inward.
+    pub mpa: f64,
+}
+
 /// A box of cells that generates heat, in watts.
 ///
 /// ```json
@@ -2138,6 +2411,12 @@ pub struct World {
     pub(crate) sim: Simulation,
     /// What the build dismissed and why — see [`World::notes`].
     notes: Vec<String>,
+    /// Linear expansion per kelvin, per element, for each structure that follows a block.
+    ///
+    /// Kept here rather than in the elastic domain because a domain carrying a thermal coefficient
+    /// would be a domain that knew about temperature, and rule 4 says it may not. The coupling is
+    /// the application's to make, and this is the application.
+    expansion: BTreeMap<String, Vec<f64>>,
 }
 
 impl World {
@@ -2274,6 +2553,7 @@ impl World {
         }
         let mut palette = Palette::with_composites(&scene.materials, &scene.composites)?;
         let mut notes = Vec::new();
+        let mut expansion: BTreeMap<String, Vec<f64>> = BTreeMap::new();
         for spec in &scene.domains {
             sim = sim.with_boxed(spec.build(
                 &mut palette,
@@ -2297,6 +2577,82 @@ impl World {
                 }
             }
         }
+        // **What a structure that follows a block needs, checked here rather than at the first
+        // step.** A build-time refusal names the file; a step-time one names a number.
+        for spec in &scene.domains {
+            let DomainSpec::Structure {
+                name,
+                cells,
+                cell_mm,
+                material,
+                regions,
+                follows: Some(block),
+                ..
+            } = spec
+            else {
+                continue;
+            };
+            let source = scene
+                .domains
+                .iter()
+                .find(|d| d.name() == block)
+                .ok_or_else(|| {
+                    format!(
+                        "{name}: follows {block:?}, which is not a domain in this scene. The \
+                         scene has {}",
+                        scene
+                            .domains
+                            .iter()
+                            .map(DomainSpec::name)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })?;
+            let DomainSpec::Block {
+                cells: bc,
+                cell_mm: bmm,
+                ..
+            } = source
+            else {
+                return Err(format!(
+                    "{name}: follows {block:?}, which is not a block — only a block has a \
+                     temperature field for a structure to expand with"
+                ));
+            };
+            // **The grids must be the same grid.** An element and a cell are the same box, or the
+            // coupling is a guess about which cell a corner belongs to — and an interpolation
+            // invented in a builder would be a physics decision nobody stated.
+            if bc != cells || (bmm - cell_mm).abs() > 1e-12 {
+                return Err(format!(
+                    "{name}: follows {block:?} but their grids differ — {cells:?} at {cell_mm} mm \
+                     against {bc:?} at {bmm} mm. An element and a cell have to be the same box"
+                ));
+            }
+            // The expansion coefficients, resolved the way the body's materials were.
+            let base = palette.get(name, material.as_deref().unwrap_or("aluminium"))?;
+            let counts = (cells[0], cells[1], cells[2]);
+            let mut alpha = vec![
+                base.thermal.map_or(0.0, |t| t.expansion.to_si());
+                counts.0 * counts.1 * counts.2
+            ];
+            for (n, r) in regions.iter().enumerate() {
+                let site = format!("{name}/regions[{n}]");
+                let substance = palette.get(&site, &r.material)?;
+                let e = substance.thermal.map_or(0.0, |t| t.expansion.to_si());
+                for k in 0..counts.2 {
+                    for j in 0..counts.1 {
+                        for i in 0..counts.0 {
+                            let p = [i, j, k];
+                            if (0..3).all(|a| p[a] >= r.from[a] && p[a] < r.to[a]) {
+                                alpha[i + counts.0 * (j + counts.1 * k)] = e;
+                            }
+                        }
+                    }
+                }
+            }
+            expansion.insert(name.clone(), alpha);
+        }
+
         // And after, because "used" means a domain asked for it, which is only known once they all
         // have. A block's `material` is optional and defaults to aluminium, so a declaration nothing
         // named is a run on the wrong substance that reports nothing.
@@ -2312,7 +2668,52 @@ impl World {
             ));
         }
 
-        Ok(World { scene, sim, notes })
+        // **The coupling must be reachable, and a silent failure here is invisible.** Every
+        // structure that follows a block is written to between steps through
+        // `Simulation::domain_as_mut`, which returns `None` for a domain that has not implemented
+        // `as_any_mut` — an opt-in trait method that defaults to nothing. Measured before this
+        // check existed: `dualis-elastic::Block` implemented `as_any` and not `as_any_mut`, so the
+        // whole coupling did nothing and the scene reported **zero strain, zero stress and zero
+        // strain energy** — which reads as *no thermal stress* rather than as *not connected*, and
+        // is the more believable of the two.
+        for (structure, block) in scene.domains.iter().filter_map(|d| match d {
+            DomainSpec::Structure {
+                name,
+                follows: Some(b),
+                ..
+            } => Some((name.clone(), b.clone())),
+            _ => None,
+        }) {
+            if sim.domain_as::<dualis::thermal::Solid3D>(&block).is_none() {
+                return Err(format!(
+                    "{structure}: {block:?} cannot be read back as a thermal block, so its                      temperature cannot drive anything"
+                ));
+            }
+            if sim
+                .domain_as_mut::<dualis::elastic::Block>(&structure)
+                .is_none()
+            {
+                return Err(format!(
+                    "{structure}: this body cannot be written to between steps, so the                      temperature would reach it and change nothing. A domain has to implement                      `Domain::as_any_mut` to be coupled into"
+                ));
+            }
+        }
+
+        let mut world = World {
+            scene,
+            sim,
+            notes,
+            expansion,
+        };
+        // **Once before anything runs**, so the first captured frame already carries the strain the
+        // starting temperature implies. Not a formality: a power module is assembled at its
+        // solder's reflow temperature and sits at room temperature before it is switched on, so it
+        // is **already stressed** at `t = 0` and a frame showing zero there would be the one
+        // untrue frame in the run. It also fixes the reading set from the start, which is what
+        // keeps a conditional column from appearing halfway through a table.
+        world.close_expansion();
+        world.resolve_structures();
+        Ok(world)
     }
 
     /// The scene this was built from.
@@ -2388,7 +2789,95 @@ impl World {
     pub fn advance(&mut self, dt: Time) -> Result<dualis::core::Report, Violation> {
         let report = self.sim.advance(dt)?;
         self.close_feedback();
+        // **After the advance, and then solved again.** The capture that follows shows the block's
+        // new temperature, so the body beside it has to answer *that* temperature and not the one
+        // before. Setting the strain first instead left the structure one window stale — invisible
+        // near a steady state and a 0.5% error on a 60 s run, which is exactly the size of lag that
+        // gets read as a physics result.
+        self.close_expansion();
+        self.resolve_structures();
         Ok(report)
+    }
+
+    /// Hand each structure the stress-free strain its block's temperature implies.
+    ///
+    /// `α(T − T_ref)` element by element. This is the coupling a digital twin is for, and it lives
+    /// here rather than in either domain because rule 4 forbids a domain knowing about another:
+    /// `dualis-elastic` takes an eigenstrain and never learns it came from a temperature, and
+    /// `dualis-thermal` never learns that anybody read it.
+    ///
+    /// A void cell has no temperature, and an element over one gets **no strain** rather than a
+    /// `NaN` — which would otherwise reach the load vector and bring the whole solve back
+    /// not-a-number, reported as a failure to converge rather than as what it was.
+    /// Bring every structure back to equilibrium after its strain changed.
+    ///
+    /// Called once at build so the first captured frame is a solved body rather than one handed a
+    /// strain and not yet asked — which reported the strain energy of a fully constrained body,
+    /// strains of zero and an infinite residual: three readings disagreeing about one instant.
+    /// And after every advance, so a frame's body is the answer to that frame's temperature.
+    pub(crate) fn resolve_structures(&mut self) {
+        let names: Vec<String> = self
+            .scene
+            .domains
+            .iter()
+            .filter_map(|d| match d {
+                DomainSpec::Structure { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        for name in names {
+            if let Some(body) = self.sim.domain_as_mut::<dualis::elastic::Block>(&name) {
+                body.solve(1e-10);
+            }
+        }
+    }
+
+    pub(crate) fn close_expansion(&mut self) {
+        let wanted: Vec<(String, String, f64)> = self
+            .scene
+            .domains
+            .iter()
+            .filter_map(|spec| match spec {
+                DomainSpec::Structure {
+                    name,
+                    follows: Some(block),
+                    reference_c: Some(reference),
+                    ..
+                } => Some((name.clone(), block.clone(), *reference)),
+                _ => None,
+            })
+            .collect();
+
+        for (structure, block, reference_c) in wanted {
+            let Some(alpha) = self.expansion.get(&structure).cloned() else {
+                continue;
+            };
+            let reference = Temperature::celsius(reference_c).to_si();
+            let Some(source) = self.sim.domain_as::<dualis::thermal::Solid3D>(&block) else {
+                continue;
+            };
+            let (nx, ny, nz) = source.counts();
+            let mut strain = vec![0.0; alpha.len()];
+            for k in 0..nz {
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let at = i + nx * (j + ny * k);
+                        if at >= strain.len() {
+                            continue;
+                        }
+                        let t = source.temperature_at(i, j, k).to_si();
+                        if t.is_finite() {
+                            strain[at] = alpha[at] * (t - reference);
+                        }
+                    }
+                }
+            }
+            if let Some(body) = self.sim.domain_as_mut::<dualis::elastic::Block>(&structure) {
+                body.stress_free_strain(|i, j, k| {
+                    strain.get(i + nx * (j + ny * k)).copied().unwrap_or(0.0)
+                });
+            }
+        }
     }
 
     /// Where each domain sits, keyed by the name the simulation knows it under.
@@ -2550,6 +3039,19 @@ impl DomainSpec {
             // A block is a volume, and the extent says so. Sampled at the block's own cell
             // count, which is what `Extent::volume` is for — and which nothing in this format
             // could express until a domain with a 3D field arrived to need it.
+            // A structure's field is its **nodes**, not its elements: the displacement lives at
+            // the corners and there is one more of them along every axis. Getting that off by one
+            // would draw a body one element short and nothing would say so.
+            DomainSpec::Structure { cells, cell_mm, .. } => Placement::field(Extent::volume(
+                LengthVec::from_si(
+                    glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
+                        * cell_mm
+                        * 1e-3,
+                ),
+                cells[0] + 1,
+                cells[1] + 1,
+                cells[2] + 1,
+            )),
             DomainSpec::Block { cells, cell_mm, .. } => Placement::field(Extent::volume(
                 LengthVec::from_si(
                     glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)

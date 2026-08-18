@@ -251,7 +251,7 @@ fn the_scene_count_agrees_everywhere_it_is_written() {
     phrase(readme, "runs all {} on every commit", scenes);
     phrase(
         "README.md",
-        "with {} scenes across seven of the eleven domains",
+        "with {} scenes across eight of the eleven domains",
         scenes,
     );
     phrase(

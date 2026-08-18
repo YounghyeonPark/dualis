@@ -667,6 +667,12 @@ impl Domain for Bar1D {
         Some(self)
     }
 
+    /// **And mutably**, because a domain that can be read and not written is one a coupling can
+    /// only fail at silently — `Simulation::domain_as_mut` returns `None` when this is missing.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     /// The bar reads as a temperature field, so a renderer never has to know it is a bar.
     fn as_field(&self) -> Option<&dyn dualis_core::ScalarField> {
         Some(self)

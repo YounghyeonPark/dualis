@@ -1978,6 +1978,129 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     block.generated_power().to_si()
                 );
             }
+            "25-what-140-kelvin-does-to-the-solder.json" => {
+                // The same power module as `24`, with a body on the same grid whose stress-free
+                // strain is the block's temperature. The first scene in this format that couples
+                // two physics on one mesh, and the first that reaches `dualis-elastic` at all.
+                //
+                // **The failure mode of a real module is not its temperature.** It is the solder,
+                // fatigued by silicon at 2.6e-6 per kelvin sitting on solder at 2.15e-5 through
+                // every power cycle. The platform could compute the temperature to four figures
+                // and could say nothing about that until a structure could follow a block.
+                let reading = |f: &dualis_world::Frame, label: &str| {
+                    f.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label} reading"))
+                        .value
+                };
+
+                // **The first frame is exact and it is not zero.** The block starts uniform at
+                // 40 C and the body is the size it was drawn at 217 C — its solder's reflow — so
+                // every element is already strained before anything is switched on. The peak is
+                // the solder's own, `alpha (T - T_ref)`, computed here from the scene's declared
+                // coefficient and nothing read back.
+                let (reference_c, start_c, solder_alpha) = (217.0, 40.0, 2.15e-5);
+                let closed = solder_alpha * (start_c - reference_c);
+                let at_start = reading(&frames[0], "free strain");
+                assert!(
+                    (at_start - closed).abs() < 1e-12,
+                    "{name}: cold, the solder wants {closed:e} and has {at_start:e}"
+                );
+                // An equilibrium rather than a body handed a strain and not yet asked. Judged
+                // against the solve's own tolerance and not against zero: an unsolved body reports
+                // an **infinite** residual, so this separates the two cases without asserting that
+                // conjugate gradients terminate exactly.
+                let residual = reading(&frames[0], "residual");
+                assert!(
+                    residual.is_finite() && residual < 1e-9,
+                    "{name}: the first frame must be an equilibrium: residual {residual:e}"
+                );
+
+                // **And the last frame is exact too**, against the temperature the block reached.
+                // This is the claim that says the coupling is live rather than frozen at build.
+                let block = world
+                    .simulation()
+                    .domain_as::<dualis::thermal::Solid3D>("module")
+                    .expect("the module is a block");
+                // Scanned over every element, exactly as the domain does, with the coefficient
+                // the scene's layers imply. The peak is **not** the hottest cell of any layer: all
+                // the strains are negative, so the largest magnitude belongs to whatever sits
+                // furthest *below* the reference — and which layer that is depends on the product
+                // of the coefficient and the distance, not on either alone. Getting it by hand was
+                // wrong twice before it was scanned.
+                let copper_alpha = dualis::prelude::Substance::copper()
+                    .thermal
+                    .expect("copper expands")
+                    .expansion
+                    .to_si();
+                let alpha_at = |k: usize| match k {
+                    3 => 7.4e-6,       // Al2O3 96%
+                    5 => solder_alpha, // SAC305
+                    6 | 7 => 2.6e-6,   // Si
+                    _ => copper_alpha, // Cu ETP, the block's bulk
+                };
+                let mut want = 0.0f64;
+                for k in 0..8 {
+                    for j in 0..8 {
+                        for i in 0..8 {
+                            let t = block.temperature_at(i, j, k).to_si() - 273.15;
+                            let e = alpha_at(k) * (t - reference_c);
+                            if e.abs() > want.abs() {
+                                want = e;
+                            }
+                        }
+                    }
+                }
+                let at_end = reading(frames.last().expect("frames"), "free strain");
+                assert!(
+                    (at_end - want).abs() < 1e-9,
+                    "{name}: hot, the worst element wants {want:e} and has {at_end:e}"
+                );
+
+                // **The module is most stressed cold and relaxes as it heats**, which is the
+                // answer a module assembled at reflow has to give: warming it back towards the
+                // temperature it was built at relieves the assembly strain. Monotone across the
+                // run, not merely lower at the end.
+                let energy: Vec<f64> = frames.iter().map(|f| reading(f, "strain energy")).collect();
+                for pair in energy.windows(2) {
+                    assert!(
+                        pair[1] <= pair[0] + 1e-12,
+                        "{name}: heating towards the reference must relieve, not add: {energy:?}"
+                    );
+                }
+                println!(
+                    "  {name}: strain energy {:.4} J cold falling to {:.4} J hot, {:.1}x",
+                    energy[0],
+                    energy[energy.len() - 1],
+                    energy[0] / energy[energy.len() - 1]
+                );
+                assert!(
+                    energy[0] / energy[energy.len() - 1] > 5.0,
+                    "{name}: it should relax by a lot: {:?} to {:?}",
+                    energy[0],
+                    energy[energy.len() - 1]
+                );
+
+                // **And the thermal answer is untouched by being watched.** The coupling is
+                // one-way — nothing writes back into the block — so this run is still the same
+                // physics scene `24` settles: climbing monotonically towards the 181.190771 C its
+                // resistance stack fixes, and not past it. A structure that fed back would leave
+                // that path, and the shape of the climb is a stronger statement than one number
+                // because it holds at every frame rather than at the last.
+                let junction: Vec<f64> = frames.iter().map(|f| reading(f, "peak")).collect();
+                for pair in junction.windows(2) {
+                    assert!(
+                        pair[1] >= pair[0] - 1e-9,
+                        "{name}: the junction only climbs while the module warms: {junction:?}"
+                    );
+                }
+                let peak = *junction.last().expect("frames");
+                assert!(
+                    peak < 181.190_771 && peak > 179.0,
+                    "{name}: 60 s is short of steady, so it sits just under scene 24's                      181.190771 C: {peak:.6} C"
+                );
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

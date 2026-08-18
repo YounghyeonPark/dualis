@@ -107,6 +107,18 @@ pub struct Block {
     value: Vec<f64>,
     /// Applied nodal force, three per node.
     load: Vec<f64>,
+    /// Work put into this body from outside the simulation, in joules.
+    ///
+    /// **An elliptic domain is driven, not evolved.** It holds strain energy, and every solve
+    /// changes that energy by whatever the loads and the stress-free strain ask for — none of
+    /// which crossed the bus. Without this counter a body simply *appearing* to hold 5.06 J on its
+    /// first step is energy the audit sees created, and it stops the run: measured, that is exactly
+    /// what a thermally driven structure did, `5.056732e0` becoming `2.313940e-1` between two
+    /// frames as the temperature field moved under it.
+    ///
+    /// `Conductor` keeps the same pair for the same reason, with the sign the other way round —
+    /// it gives energy away and this takes it in.
+    received: f64,
     /// Stress-free strain per element — an **eigenstrain**, dimensionless and isotropic.
     ///
     /// The size the element would take if nothing were holding it. Thermal expansion is `αΔT` and
@@ -127,6 +139,9 @@ struct Saved {
     held: Vec<bool>,
     value: Vec<f64>,
     load: Vec<f64>,
+    /// Saved for the reason `Solid3D::lost` is: an iterative sweep that rewinds the displacement
+    /// and not the counter credits itself a solve's worth of work per retry.
+    received: f64,
 }
 
 impl Block {
@@ -157,6 +172,7 @@ impl Block {
             held: vec![false; n],
             value: vec![0.0; n],
             load: vec![0.0; n],
+            received: 0.0,
             eigen: vec![0.0; counts.0 * counts.1 * counts.2],
             residual: f64::INFINITY,
             converged: false,
@@ -708,6 +724,18 @@ impl Block {
 
     /// Solve, spending at most `max_iterations`.
     pub fn solve_within(&mut self, tolerance: f64, max_iterations: usize) -> bool {
+        // What a solve changes came from outside: the loads and the stress-free strain are both
+        // stated by a caller and neither crossed the bus. Counted **here** rather than in `step`,
+        // because an application that re-solves between steps — which is what a coupling to a
+        // temperature field does — would otherwise move the energy without the books moving with
+        // it, and the audit would stop a run that was right.
+        let before = self.strain_energy().to_si();
+        let outcome = self.solve_inner(tolerance, max_iterations);
+        self.received += self.strain_energy().to_si() - before;
+        outcome
+    }
+
+    fn solve_inner(&mut self, tolerance: f64, max_iterations: usize) -> bool {
         // **The iterate starts at the prescribed values, not at zero.** Everything below keeps
         // the search direction zero on a held degree of freedom, so whatever `x` holds there at
         // the start it holds at the end — which is how a prescribed motion enters the system
@@ -825,13 +853,20 @@ impl Domain for Block {
         ))
     }
 
-    /// The strain energy the body is holding.
+    /// The strain energy the body is holding, less what was put into it from outside.
+    ///
+    /// Two contributions rather than their difference, because `Ledger::add` raises an entry's
+    /// *scale* to the largest thing added to it and the audit judges a change against that. A body
+    /// at equilibrium has the two in balance and their sum near zero, so pre-summing would leave a
+    /// scale of nothing and make the first joule of rounding a hundred-percent error.
     fn ledger(&self) -> Ledger {
-        Ledger::new().with(quantity::ENERGY, self.strain_energy().to_si())
+        Ledger::new()
+            .with(quantity::ENERGY, self.strain_energy().to_si())
+            .with(quantity::ENERGY, -self.received)
     }
 
     fn readings(&self) -> Vec<Reading> {
-        vec![
+        let mut out = vec![
             Reading::new(
                 &self.name,
                 "strain energy",
@@ -843,10 +878,32 @@ impl Domain for Block {
             Reading::new(&self.name, "strain z", self.mean_strain(2), ""),
             Reading::new(&self.name, "volume change", self.volumetric_strain(), ""),
             Reading::new(&self.name, "residual", self.residual, ""),
-        ]
+        ];
+        // **Only for a body that carries one**, the way a block reports `melted` only if it can
+        // melt. The peak stress-free strain is what says the coupling is live: a structure driven
+        // by a temperature field that reported nothing but zeros would read as *no thermal stress*
+        // rather than as *not connected*, and the second is the one that actually happened.
+        let peak = self
+            .eigen
+            .iter()
+            .fold(0.0f64, |m, e| if e.abs() > m.abs() { *e } else { m });
+        if peak != 0.0 {
+            out.push(Reading::new(&self.name, "free strain", peak, ""));
+            out.push(Reading::new(&self.name, "work in", self.received, "J"));
+        }
+        out
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
+        Some(self)
+    }
+
+    /// **And mutably**, because a domain that can be read and not written is one a coupling can
+    /// only fail at silently. `Simulation::domain_as_mut` returns `None` when this is not
+    /// implemented, and a caller that wrote through it would do nothing and report nothing —
+    /// which is how a whole coupled body came back reporting zero strain that read as *no stress*
+    /// rather than as *not connected*.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
         Some(self)
     }
 
@@ -870,6 +927,7 @@ impl Domain for Block {
             held: self.held.clone(),
             value: self.value.clone(),
             load: self.load.clone(),
+            received: self.received,
         }));
     }
 
@@ -879,6 +937,7 @@ impl Domain for Block {
             self.held = s.held;
             self.value = s.value;
             self.load = s.load;
+            self.received = s.received;
         }
     }
 }

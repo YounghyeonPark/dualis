@@ -719,6 +719,13 @@ impl DomainSpec {
     /// lot.
     pub fn refined(&self) -> Result<Option<DomainSpec>, String> {
         let spec = match self {
+            // **A structure is not refined here, and refusing is the honest answer.** Halving the
+            // element size doubles the node count in every direction, so an elliptic vector solve
+            // costs eight times as much and converges more slowly with it; and a structure that
+            // `follows` a block would then have to be refined *in step with it*, which is a
+            // coupled statement this per-domain method cannot make. Reported as unswept rather
+            // than swept wrongly.
+            DomainSpec::Structure { .. } => return Ok(None),
             // A room's samples sit on the walls — `width` is `(n − 1)·dx` — so halving the
             // spacing is `2n − 1`, exactly as for a hall below. The height is then quantised
             // to whole cells of the *new* spacing, and for a height not commensurate with the

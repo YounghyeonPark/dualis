@@ -1,0 +1,200 @@
+{
+  "title": "the same power module, and what 140 kelvin does to its solder",
+  "schedule": "multirate",
+  "duration_s": 60.0,
+  "frames": 12,
+  "conservation_tolerance": 1e-06,
+  "materials": {
+    "silicon": {
+      "name": "Si (die)",
+      "density": 2329.0,
+      "thermal": {
+        "conductivity": 148.0,
+        "specific_heat": 705.0,
+        "expansion": 2.6e-06,
+        "emissivity": 0.6
+      },
+      "mechanical": {
+        "youngs_modulus": 130000000000.0,
+        "poisson_ratio": 0.28,
+        "yield_strength": 7000000000.0
+      }
+    },
+    "sac305": {
+      "name": "SAC305 solder",
+      "density": 7400.0,
+      "thermal": {
+        "conductivity": 58.0,
+        "specific_heat": 220.0,
+        "expansion": 2.15e-05,
+        "emissivity": 0.3
+      },
+      "mechanical": {
+        "youngs_modulus": 41000000000.0,
+        "poisson_ratio": 0.36,
+        "yield_strength": 30000000.0
+      }
+    },
+    "alumina": {
+      "name": "Al2O3 96% (DBC)",
+      "density": 3720.0,
+      "thermal": {
+        "conductivity": 24.0,
+        "specific_heat": 880.0,
+        "expansion": 7.4e-06,
+        "emissivity": 0.8
+      },
+      "mechanical": {
+        "youngs_modulus": 300000000000.0,
+        "poisson_ratio": 0.21,
+        "yield_strength": 350000000.0
+      }
+    }
+  },
+  "domains": [
+    {
+      "kind": "block",
+      "name": "module",
+      "cells": [
+        8,
+        8,
+        8
+      ],
+      "cell_mm": 1.5,
+      "initial_c": 40.0,
+      "material": "copper",
+      "regions": [
+        {
+          "material": "alumina",
+          "from": [
+            0,
+            0,
+            3
+          ],
+          "to": [
+            8,
+            8,
+            4
+          ]
+        },
+        {
+          "material": "sac305",
+          "from": [
+            0,
+            0,
+            5
+          ],
+          "to": [
+            8,
+            8,
+            6
+          ]
+        },
+        {
+          "material": "silicon",
+          "from": [
+            0,
+            0,
+            6
+          ],
+          "to": [
+            8,
+            8,
+            8
+          ]
+        }
+      ],
+      "dissipation": [
+        {
+          "watts": 45.0,
+          "from": [
+            0,
+            0,
+            7
+          ],
+          "to": [
+            8,
+            8,
+            8
+          ]
+        }
+      ],
+      "cooling": [
+        {
+          "face": "z-min",
+          "ambient_c": 40.0,
+          "convection_w_per_m2_k": 3000.0,
+          "area_cm2": 1.44
+        }
+      ]
+    },
+    {
+      "kind": "structure",
+      "name": "stress",
+      "cells": [
+        8,
+        8,
+        8
+      ],
+      "cell_mm": 1.5,
+      "material": "copper",
+      "regions": [
+        {
+          "material": "alumina",
+          "from": [
+            0,
+            0,
+            3
+          ],
+          "to": [
+            8,
+            8,
+            4
+          ]
+        },
+        {
+          "material": "sac305",
+          "from": [
+            0,
+            0,
+            5
+          ],
+          "to": [
+            8,
+            8,
+            6
+          ]
+        },
+        {
+          "material": "silicon",
+          "from": [
+            0,
+            0,
+            6
+          ],
+          "to": [
+            8,
+            8,
+            8
+          ]
+        }
+      ],
+      "held": [
+        {
+          "face": "x-min",
+          "as": "roller"
+        },
+        {
+          "face": "y-min",
+          "as": "roller"
+        },
+        {
+          "face": "z-min",
+          "as": "roller"
+        }
+      ],
+      "follows": "module",
+      "reference_c": 217.0
+    }
+  ]
+}

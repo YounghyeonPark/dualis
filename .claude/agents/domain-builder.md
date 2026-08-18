@@ -92,7 +92,7 @@ honestly whether the new domain is 1D, 2D or 3D), `CONTRIBUTING.md` and `CLAUDE.
 list what the kernel knows nothing about, the publish loop in `RELEASING.md`, and the repository
 description. Run `prose-auditor` afterwards rather than trusting the list.
 
-**10. A scene, if `dualis-world` can express it.** Twenty-four ship, all run by CI through the real
+**10. A scene, if `dualis-world` can express it.** Twenty-five ship, all run by CI through the real
 binary, and each asserts one number that is a property of the physics rather than of the file. A
 domain with a scene is a domain somebody has used from outside.
 

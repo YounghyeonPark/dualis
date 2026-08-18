@@ -762,6 +762,12 @@ impl Domain for ContactSystem {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         Some(self)
     }
+
+    /// **And mutably**, because a domain that can be read and not written is one a coupling can
+    /// only fail at silently — `Simulation::domain_as_mut` returns `None` when this is missing.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 /// Momentum magnitude, for reporting.

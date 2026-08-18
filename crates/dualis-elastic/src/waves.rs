@@ -622,6 +622,15 @@ impl Domain for Waves {
         Some(self)
     }
 
+    /// **And mutably**, because a domain that can be read and not written is one a coupling can
+    /// only fail at silently. `Simulation::domain_as_mut` returns `None` when this is not
+    /// implemented, and a caller that wrote through it would do nothing and report nothing —
+    /// which is how a whole coupled body came back reporting zero strain that read as *no stress*
+    /// rather than as *not connected*.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
+
     /// The **magnitude** of the displacement, so the analysis layer can draw a wave.
     ///
     /// `Domain::as_field` nominates one scalar and a displacement is a vector, so this is `|u|`:
