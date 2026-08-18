@@ -107,6 +107,13 @@ pub struct Block {
     value: Vec<f64>,
     /// Applied nodal force, three per node.
     load: Vec<f64>,
+    /// Stress-free strain per element — an **eigenstrain**, dimensionless and isotropic.
+    ///
+    /// The size the element would take if nothing were holding it. Thermal expansion is `αΔT` and
+    /// is what this exists for, but the domain is deliberately not told about temperature:
+    /// swelling, moisture, curing shrinkage and a phase change are the same statement, and a
+    /// domain that named one of them would have to depend on whatever computes it.
+    eigen: Vec<f64>,
     residual: f64,
     converged: bool,
     saved: Option<Box<Saved>>,
@@ -150,6 +157,7 @@ impl Block {
             held: vec![false; n],
             value: vec![0.0; n],
             load: vec![0.0; n],
+            eigen: vec![0.0; counts.0 * counts.1 * counts.2],
             residual: f64::INFINITY,
             converged: false,
             saved: None,
@@ -371,6 +379,75 @@ impl Block {
         self.invalidate();
     }
 
+    /// Give each element a **stress-free strain** — the size it would take if nothing held it.
+    ///
+    /// `field` is called per element and returns a dimensionless isotropic strain. For thermal
+    /// expansion that is `α·ΔT`; the domain is not told which, because swelling, curing shrinkage
+    /// and a phase change are the same statement and a domain that named temperature would have to
+    /// depend on whatever computes it.
+    ///
+    /// **A body free to expand develops no stress**, however large the eigenstrain — it changes
+    /// size and nothing more. Stress appears only where something resists: a clamp, a neighbour
+    /// with a different coefficient, or a gradient across the body. That is the whole content of
+    /// thermal stress, and it is why the load this assembles sums to **zero net force**.
+    ///
+    /// Replaces whatever was set before, and takes effect at the next [`solve`](Block::solve).
+    pub fn stress_free_strain(&mut self, field: impl Fn(usize, usize, usize) -> f64) {
+        let (nx, ny, nz) = self.counts;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    self.eigen[i + nx * (j + ny * k)] = field(i, j, k);
+                }
+            }
+        }
+    }
+
+    /// One element's stress-free strain, as [`stress_free_strain`](Block::stress_free_strain) set
+    /// it. Zero for an element that has none, and for an index the block does not have.
+    pub fn stress_free_at(&self, e_x: usize, e_y: usize, e_z: usize) -> f64 {
+        let (nx, ny, _) = self.counts;
+        self.eigen
+            .get(e_x + nx * (e_y + ny * e_z))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// The nodal load a stress-free strain applies: `∫ Bᵀ D ε₀ dV`, element by element.
+    ///
+    /// Assembled at solve time rather than when the strain is set, because a strain and a traction
+    /// are set in either order and a load that depended on which came first would be a trap.
+    fn eigen_load(&self) -> Vec<f64> {
+        let mut out = vec![0.0; self.load.len()];
+        if !self.eigen.iter().any(|e| *e != 0.0) {
+            return out;
+        }
+        let (nx, ny, nz) = self.counts;
+        let (mx, my, _) = self.nodes;
+        let shape = crate::element::eigen_load(self.dx);
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let e = i + nx * (j + ny * k);
+                    let strain = self.eigen[e];
+                    if strain == 0.0 {
+                        continue;
+                    }
+                    let m = self.materials[self.which[e] as usize];
+                    let (lambda, mu) = m.lame();
+                    let coefficient = (3.0 * lambda + 2.0 * mu) * strain;
+                    for (n, c) in crate::element::CORNERS.iter().enumerate() {
+                        let node = (i + c[0]) + mx * ((j + c[1]) + my * (k + c[2]));
+                        for axis in 0..3 {
+                            out[3 * node + axis] += coefficient * shape[3 * n + axis];
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Apply a uniform traction over a face, as a vector in world axes.
     ///
     /// # Consistent nodal loads, not equal shares
@@ -501,13 +578,19 @@ impl Block {
     /// The component along the face's own normal is unambiguous, because only that face's roller
     /// holds it. The magnitude is not, and taking one is the mistake this paragraph exists to stop.
     pub fn reaction(&self, face: Face) -> DVec3 {
+        // **Every load, not only the applied ones.** A reaction is what a support must supply to
+        // close `Ku = f`, and once a body carries a stress-free strain, `f` has a term the caller
+        // never applied. Reading `self.load` alone made an unresisted expansion — which pushes on
+        // nothing — report 1.1e5 N of reaction, and gave a uniaxially held bar the right magnitude
+        // with the wrong sign.
         let ku = self.apply(&self.u);
+        let eigen = self.eigen_load();
         let mut out = DVec3::ZERO;
         for (i, j, k) in self.face_nodes(face) {
             let n = self.node(i, j, k);
             for a in 0..3 {
                 if self.held[3 * n + a] {
-                    out[a] += ku[3 * n + a] - self.load[3 * n + a];
+                    out[a] += ku[3 * n + a] - self.load[3 * n + a] - eigen[3 * n + a];
                 }
             }
         }
@@ -521,8 +604,44 @@ impl Block {
 
     /// Strain energy, `½ uᵀKu`.
     pub fn strain_energy(&self) -> Energy {
+        // `½uᵀKu` is the energy of the *total* strain, and what a body stores is the energy of the
+        // part of it that is resisted. With a stress-free strain `ε₀` the stress is `D(ε − ε₀)`,
+        // and the stored energy is
+        //
+        // ```text
+        //   U = ½(ε−ε₀)ᵀD(ε−ε₀) = ½uᵀKu − uᵀf₀ + ½∫ε₀ᵀDε₀
+        // ```
+        //
+        // where `f₀` is the eigenstrain load. Without the correction an **unresisted expansion**
+        // — which is stress-free by definition — reported 0.46 J, and that is the number a reader
+        // would have believed, because a body that expanded by exactly the right amount looks
+        // right in every other measure.
         let ku = self.apply(&self.u);
-        Energy::from_si(0.5 * self.u.iter().zip(&ku).map(|(a, b)| a * b).sum::<f64>())
+        let mechanical = 0.5 * self.u.iter().zip(&ku).map(|(a, b)| a * b).sum::<f64>();
+        if !self.eigen.iter().any(|e| *e != 0.0) {
+            return Energy::from_si(mechanical);
+        }
+        let f0 = self.eigen_load();
+        let cross: f64 = self.u.iter().zip(&f0).map(|(u, f)| u * f).sum();
+        // `½∫ε₀ᵀDε₀` per element: `ε₀ = e·I` gives `½·3e·(3λ+2μ)e·V`, element by element because
+        // the eigenstrain and the material both vary.
+        let (nx, ny, nz) = self.counts;
+        let volume = self.dx.powi(3);
+        let mut constant = 0.0;
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let e = i + nx * (j + ny * k);
+                    let strain = self.eigen[e];
+                    if strain == 0.0 {
+                        continue;
+                    }
+                    let (lambda, mu) = self.materials[self.which[e] as usize].lame();
+                    constant += 1.5 * (3.0 * lambda + 2.0 * mu) * strain * strain * volume;
+                }
+            }
+        }
+        Energy::from_si(mechanical - cross + constant)
     }
 
     /// Work done by the applied loads, `Σ f·u`.
@@ -531,6 +650,10 @@ impl Block {
     /// loads. At equilibrium they are in the ratio Clapeyron's theorem gives, and that they are is
     /// a check rather than a restatement.
     pub fn work_done(&self) -> Energy {
+        // The **applied** loads only, which is what the name says and what Clapeyron's theorem is
+        // about. A stress-free strain does no work on the body: it is not a force somebody applied,
+        // it is the body wanting to be a different size, and `energy_balance` says so by comparing
+        // the two quantities rather than by folding one into the other.
         Energy::from_si(
             self.load
                 .iter()
@@ -541,6 +664,11 @@ impl Block {
     }
 
     /// How far `2U = Σf·u` is from holding, relative to the work.
+    ///
+    /// Clapeyron's theorem is about a body loaded from outside, so it is **not** a statement about
+    /// a body carrying a stress-free strain: an unresisted expansion stores nothing and no load did
+    /// any work, and the identity is `0 = 0` rather than a check. Zero is returned there for the
+    /// same reason it is returned for an unloaded body — there is nothing to be relative to.
     pub fn energy_balance(&self) -> f64 {
         let (u, w) = (self.strain_energy().to_si(), self.work_done().to_si());
         if w.abs() <= 0.0 {
@@ -585,7 +713,13 @@ impl Block {
         // the start it holds at the end — which is how a prescribed motion enters the system
         // without a penalty stiffness or a row elimination.
         let mut x = self.value.clone();
-        let b = self.load.clone();
+        // The applied loads plus whatever a stress-free strain contributes. Summed here rather
+        // than accumulated into `load`, so `unload` still means *no applied load* and setting a
+        // traction twice does not leave a thermal load behind it.
+        let mut b = self.load.clone();
+        for (i, e) in self.eigen_load().into_iter().enumerate() {
+            b[i] += e;
+        }
 
         let ax = self.apply(&x);
         let mut r = vec![0.0; x.len()];

@@ -137,6 +137,31 @@ pub(crate) fn stiffness(h: f64, lambda: f64, mu: f64) -> Vec<f64> {
     k
 }
 
+/// `∫ ∇N dV` over one element, twenty-four numbers in the same node-then-component order as
+/// [`stiffness`].
+///
+/// The geometric half of an **eigenstrain** load. A body with a stress-free strain `ε₀` carries a
+/// nodal load `∫ Bᵀ D ε₀ dV`, and for an isotropic `ε₀ = e·I` the product `D ε₀` is
+/// `(3λ+2μ)·e` on each of the three normal rows and nothing on the shear rows — so the whole
+/// element load is `(3λ+2μ)·e` times this vector, and this vector depends on the geometry alone.
+///
+/// It is exact and needs no quadrature. `∫ ∂N_n/∂x dV = s_x·h²/4`, where `s_x` is `−1` or `+1`
+/// depending on which side of the element node `n` sits: a trilinear shape function's derivative
+/// integrates to the flux it carries through the face it faces. The eight entries of each
+/// component sum to zero, which is the statement that a stress-free strain applies **no net
+/// force** — a body expanding into nothing does not push itself across the room.
+pub(crate) fn eigen_load(h: f64) -> [f64; DOF] {
+    let mut f = [0.0; DOF];
+    let quarter = h * h / 4.0;
+    for (n, c) in CORNERS.iter().enumerate() {
+        for axis in 0..3 {
+            let sign = if c[axis] == 0 { -1.0 } else { 1.0 };
+            f[3 * n + axis] = sign * quarter;
+        }
+    }
+    f
+}
+
 /// Lamé constants from the engineering pair.
 ///
 /// `ν → 0.5` is incompressibility and `λ` diverges; the caller is expected to have refused that
