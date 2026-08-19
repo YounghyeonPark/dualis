@@ -32,9 +32,20 @@ pub fn readings_csv(frames: &[Frame]) -> String {
     }
     out.push('\n');
     for frame in frames {
-        out.push_str(&format!("{:.9}", frame.time_s));
+        // The time gets the same treatment, and leaving it out was a mistake this file caught an
+        // hour later: a 4 ns run printed **every** timestamp as `0.000000000` or `0.000000004`,
+        // so the axis a reader plots against had two distinct values in two hundred rows. Fixed
+        // notation is only readable at the scale it was chosen for, and a scene format that spans
+        // nanoseconds to hours has no such scale.
+        out.push_str(&format!("{:.9e}", frame.time_s));
         for r in &frame.readings {
-            out.push_str(&format!(",{:.9}", r.value));
+            // **Significant figures, not decimal places.** A fixed `{:.9}` prints every value
+            // under a nanounit as `0.000000000`, and a column of zeros that is not zero is the
+            // shape this workspace calls a silent failure: measured on a cavity holding 3.2e-10 J,
+            // whose entire energy history came out as a column of zeros beside a field the run had
+            // just reported at 921 V/m. `{:e}` keeps the magnitude wherever it is, and a
+            // spreadsheet reads it.
+            out.push_str(&format!(",{:.9e}", r.value));
         }
         out.push('\n');
     }

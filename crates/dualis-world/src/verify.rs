@@ -726,6 +726,25 @@ impl DomainSpec {
             // coupled statement this per-domain method cannot make. Reported as unswept rather
             // than swept wrongly.
             DomainSpec::Structure { .. } => return Ok(None),
+            // **A cavity's resonances are a property of the box**, so refining halves the cell and
+            // doubles the counts and the frequency does not move — which is exactly what the sweep
+            // should find, and what a mode number scaled with the grid would have destroyed. The
+            // mode is `(m, p)` and stays `(m, p)`: it names a shape, not a wavelength in cells.
+            DomainSpec::Cavity {
+                name,
+                cells,
+                cell_mm,
+                medium,
+                mode,
+                amplitude_v_per_m,
+            } => Some(DomainSpec::Cavity {
+                name: name.clone(),
+                cells: [cells[0] * 2, cells[1] * 2, cells[2] * 2],
+                cell_mm: cell_mm / 2.0,
+                medium: medium.clone(),
+                mode: *mode,
+                amplitude_v_per_m: *amplitude_v_per_m,
+            }),
             // **A channel refines, and its drive does not.** Halving the cell doubles the counts
             // and leaves the body force alone: `g` is an acceleration and the closed forms are
             // written in it, so scaling it would change the problem rather than resolve it. The

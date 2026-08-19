@@ -849,6 +849,37 @@ pub enum DomainSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         drive_m_per_s2: Option<[f64; 3]>,
     },
+    /// Maxwell's equations on a Yee grid — `dualis-em`'s `Cavity`.
+    ///
+    /// The second hyperbolic domain here and the first to carry a **constraint the update
+    /// preserves as an identity** rather than to a tolerance: `∇·B = 0` follows from `∇·(∇×F) = 0`,
+    /// and the Yee staggering is what makes the discrete operators satisfy it too. So `div B` is a
+    /// reading worth watching — it is not converging to zero, it *is* zero, and anything else means
+    /// the scheme stopped being Yee's.
+    ///
+    /// A cavity's resonances are a closed form, `f = (c/2)√((l/a)² + (m/b)² + (n/d)²)`, which is
+    /// what scene `27` is written around — the same shape the acoustic `room` scenes use, and for
+    /// the same reason: a frequency is a property of the box and not of the solver.
+    Cavity {
+        /// Domain name.
+        name: String,
+        /// Cells along x, y and z.
+        cells: [usize; 3],
+        /// The side of one cubic cell.
+        cell_mm: f64,
+        /// What it is filled with. See [`MediumSpec`].
+        medium: MediumSpec,
+        /// The `(m, p)` standing mode to start it ringing in, and at what field strength.
+        ///
+        /// The family is `(m, 0, p)` because those are the modes a rectangular box supports with
+        /// one field component — a general `(m, n, p)` needs two and is a different seeding
+        /// problem. Absent is an empty cavity, which stays empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<[u32; 2]>,
+        /// Field strength of the seeded mode, V/m. Ignored without a `mode`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        amplitude_v_per_m: Option<f64>,
+    },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
     /// `dualis-electrical`. Every other source in this format states its watts; this one
@@ -1299,6 +1330,7 @@ impl DomainSpec {
             | DomainSpec::Block { name, .. }
             | DomainSpec::Structure { name, .. }
             | DomainSpec::Channel { name, .. }
+            | DomainSpec::Cavity { name, .. }
             | DomainSpec::Hall { name, .. }
             | DomainSpec::Conductor { name, .. }
             | DomainSpec::Puck { name, .. }
@@ -1746,6 +1778,83 @@ impl DomainSpec {
                     dualis::units::Pressure::from_si(*amplitude_pa),
                 ),
             ),
+            DomainSpec::Cavity {
+                name,
+                cells,
+                cell_mm,
+                medium,
+                mode,
+                amplitude_v_per_m,
+            } => {
+                if cells.contains(&0) {
+                    return Err(format!("{name}: a cavity needs at least one cell"));
+                }
+                if cell_mm.is_nan() || *cell_mm <= 0.0 {
+                    return Err(format!("{name}: cell_mm must be positive, got {cell_mm}"));
+                }
+                let stuff = match medium {
+                    MediumSpec::Named(n) if n == "vacuum" => dualis::em::Medium::vacuum(),
+                    MediumSpec::Named(other) => {
+                        return Err(format!(
+                            "{name}: {other:?} is not a medium this format knows. It knows \
+                             \"vacuum\", or state `relative_permittivity`, \
+                             `relative_permeability` and `conductivity` outright"
+                        ));
+                    }
+                    MediumSpec::Stated {
+                        relative_permittivity,
+                        relative_permeability,
+                        conductivity,
+                    } => {
+                        for (what, v) in [
+                            ("relative_permittivity", relative_permittivity),
+                            ("relative_permeability", relative_permeability),
+                        ] {
+                            if !(v.is_finite() && *v > 0.0) {
+                                return Err(format!(
+                                    "{name}: {what} must be positive, got {v}. It is \
+                                     **relative**, so vacuum is 1.0"
+                                ));
+                            }
+                        }
+                        if !(conductivity.is_finite() && *conductivity >= 0.0) {
+                            return Err(format!(
+                                "{name}: conductivity must not be negative, got {conductivity}"
+                            ));
+                        }
+                        dualis::em::Medium {
+                            relative_permittivity: *relative_permittivity,
+                            relative_permeability: *relative_permeability,
+                            conductivity: *conductivity,
+                        }
+                    }
+                };
+                let cavity = dualis::em::Cavity::new(
+                    name.clone(),
+                    (cells[0], cells[1], cells[2]),
+                    Length::mm(*cell_mm),
+                    stuff,
+                );
+                if let Some(m) = mode {
+                    let amplitude = amplitude_v_per_m.unwrap_or(1.0);
+                    if !amplitude.is_finite() {
+                        return Err(format!("{name}: {amplitude} is not a field strength"));
+                    }
+                    let _ = m;
+                    // **Not seeded here**, and that is not tidiness. A leapfrog starts `H` half a
+                    // step behind `E`, so `release_mode` needs the step the run will actually take
+                    // — and this function does not know it, because the substep comes from the
+                    // scene's coupling window and not from the domain. Seeding at the Courant
+                    // limit and running finer is a real inconsistency and it shows: the audit read
+                    // it as 1.8e-3 of energy created at 200 frames and 3.2e-4 at 40, which is the
+                    // mismatch scaling with itself. `World::build` does it, where the window is.
+                } else if amplitude_v_per_m.is_some() {
+                    return Err(format!(
+                        "{name}: an amplitude says how hard to ring a mode, and no `mode` is stated"
+                    ));
+                }
+                Box::new(cavity)
+            }
             DomainSpec::Channel {
                 name,
                 cells,
@@ -2345,6 +2454,32 @@ pub enum FluidSpec {
     },
 }
 
+/// What a cavity is filled with: a name, or the three numbers that define one.
+///
+/// ```json
+/// "medium": "vacuum"
+/// "medium": { "relative_permittivity": 2.1, "relative_permeability": 1.0, "conductivity": 0.0 }
+/// ```
+///
+/// **Relative**, both of them, so vacuum is `1.0` and not `8.854e-12`. A conductivity above zero
+/// makes the medium lossy, and the field energy then falls rather than merely moving between its
+/// electric and magnetic halves — which is the difference between a resonator and a heater.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum MediumSpec {
+    /// `vacuum`, which is also a good enough air.
+    Named(String),
+    /// Stated outright.
+    Stated {
+        /// `ε_r`, dimensionless.
+        relative_permittivity: f64,
+        /// `μ_r`, dimensionless.
+        relative_permeability: f64,
+        /// Conductivity, S/m. Zero is lossless.
+        conductivity: f64,
+    },
+}
+
 /// The walls of a channel, and how fast they are sliding.
 ///
 /// ```json
@@ -2860,6 +2995,36 @@ impl World {
         // is **already stressed** at `t = 0` and a frame showing zero there would be the one
         // untrue frame in the run. It also fixes the reading set from the start, which is what
         // keeps a conditional column from appearing halfway through a table.
+        // **The modes, seeded at the step the run will take.** The scheduler divides the coupling
+        // window into whole substeps no longer than the domain's own limit, so the step is
+        // `window / ceil(window / limit)` — smaller than the limit whenever the two are not
+        // commensurate, which is almost always. `release_mode` staggers `H` by half of *that*, and
+        // seeding at the limit instead leaves the two fields fractionally out of phase: measured
+        // as 3.2e-4 of the invariant at 40 frames and 1.8e-3 at 200, an error that grows as the
+        // window shrinks, which is the signature of a step mismatch rather than of a physics one.
+        let window = world.scene.duration_s / world.scene.frames as f64;
+        let modes: Vec<(String, [u32; 2], f64)> = world
+            .scene
+            .domains
+            .iter()
+            .filter_map(|d| match d {
+                DomainSpec::Cavity {
+                    name,
+                    mode: Some(m),
+                    amplitude_v_per_m,
+                    ..
+                } => Some((name.clone(), *m, amplitude_v_per_m.unwrap_or(1.0))),
+                _ => None,
+            })
+            .collect();
+        for (name, m, amplitude) in modes {
+            if let Some(cavity) = world.sim.domain_as_mut::<dualis::em::Cavity>(&name) {
+                let limit = cavity.max_stable_dt(Time::ZERO).to_si();
+                let steps = (window / limit).ceil().max(1.0);
+                cavity.release_mode((m[0], m[1]), amplitude, Time::from_si(window / steps));
+            }
+        }
+
         world.close_expansion();
         world.resolve_structures();
         Ok(world)
@@ -3228,7 +3393,11 @@ impl DomainSpec {
             // magnitude shows where the fluid is moving fast and not which way it is going. Drawn
             // at all because this crate's own docs say "it looks like a fluid" is the easiest
             // wrong answer to accept, and the answer to that is closed forms **and** a picture.
-            DomainSpec::Channel { cells, cell_mm, .. } => Placement::field(Extent::volume(
+            // A cavity's field is the **electric field's magnitude**, at its own cell centres, and
+            // the caveat is the channel's: `E` is a vector and this is how big it is. What a
+            // resonance looks like is the standing pattern, which a magnitude shows perfectly well.
+            DomainSpec::Cavity { cells, cell_mm, .. }
+            | DomainSpec::Channel { cells, cell_mm, .. } => Placement::field(Extent::volume(
                 LengthVec::from_si(
                     glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
                         * cell_mm

@@ -1,0 +1,25 @@
+{
+  "title": "a 120 x 120 mm vacuum cavity ringing in its (1,0,1) mode",
+  "schedule": "multirate",
+  "duration_s": 4e-09,
+  "frames": 200,
+  "conservation_tolerance": 1e-06,
+  "domains": [
+    {
+      "kind": "cavity",
+      "name": "resonator",
+      "cells": [
+        24,
+        4,
+        24
+      ],
+      "cell_mm": 5.0,
+      "medium": "vacuum",
+      "mode": [
+        1,
+        1
+      ],
+      "amplitude_v_per_m": 1000.0
+    }
+  ]
+}

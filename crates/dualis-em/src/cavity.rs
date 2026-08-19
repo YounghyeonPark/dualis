@@ -141,6 +141,24 @@ pub struct Cavity {
     previous: Option<Box<Tangential>>,
     /// Whether `H` has been advanced the half step the leapfrog opens with.
     started: bool,
+    /// What leapfrog actually conserves, evaluated at the one instant it exists.
+    ///
+    /// **`½εE² + ½μH²` is not an invariant of this scheme**, and the crate's own closed-form test
+    /// says so with the arithmetic: `E` and `H` are half a step apart, so the naive sum oscillates
+    /// about the true one by `2 sin(ωΔt/2)` peak to peak — 10.7% for a 1.77 GHz mode at the Courant
+    /// limit. A ledger reporting the naive sum makes the audit stop every correct cavity run, and
+    /// loosening the scene's budget to let it through would be turning the audit off for a reason
+    /// that has a closed form.
+    ///
+    /// `½ε|Eⁿ|² + ½μ Hⁿ⁻¹ᐟ²·Hⁿ⁺¹ᐟ²`, and **the timing is the whole difficulty**. After a step the
+    /// state is `Eⁿ⁺¹` and `Hⁿ⁺¹ᐟ²`, which do not pair: the invariant at `n+1` would need `Hⁿ⁺³ᐟ²`,
+    /// which has not happened. The one moment all three terms exist is *between* the magnetic and
+    /// electric updates, so it is computed there and kept. The first version paired the post-step
+    /// electric energy with them and made the drift **worse** — 9.1% against the naive sum's 4.5%
+    /// — which is what a half-step error looks like when it is mistaken for a fix.
+    ///
+    /// `None` before the first step, where the naive sum is the honest answer.
+    invariant: Option<f64>,
     dissipated: f64,
     saved: Option<Box<Saved>>,
 }
@@ -163,6 +181,29 @@ struct Saved {
     hz: Vec<f64>,
     started: bool,
     dissipated: f64,
+}
+
+impl dualis_core::ScalarField for Cavity {
+    /// Volts per metre — a **magnitude**, not a vector. See [`Cavity::as_field`].
+    fn unit(&self) -> &'static str {
+        "V/m"
+    }
+
+    /// `|E|` in the cell `p` falls in.
+    ///
+    /// Nearest cell rather than interpolated: the components already live on three different edges
+    /// and `electric_at` averages each pair to centre them, so interpolating that average again
+    /// would be a blur of a blur — the same reason `Channel` samples its speed this way.
+    fn at(&self, p: LengthVec, _t: Time) -> f64 {
+        let (nx, ny, nz) = self.counts;
+        let q = p.to_si() / self.dx;
+        if q.is_nan() {
+            return f64::NAN;
+        }
+        let pick = |v: f64, n: usize| (v.floor().max(0.0) as usize).min(n.saturating_sub(1));
+        self.electric_at(pick(q.x, nx), pick(q.y, ny), pick(q.z, nz))
+            .length()
+    }
 }
 
 impl Cavity {
@@ -195,6 +236,7 @@ impl Cavity {
             mu: [Vec::new(), Vec::new(), Vec::new()],
             previous: None,
             started: false,
+            invariant: None,
             dissipated: 0.0,
             saved: None,
         };
@@ -673,6 +715,19 @@ impl Cavity {
         self.advance_magnetic(-0.5 * dt.to_si());
         self.enforce_walls();
         self.started = true;
+        // **And the invariant at `n = 0`, which needs a field that has not happened yet.**
+        // `½ε|E⁰|² + ½μ Hⁿ⁻¹ᐟ²·Hⁿ⁺¹ᐟ²` pairs the `H` just set with the one the first step will
+        // produce, so it cannot be read off the state — it is produced here by taking that step
+        // and putting it back. The alternative is an opening ledger holding the *naive* energy
+        // while every later one holds the invariant, and the audit then sees the difference
+        // between the two as a loss: measured 5.369e-3 on scene 27, which is half the swing and
+        // has nothing to do with the run.
+        let keep = (self.hx.clone(), self.hy.clone(), self.hz.clone());
+        self.advance_magnetic(dt.to_si());
+        self.invariant = Some(self.electric_energy().to_si() + self.paired_magnetic_energy(&keep));
+        self.hx = keep.0;
+        self.hy = keep.1;
+        self.hz = keep.2;
         self
     }
 
@@ -789,6 +844,76 @@ impl Cavity {
             (true, true, false),
         );
         Energy::from_si(0.5 * sum * v)
+    }
+
+    /// `½μ H_before·H_now`, cell by cell — the magnetic half of the leapfrog invariant.
+    ///
+    /// The same weighting `magnetic_energy` uses, with the square replaced by the product of the
+    /// two half-step-separated fields. Written beside it rather than in terms of it because a
+    /// product is not a square and sharing the code would have meant a flag saying which.
+    fn paired_magnetic_energy(&self, before: &(Vec<f64>, Vec<f64>, Vec<f64>)) -> f64 {
+        let (nx, ny, nz) = self.counts;
+        let v = self.dx.powi(3);
+        let pair = |now: &[f64],
+                    was: &[f64],
+                    mu: &[f64],
+                    counts: (usize, usize, usize),
+                    edge: (bool, bool, bool)| {
+            let (cx, cy, cz) = counts;
+            let mut sum = 0.0;
+            for k in 0..cz {
+                for j in 0..cy {
+                    for i in 0..cx {
+                        let at = i + cx * (j + cy * k);
+                        // Half weight on a face that is shared, exactly as the square does.
+                        let mut w = 1.0;
+                        if edge.0 && (i == 0 || i + 1 == cx) {
+                            w *= 0.5;
+                        }
+                        if edge.1 && (j == 0 || j + 1 == cy) {
+                            w *= 0.5;
+                        }
+                        if edge.2 && (k == 0 || k + 1 == cz) {
+                            w *= 0.5;
+                        }
+                        sum += w * mu[at] * now[at] * was[at];
+                    }
+                }
+            }
+            sum
+        };
+        0.5 * v
+            * (pair(
+                &self.hx,
+                &before.0,
+                &self.mu[0],
+                (nx + 1, ny, nz),
+                (true, false, false),
+            ) + pair(
+                &self.hy,
+                &before.1,
+                &self.mu[1],
+                (nx, ny + 1, nz),
+                (false, true, false),
+            ) + pair(
+                &self.hz,
+                &before.2,
+                &self.mu[2],
+                (nx, ny, nz + 1),
+                (false, false, true),
+            ))
+    }
+
+    /// What this scheme actually conserves: `½εE(t)² + ½μ H(t−Δt/2)·H(t+Δt/2)`.
+    ///
+    /// [`energy`](Cavity::energy) is the physical field energy and is what a reader wants; this is
+    /// what the *audit* has to watch, because the difference between them is a real oscillation
+    /// with a closed form and not a drift.
+    pub fn invariant_energy(&self) -> Energy {
+        match self.invariant {
+            Some(u) => Energy::from_si(u),
+            None => self.energy(),
+        }
     }
 
     /// Magnetic energy, `½∫μH² dV`.
@@ -1362,7 +1487,13 @@ impl Domain for Cavity {
             self.advance_magnetic(0.5 * h);
             self.started = true;
         }
+        // The two half-step-separated `H` fields, paired in the same statement that produces the
+        // second. Nothing else can pair them: after this line the earlier one is gone.
+        let before = (self.hx.clone(), self.hy.clone(), self.hz.clone());
         self.advance_magnetic(h);
+        // Here, and only here: `E` is still `Eⁿ`, `H` is `Hⁿ⁺¹ᐟ²` and `before` is `Hⁿ⁻¹ᐟ²`.
+        self.invariant =
+            Some(self.electric_energy().to_si() + self.paired_magnetic_energy(&before));
         self.dissipated += self.advance_electric(h);
         self.apply_boundaries(h);
         self.enforce_solid();
@@ -1373,18 +1504,50 @@ impl Domain for Cavity {
     ///
     /// Arranged so the total is constant: in a lossless box nothing leaves, and in a lossy one what
     /// the field lost is on the books beside it rather than gone.
+    /// The **leapfrog invariant** plus what a lossy medium has turned into heat.
+    ///
+    /// Not `energy()`, and the difference is the point. `½εE² + ½μH²` is the physical field energy
+    /// and is what a reader wants to see; it is *not* what this scheme conserves, because `E` and
+    /// `H` are half a step apart. The naive sum oscillates about the true invariant by
+    /// `2 sin(ωΔt/2)` peak to peak — a closed form this crate's own test checks, and 10.7% for a
+    /// 1.77 GHz mode at the Courant limit. An audit watching it would stop every correct cavity
+    /// run, and widening the scene's budget past 10% to let it through would be switching the
+    /// audit off over something that has an exact expression.
+    ///
+    /// Two contributions rather than their sum, so `Ledger`'s scale is the larger of the two: a
+    /// cavity that has dissipated most of what it held would otherwise have a near-zero net and no
+    /// scale for the audit to judge against.
     fn ledger(&self) -> Ledger {
-        Ledger::new().with(quantity::ENERGY, self.energy().to_si() + self.dissipated)
+        Ledger::new()
+            .with(quantity::ENERGY, self.invariant_energy().to_si())
+            .with(quantity::ENERGY, self.dissipated)
     }
 
     fn readings(&self) -> Vec<Reading> {
         vec![
             Reading::new(&self.name, "field energy", self.energy().to_si(), "J"),
+            // Beside it, because a reader comparing the two is the shortest way to see that the
+            // wobble in the first is the scheme's staggering and not a leak.
+            Reading::new(
+                &self.name,
+                "invariant",
+                self.invariant_energy().to_si(),
+                "J",
+            ),
             Reading::new(&self.name, "electric", self.electric_energy().to_si(), "J"),
             Reading::new(&self.name, "magnetic", self.magnetic_energy().to_si(), "J"),
             Reading::new(&self.name, "div B", self.magnetic_divergence(), ""),
             Reading::new(&self.name, "dissipated", self.dissipated, "J"),
         ]
+    }
+
+    /// **How strong the electric field is**, so a resonance can be looked at.
+    ///
+    /// The caveat is the one a magnitude always carries: `E` is a vector on cell edges and this is
+    /// its length at the cell centre, so a picture shows the standing pattern — which is what a
+    /// mode *is* — and not the polarisation. `electric_at` gives the vector.
+    fn as_field(&self) -> Option<&dyn dualis_core::ScalarField> {
+        Some(self)
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {

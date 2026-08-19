@@ -2179,6 +2179,101 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     of("work driven in")
                 );
             }
+            "27-a-cavity-ringing-at-its-own-frequency.json" => {
+                // The first scene to reach `dualis-em`, and it is written the way the acoustic
+                // `room` scenes are: **a resonance is a property of the box**, not of the solver,
+                // so `f = (c/2)√((l/a)² + (m/b)² + (n/d)²)` is the thing to check against.
+                const C: f64 = 299_792_458.0;
+                let side = 24.0 * 5e-3;
+                let closed = C / 2.0 * ((1.0f64 / side).powi(2) + (1.0f64 / side).powi(2)).sqrt();
+
+                let of = |f: &dualis_world::Frame, label: &str| {
+                    f.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label} reading"))
+                        .value
+                };
+
+                // **The frequency, from the electric energy's own peaks.** It peaks twice per
+                // cycle, because energy goes as the square, so the mean peak spacing is half the
+                // period — the same measurement `dualis-em`'s closed-form test makes, here through
+                // the scene format.
+                let electric: Vec<(f64, f64)> = frames
+                    .iter()
+                    .map(|f| (f.time_s, of(f, "electric")))
+                    .collect();
+                let peaks: Vec<f64> = (1..electric.len() - 1)
+                    .filter(|i| {
+                        electric[*i].1 > electric[i - 1].1 && electric[*i].1 >= electric[i + 1].1
+                    })
+                    .map(|i| electric[i].0)
+                    .collect();
+                assert!(
+                    peaks.len() >= 8,
+                    "{name}: too few peaks to measure a period: {}",
+                    peaks.len()
+                );
+                let half = (peaks[peaks.len() - 1] - peaks[0]) / (peaks.len() - 1) as f64;
+                let measured = 1.0 / (2.0 * half);
+
+                // **The bound is Yee's dispersion, not a tolerance.** A wave on this grid travels
+                // slightly slow, by `(kΔ)²/24` to leading order — `k = 2π/λ`, `λ = c/f` = 169.7 mm
+                // and `Δ` = 5 mm, so `kΔ` = 0.185 and the bound is 1.4e-3. Measured 1.4e-4, well
+                // inside it, because a standing mode along the diagonal samples the grid more
+                // finely than an axis-aligned wave does.
+                let k = 2.0 * std::f64::consts::PI * closed / C;
+                let dispersion = (k * 5e-3).powi(2) / 24.0;
+                println!(
+                    "  {name}: {:.6} GHz against a closed-form {:.6} GHz, off {:.2e}, \
+                     dispersion bound {dispersion:.2e}",
+                    measured / 1e9,
+                    closed / 1e9,
+                    (measured / closed - 1.0).abs()
+                );
+                assert!(
+                    (measured / closed - 1.0).abs() < dispersion,
+                    "{name}: {measured:.6} against {closed:.6} Hz"
+                );
+                assert!(
+                    measured < closed,
+                    "{name}: a Yee wave travels *slow*, so the mode should come out under the                      continuum frequency: {measured:.6} against {closed:.6} Hz"
+                );
+
+                // **The invariant does not move, and the field energy does.** `½εE² + ½μH²` is not
+                // what leapfrog conserves — `E` and `H` are half a step apart — so it swings by
+                // `2 sin(ωΔt/2)` about the quantity that is conserved. Both halves are asserted,
+                // because a run where *neither* moved would mean the fields had stopped.
+                let invariant: Vec<f64> = frames.iter().map(|f| of(f, "invariant")).collect();
+                for v in &invariant[1..] {
+                    assert!(
+                        (v / invariant[1] - 1.0).abs() < 1e-12,
+                        "{name}: the invariant must hold to the bit: {v:e} against {:e}",
+                        invariant[1]
+                    );
+                }
+                let naive: Vec<f64> = frames.iter().map(|f| of(f, "field energy")).collect();
+                let (lo, hi) = naive
+                    .iter()
+                    .fold((f64::MAX, f64::MIN), |(l, h), v| (l.min(*v), h.max(*v)));
+                let swing = (hi - lo) / invariant[1];
+                assert!(
+                    (0.02..0.20).contains(&swing),
+                    "{name}: the naive energy should swing by a few percent and does not: {swing}"
+                );
+
+                // **And `∇·B` is zero, not converging to zero.** Every term in the discrete
+                // divergence of the discrete curl appears twice with opposite signs, so the update
+                // cannot change it. A number drifting here is a scheme that has stopped being
+                // Yee's, whatever else still looks right.
+                for f in &frames {
+                    assert!(
+                        of(f, "div B").abs() < 1e-10,
+                        "{name}: div B is an identity: {:e}",
+                        of(f, "div B")
+                    );
+                }
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }
