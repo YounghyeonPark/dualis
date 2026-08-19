@@ -53,6 +53,18 @@ into a `block` domain.
 
 The same thing from a terminal is `dualis-world fit part.stl [more.stl …] --cells N`.
 
+### what each part is, and assembling them
+
+Dropping CAD lists each file with a **material menu**, and the menu is asked for rather than typed
+out here: it is `Substance::CATALOGUE` itself, fetched across the boundary, so a page cannot offer
+a name the builder then refuses. A part nothing was chosen for is aluminium, which is what a
+`block` defaults to.
+
+**assemble** writes the scene. It takes the grid the fitter measured and the material each file was
+tagged with, and composes the `block` domain that puts them all on one mesh — everything outside
+the parts becoming void, which is what an assembly in air *is*. That is the last of the four steps
+the browser was for: upload, say what each thing is, put them together, watch it run.
+
 Everything a part costs is reported the way the CLI reports it: filled cells, volume error, how
 much of it is in boundary cells, thin runs, triangles under a cell. A rib finer than the grid does
 not fail, it *disappears*, and the run is perfectly well behaved about a different object.

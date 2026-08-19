@@ -40,7 +40,8 @@
 <header>
   <label class="file">open<input id="open" type="file" accept=".json" hidden></label>
   <label class="file">add CAD<input id="cad" type="file" accept=".stl" multiple hidden></label>
-  <button id="fit" disabled>fit grid</button>
+  <button id="fitgrid" disabled>fit grid</button>
+  <button id="assemble" disabled>assemble</button>
   <button id="save">save</button>
   <button id="run">run</button>
   <button id="verify">verify</button>
@@ -64,6 +65,10 @@
   </div>
 </main>
 
+<div id="tagging" hidden style="padding:8px 14px;border-top:1px solid #26303c;background:#0c1117;font:11px ui-monospace,Consolas,monospace;color:#cbd5e1">
+  <div style="color:#7f8b9a;margin-bottom:6px">what each part is made of</div>
+  <div id="taglist"></div>
+</div>
 <pre id="fitout" hidden style="margin:0;padding:10px 14px;overflow:auto;max-height:44vh;border-top:1px solid #26303c;background:#0c1117;color:#cbd5e1;font:11px/1.45 ui-monospace,Consolas,monospace;white-space:pre"></pre>
 <footer><span id="status">loading the physics…</span><span class="sp"></span><span id="parts" style="color:var(--dim);font:11px ui-monospace,monospace">no CAD uploaded</span></footer>
 
@@ -306,19 +311,96 @@ $('open').onchange = async e => {
 // The bytes go to the module and stay there. Nothing is uploaded anywhere: this page has no
 // server, the physics is a wasm module in the tab, and a scene that says `"stl": "bracket.stl"`
 // finds it because a file called that was handed over here.
+// What each uploaded file is made of, by name. A part with nothing chosen is aluminium, which is
+// what a `block` defaults to — so the list starts usable and a user changes what they care about.
+const tags = {};
+let catalogue = ['aluminium'];
+
+function showTagging(names) {
+  const box = $('taglist');
+  box.innerHTML = '';
+  for (const n of names) {
+    if (!(n in tags)) tags[n] = 'aluminium';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;margin:2px 0';
+    const label = document.createElement('span');
+    label.textContent = n;
+    label.style.cssText = 'min-width:16ch;color:#cbd5e1';
+    const pick = document.createElement('select');
+    for (const m of catalogue) {
+      const o = document.createElement('option');
+      o.value = m; o.textContent = m;
+      if (m === tags[n]) o.selected = true;
+      pick.appendChild(o);
+    }
+    pick.onchange = () => { tags[n] = pick.value; };
+    const drop = document.createElement('button');
+    drop.textContent = 'remove';
+    drop.onclick = () => { showParts(forgetPart(n)); };
+    row.append(label, pick, drop);
+    box.appendChild(row);
+  }
+  $('tagging').hidden = names.length === 0;
+}
+
+function forgetPart(name) {
+  const [p, l] = put(name);
+  const out = take(wasm.dualis_forget_part(p, l));
+  wasm.dualis_free(p, l);
+  delete tags[name];
+  return out;
+}
+
+// **assemble** is the step the format could describe and the page could not do: it takes the grid
+// the fitter measured, the material each file was tagged with, and writes the `block` domain that
+// puts them on one mesh. Everything outside the parts becomes void, which is what an assembly in
+// air is — so the scene it writes is the one a user would have had to hand-compose from the table.
+$('assemble').onclick = () => {
+  status('measuring a grid for these parts…');
+  const [mp, ml] = put('aluminium');
+  const out = take(wasm.dualis_fit(2000000, mp, ml));
+  wasm.dualis_free(mp, ml);
+  if (out.error) { status(out.error, true); return; }
+  if (!out.fragment) {
+    status('no grid holds every part under half boundary — press fit grid and read the table', true);
+    return;
+  }
+  const names = Object.keys(tags).sort();
+  const parts = names.map(n => `      { "stl": ${JSON.stringify(n)}, "material": ${JSON.stringify(tags[n])} }`);
+  const scene = {
+    title: `an assembly of ${names.length} part(s)`,
+    duration_s: 60.0,
+    frames: 20,
+    domains: [],
+  };
+  const head = JSON.stringify(scene, null, 2).replace(/"domains": \[\]/,
+    '"domains": [\n    {\n      "kind": "block", "name": "assembly",\n' +
+    `      "cells": [${out.cells.join(', ')}],\n` +
+    `      "cell_mm": ${out.cell_mm.toFixed(4)},\n` +
+    '      "initial_c": 20.0,\n' +
+    '      "parts": [\n' + parts.join(',\n') + '\n      ]\n    }\n  ]');
+  $('text').value = head;
+  recheck();
+  needsFit = true;
+  draw();
+  status(`assembled ${names.length} part(s) on a ${out.cells.join(' x ')} grid at ${out.cell_mm.toFixed(3)} mm`);
+};
+
 function showParts(out) {
   if (out.error) { status(out.error, true); return; }
   const n = out.names.length;
   $('parts').textContent = n
     ? `${n} part file(s): ${out.names.join(', ')} — ${(out.bytes / 1024).toFixed(0)} kB`
     : 'no CAD uploaded';
-  $('fit').disabled = n === 0;
+  showTagging(out.names || []);
+  $('fitgrid').disabled = n === 0;
+  $('assemble').disabled = n === 0;
 }
 
 // **fit grid** answers the question a scene cannot: what `cells` and `cell_mm` hold these parts.
 // Every row was rasterised rather than predicted — a part finer than the grid does not fail, it
 // disappears — so the table is measurements and the only judgement is which row to recommend.
-$('fit').onclick = () => {
+$('fitgrid').onclick = () => {
   status('rasterising every candidate grid…');
   const [mp, ml] = put('aluminium');
   const out = take(wasm.dualis_fit(2000000, mp, ml));
@@ -387,6 +469,9 @@ $('save').onclick = () => {
     const res = await WebAssembly.instantiateStreaming(fetch('editor_wasm.wasm'), {});
     wasm = res.instance.exports;
     mem = wasm.memory;
+    // The material menu comes from the library, not from a list typed here: a copy drifts, and
+    // the failure is a dropdown offering something the builder then refuses.
+    catalogue = take(wasm.dualis_materials()).materials;
   } catch (e) {
     status(`could not load editor_wasm.wasm: ${e}. Serve this directory over http — a file:// \
 page cannot fetch wasm.`, true);

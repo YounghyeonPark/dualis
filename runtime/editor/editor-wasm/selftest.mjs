@@ -301,5 +301,21 @@ const nothing = fitGrid(400000, 'aluminium');
 ok('fitting nothing is refused by name', !!nothing.error && nothing.error.includes('at least one'),
    JSON.stringify(nothing.error));
 
+
+// --- the material menu, which a page must not type out for itself ------------------------------
+const cat = take(w.dualis_materials()).materials;
+ok('the catalogue comes back', Array.isArray(cat) && cat.length >= 5, JSON.stringify(cat));
+ok('and every name in it builds a scene',
+   cat.every(m => !call(w.dualis_check, `{ "title": "t", "duration_s": 1e-4, "frames": 2,
+     "domains": [{ "kind": "block", "name": "b", "cells": [2,2,2], "cell_mm": 1.0,
+       "initial_c": 20.0, "material": ${JSON.stringify(m)} }] }`).error),
+   JSON.stringify(cat));
+// The claim that makes it worth exporting at all: a name the menu offers and the builder refuses
+// is the failure a hardcoded list produces, and it would look like a user error.
+ok('and a name outside it is refused',
+   !!call(w.dualis_check, `{ "title": "t", "duration_s": 1e-4, "frames": 2,
+     "domains": [{ "kind": "block", "name": "b", "cells": [2,2,2], "cell_mm": 1.0,
+       "initial_c": 20.0, "material": "unobtainium" }] }`).error);
+
 console.log(failures ? `\n${failures} failed` : '\nall claims held');
 process.exit(failures ? 1 : 0);

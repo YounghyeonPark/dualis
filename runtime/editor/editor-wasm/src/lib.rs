@@ -168,6 +168,16 @@ pub unsafe extern "C" fn dualis_fit(
     }
 }
 
+/// The material names a scene can use without declaring them.
+///
+/// Asked for rather than hardcoded in the page: a list of substances copied into a dropdown is a
+/// list that drifts, and the failure is a menu offering something the builder then refuses. This is
+/// `Substance::CATALOGUE` itself, so the two cannot disagree.
+#[no_mangle]
+pub extern "C" fn dualis_materials() -> *mut u8 {
+    give(serde_json::json!({ "materials": editor_core::MATERIALS }).to_string())
+}
+
 /// Forget one uploaded file, or all of them when given an empty name.
 ///
 /// # Safety

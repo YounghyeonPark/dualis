@@ -37,6 +37,12 @@ use dualis_world::{Parts, Scene, World};
 /// [`Uploaded`]. Both are the same scene format and the same builder — see [`Parts`].
 pub use dualis_world::{OnDisk, Uploaded};
 
+/// The material names a scene can use without declaring them, re-exported for a shell's menus.
+///
+/// Asked for rather than copied: a list of substances typed into a dropdown is a list that drifts,
+/// and the failure is a menu offering something the builder then refuses.
+pub use dualis_world::MATERIALS;
+
 /// One placed extent, as the eight corners of its box in world coordinates, in metres.
 ///
 /// Corner order is the binary one — bit 0 is x, bit 1 is y, bit 2 is z, low corner for a
