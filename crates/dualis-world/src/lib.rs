@@ -6,7 +6,7 @@
 //! that turns out to be awkward. A library with no consumers is a library whose ergonomics
 //! nobody has measured.
 //!
-//! Findings are collected in `FRICTION.md` beside this crate. Eighteen of the twenty-four are
+//! Findings are collected in `FRICTION.md` beside this crate. Twenty-eight of the thirty-four are
 //! fixed — this crate is the record of what the API was like before, and the reason it changed.
 //! The count in that file is under test; this line is not, and had been stale for two releases.
 //!

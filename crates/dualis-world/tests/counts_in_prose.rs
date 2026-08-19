@@ -166,7 +166,7 @@ fn the_findings_total_agrees_everywhere_it_is_written() {
 
     phrase(
         "crates/dualis-world/FRICTION.md",
-        "**{} of the twenty-four are fixed**",
+        "**{} of the thirty-four are fixed**",
         fixed,
     );
     phrase(
@@ -179,7 +179,7 @@ fn the_findings_total_agrees_everywhere_it_is_written() {
         "{} findings from using the SDK as a stranger",
         findings,
     );
-    phrase("README.md", "**{} findings, eighteen fixed", findings);
+    phrase("README.md", "**{} findings, twenty-eight fixed", findings);
     phrase("README.md", "findings, {} fixed and six argued down", fixed);
     phrase(
         "CHANGELOG.md",
@@ -193,7 +193,7 @@ fn the_findings_total_agrees_everywhere_it_is_written() {
     );
     phrase(
         "crates/dualis-world/src/lib.rs",
-        "beside this crate. {} of the twenty-four are",
+        "beside this crate. {} of the thirty-four are",
         fixed,
     );
     phrase(

@@ -133,7 +133,7 @@ earned and was not.
 | --- | --- |
 | [RELEASING.md](RELEASING.md) | any release. Cadence, the seven places a version lives, the crate order, the wheel, and what the pipeline has actually been run through |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | changing a test or a tolerance. The authority on the gate and on the five conventions in full |
-| [crates/dualis-world/FRICTION.md](crates/dualis-world/FRICTION.md) | changing the public API. Twenty-four findings from using the SDK as a stranger, five of them the same underlying decision |
+| [crates/dualis-world/FRICTION.md](crates/dualis-world/FRICTION.md) | changing the public API. Thirty-four findings from using the SDK as a stranger, five of them the same underlying decision |
 | [bindings/python/README.md](bindings/python/README.md) | touching the bindings. Its own cargo workspace, its own gate, and the two boundary decisions not to relitigate |
 | [runtime/viewer/README.md](runtime/viewer/README.md) | touching the viewer. Why it is a separate workspace and why it does not link `dualis` |
 | [runtime/editor/README.md](runtime/editor/README.md) | touching the editor. Why it is a third workspace, why it *does* link `dualis`, and the two halves the platform rules keep apart |

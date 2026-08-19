@@ -3,7 +3,7 @@
 Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
-has already found twenty-four places it is awkward, eighteen of which have been changed — see
+has already found thirty-four places it is awkward, twenty-eight of which have been changed — see
 `crates/dualis-world/FRICTION.md`.
 
 Entries record what was *found* as well as what was added, because several of the more useful

@@ -9,7 +9,7 @@ Everything below was hit while building the smallest thing that loads a scene, r
 two domains over a plain channel and two more over a shared boundary, and draws the result. None of it is a bug in the physics except finding 6, which is — and which no test inside the
 library could have found, because none of them was checking a rate.
 
-**Eighteen of the twenty-four are fixed**, and six are recorded rather than actioned. The reasons
+**Twenty-eight of the thirty-four are fixed**, and six are recorded rather than actioned. The reasons
 differ and are given in each: one because the kernel already refuses the mistake it describes,
 one because it is documented rather than changed, and the rest on scope. The entries are
 kept rather than deleted, because what the API used to be is the argument for what it is — and because the next consumer should be able
@@ -521,7 +521,7 @@ everything it had ever been handed was flat. The seventh domain found it in an a
 
 ## What this says about the exercise
 
-Twenty-four findings, and the source has shifted five times.
+Thirty-four findings, and the source has shifted seven times.
 
 | how many | where they came from |
 | --- | --- |
@@ -530,13 +530,18 @@ Twenty-four findings, and the source has shifted five times.
 | 17, 23 | adding a domain the library did not have, and finding the *new* API had the old shape |
 | 18–22 | **splitting the application into layers**, which turns assumptions into statements |
 | 24 | being asked for something the format could not express — every material rather than nine |
+| 25, 26, 29 | **writing a scene about a real object** — a power module, a part under a lid — and finding the format could not pose the question |
+| 27, 28, 32 | **building the browser**, which is direct manipulation: the gaps arrive in the order a user meets them |
+| 30, 31 | **making an unreachable domain reachable**, which is where the layers above it show what they assumed |
+| 33 | **the audit refusing three correct runs in one sitting**, all with the same shape |
+| 34 | **reading a scene's own output at a scale nobody had run before** — nanoseconds and picojoules |
 
 The last two rows are the ones a reader should take away, because neither is "use the API and see
 what hurts". Building the next domain and pulling out a layer are both cheap, and each finds a
 class of thing the other cannot: a domain finds what the layers above it assumed, and a layer
 finds what one crate doing everything had hidden.
 
-Eighteen are fixed. That line said "ten" until a test counted them, which is the failure
+Twenty-eight are fixed. That line said "ten" until a test counted them, which is the failure
 `prose-auditor` exists for and the second time this file has been the one carrying it — and the
 count is now checked by `friction_counts.rs` against the headings, because the author evidently
 cannot do it reliably and a reader cannot do it at a glance.
@@ -622,10 +627,173 @@ through the identical harness**: 0.039% worst for the two declared, 0.035% for t
 a 21× range of Stefan number. Ice sits inside the declared range at every undercooling, which is the
 only form in which the claim means anything.
 
+---
+
+## 25. A region could say what a box was made of and not how hot it started
+
+Found writing a scene for a hot part under a cooled lid, which is the commonest thermal question
+there is. `regions` states a material per box and `initial_c` is a property of the whole block, and
+the bus — deliberately — carries an amount and no location, so heat arriving there spreads to a
+uniform rise. Between them the format could not say "this corner starts at 300 °C" **in either
+direction**.
+
+The scene that exposed it ran, conserved and answered a question about a block that was uniformly
+warm. Nothing was wrong; there was simply no way to pose the problem.
+
+**Fixed.** `Region::initial_c`, applied after the fill and refused on a void region — nothing has no
+temperature to start at. `verify`'s refinement carries it unscaled, because a temperature is not a
+length: the same box starts at the same degrees whatever the grid.
+
+---
+
+## 26. A grid had no word for nothing, so a clearance had to be a bad conductor
+
+`ARCHITECTURE.md` had already named this and it was still true in the format: a part in a box was
+surrounded by another material, and insulating it meant a substance with a low conductivity — which
+still conducts, still stores heat, and still sets a stability limit.
+
+Measured on three copper bars differing only in one cell: the far end warms 50 K through copper,
+still warms through the catalogue's poorest insulator, and moves only by what radiation carries
+across nothing.
+
+**Fixed.** `"material": "void"` on a region, and `void` is **reserved rather than resolved** — a
+scene that declared a material by that name would be solid in one file and empty in another.
+
+---
+
+## 27. A scene said *where* a part's bytes were, when it should have said *which* bytes
+
+`parts` named a path and the builder called `std::fs::read`. That is a sentence with no meaning in a
+browser: there is no filesystem in a tab, and the page already **has** the bytes because somebody
+dropped a file on the window. So the web editor could open a scene, run it, verify it and draw it,
+and could not do the first thing anybody tries.
+
+**Fixed.** A `Parts` trait: `World::build` reads from a disk and `World::build_with` reads from
+whatever it is given. The trait is not the interesting part — the assertion beside it is, that the
+same STL voxelises to the same block **cell by cell** from either source. Without that the browser
+is a demo, which is a thing that looks like the product and answers a slightly different question.
+
+The general form is worth keeping: **an interface that names a location has assumed a machine.**
+
+---
+
+## 28. Nothing chose the cell size, and it turned out not to need a guess
+
+The last of `ARCHITECTURE.md`'s three assembly gaps, left open on purpose because picking a cell
+"would be the first place in the workspace that *guesses* — so it has to guess visibly".
+
+It does not have to guess. `Voxels::loss` already measures what a cell size cost, so a proposal can
+rasterise at every candidate and report what happened. What is left is the *rule* for which row to
+recommend, and that is one sentence a reader can disagree with.
+
+Predicting would have been wrong in a way `Loss` documents about itself: `volume_error` is a
+lattice-point count after the bulges and the cuts cancel, and a sphere at 2.5, 2.0 and 1.5 mm gives
+`+4.9%, +5.8%, −2.3%` — the first refinement makes it worse and the second changes its sign.
+
+**Fixed.** `dualis_world::fit`, and the ladder is a statement about the assembly rather than about
+millimetres: the thinnest dimension of any part gets 1, 2, 4, 8 … cells.
+
+---
+
+## 29. A scene could say how much heat there was and not where it was made
+
+Every source in this format hands watts to the bus, and the bus carries an amount and no location.
+That is right for what the bus is and wrong for every real thing that dissipates — a die, a winding,
+a brake disc, a laser absorber all do it *somewhere*, and the gradient between there and the
+heatsink is the entire question a thermal model is asked. `Solid3D::deposit` could put a joule in a
+cell and nothing in the format could reach it.
+
+**Fixed.** `dissipation`, a list of boxes and their watts, symmetric with `cooling`: one takes energy
+out at a face, the other puts it in at a region. The watts are the box's **total, not a figure per
+cell**, so the answer does not move when the grid does — measured, the junction moves by 2e-5 °C
+when every grid doubles.
+
+---
+
+## 30. A body could be pushed and pulled and could not want to be a different size
+
+`dualis-elastic` could be loaded, clamped, pressed and prescribed, and had no way to say that a
+piece of it would be larger if nothing were holding it. That is thermal expansion, and it is the
+thing standing between a temperature field and a stress: the platform could compute a power
+module's temperature to four figures and do nothing with it.
+
+**Fixed.** `Block::stress_free_strain`, taking an **eigenstrain** rather than a temperature — so
+swelling, curing shrinkage and a phase change are the same statement, and the domain never has to
+depend on whatever computed it.
+
+---
+
+## 31. Four of the eleven domains could not be reached from a scene at all
+
+Measured rather than noticed: `elastic`, `em`, `fluid` and `quantum` were referenced **zero** times
+in `dualis-world/src`. They existed as libraries with their own tests and could not be touched from
+a scene file, the CLI or the browser — which is to say the platform could not ask them anything.
+
+`scenes/README.md` had been saying "seven of the library's eleven domains" the whole time, correctly,
+and nobody had read it as a gap.
+
+**Fixed.** Four new domain kinds — `structure`, `channel`, `cavity`, `well` — each with a scene
+written around a closed form the domain's own docs name. All eleven reach a scene now.
+
+---
+
+## 32. A caller could read seven domains and write none of them — finding 18, again
+
+`Domain::as_any_mut` is opt-in and returns `None` by default. `dualis-elastic::Block` implemented
+`as_any` and not its mutable twin, so a coupling that wrote a temperature into it did **nothing**
+and the scene reported zero strain, zero stress and zero strain energy — which reads as *no thermal
+stress* rather than as *not connected*, and is the more believable of the two. Seven domains were in
+that state.
+
+This is finding 18 recurring after it was fixed, in a different set of domains, and the recurrence
+is the finding: **an opt-in method with a silent default is one every later domain will forget.**
+
+**Fixed.** All seven implement it, and `World::build` now **probes the coupling and refuses** rather
+than letting a future domain fail the same way in silence.
+
+---
+
+## 33. A domain given energy from outside has to count it, and three of them did not
+
+The audit stopped three correct runs in one sitting, each with the same shape: a domain holding a
+conserved quantity that something outside the simulation had added to.
+
+```text
+  a block with a heat source     0 became -3.7e-11        a relative change of 1.0
+  a body with an eigenstrain     5.056732 became 0.231394 a relative change of 7.1e-3
+  a channel driven by a pump     0 became 2.9e-12         a relative change of 1.0
+```
+
+Two of the three had a near-zero opening balance, and that is the second half: `Ledger::add` raises
+an entry's *scale* to the largest thing added to it, and the audit judges a change against that.
+Writing `stored + lost − supplied` as one contribution throws it away, so the first joule of
+rounding is a hundred-percent error.
+
+**Fixed.** Each domain counts what it was given — `Solid3D::supplied`, `Block::received`,
+`Channel::driven` — and each ledger adds the parts separately rather than their sum. All three are
+readings too: a source nobody can see in the report is a run where 45 W and 45 mW look the same.
+
+---
+
+## 34. Fixed-decimal output is only readable at the scale it was chosen for
+
+The CSV wrote every value as `{:.9}`. A cavity holding 3.2e-10 J had its entire energy history
+written as a column of `0.000000000`, beside a run that had just reported the field at 921 V/m.
+
+Then the same mistake again, an hour apart and by the same hand: the values moved to scientific
+notation and the *time* column was left fixed, on the reasoning that a reader scans it for a frame.
+On a 4 ns run **every timestamp printed as one of two values**, and a frequency measured 15% wrong
+for no other reason.
+
+**Fixed.** Both are `{:.9e}`. A scene format spanning nanoseconds to hours and picojoules to
+megajoules has no scale a fixed format could have been chosen for.
+
+---
+
 ## What this report does not cover
 
-Seven of the eleven domains have scenes; `dualis-elastic`, `dualis-em`, `dualis-fluid` and `dualis-quantum` are the four without. What is left
-is smaller and more specific.
+**All eleven domains have scenes** — findings 31 and after closed the last four. What is left is
+smaller and more specific.
 
 **`TreeNBody`, `RigidBody` and the rest of mechanics.** Four types took `as_any` in this pass
 but only `NBody` and `ContactSystem` have scene variants, so Barnes-Hut and rigid rotation are
