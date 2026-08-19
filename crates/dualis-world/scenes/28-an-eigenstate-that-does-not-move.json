@@ -1,0 +1,16 @@
+{
+  "title": "an electron in the third state of a 10 nm well, which does not move",
+  "schedule": "multirate",
+  "duration_s": 2.0e-13,
+  "frames": 20,
+  "conservation_tolerance": 1e-6,
+  "domains": [
+    {
+      "kind": "well",
+      "name": "particle",
+      "cells": 200,
+      "width_nm": 10.0,
+      "start": { "eigenstate": 3 }
+    }
+  ]
+}

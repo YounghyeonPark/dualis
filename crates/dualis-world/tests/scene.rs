@@ -2274,6 +2274,77 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     );
                 }
             }
+            "28-an-eigenstate-that-does-not-move.json" => {
+                // The last of the eleven domains to reach a scene, and the claim is the strongest
+                // a solver can be given: **an eigenstate is stationary.** Its energy does not
+                // move, its position expectation does not move, and the norm holds — so a scheme
+                // that has drifted has nowhere to hide behind a plausible-looking wavefunction.
+                const HBAR: f64 = 1.054_571_817e-34;
+                const ELECTRON_KG: f64 = 9.109_383_701_5e-31;
+                let (n, cells, width) = (3.0, 200.0, 10e-9);
+                let dx = width / (cells + 1.0);
+
+                let of = |f: &dualis_world::Frame, label: &str| {
+                    f.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label} reading"))
+                        .value
+                };
+
+                // **The discrete Hamiltonian's exact eigenvalue**, written out here from the
+                // constants: `E_n = (2ℏ²/m·dx²)·sin²(nπ/2(N+1))`. Not the continuum one — the
+                // solver marches the discrete operator and this is what it rotates at.
+                let theta = n * std::f64::consts::PI / (2.0 * (cells + 1.0));
+                let discrete = 2.0 * HBAR * HBAR / (ELECTRON_KG * dx * dx) * theta.sin().powi(2);
+                let energy = of(frames.last().expect("frames"), "<E>");
+                assert!(
+                    (energy / discrete - 1.0).abs() < 1e-9,
+                    "{name}: the state rotates at {discrete:e} J and reports {energy:e}"
+                );
+
+                // **And the gap to the continuum is `θ²/3`, exactly.** `sin²θ/θ² = 1 − θ²/3 +
+                // O(θ⁴)`, so the discrete level sits *below* `n²π²ℏ²/2mL²` by a known amount
+                // rather than by a tolerance — 1.83e-4 at these two hundred cells. A test that
+                // compared to the continuum and called the difference an error would have been
+                // measuring the grid and calling it the physics.
+                let continuum = n * n * std::f64::consts::PI.powi(2) * HBAR * HBAR
+                    / (2.0 * ELECTRON_KG * width * width);
+                let gap = 1.0 - discrete / continuum;
+                println!(
+                    "  {name}: E3 = {discrete:.6e} J, below the continuum by {gap:.4e}, \
+                     predicted {:.4e}",
+                    theta * theta / 3.0
+                );
+                assert!(
+                    (gap / (theta * theta / 3.0) - 1.0).abs() < 1e-3,
+                    "{name}: the gap should be theta^2/3 = {:.4e}, is {gap:.4e}",
+                    theta * theta / 3.0
+                );
+                assert!(
+                    discrete < continuum,
+                    "{name}: a discrete Laplacian is softer than a continuous one, so the level                      sits below: {discrete:e} against {continuum:e}"
+                );
+
+                // **Nothing moves**, which is what stationary means and is checked frame by frame
+                // rather than end to end — a run that wandered and came back would pass the
+                // second and fail this.
+                for f in &frames {
+                    for (label, want) in [
+                        ("<E>", discrete),
+                        // By symmetry the third state of a hard-walled well is centred.
+                        ("<x>", width / 2.0),
+                        ("norm", 1.0),
+                    ] {
+                        let got = of(f, label);
+                        assert!(
+                            (got / want - 1.0).abs() < 1e-9,
+                            "{name}: {label} moved at t = {}: {got:e} against {want:e}",
+                            f.time_s
+                        );
+                    }
+                }
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

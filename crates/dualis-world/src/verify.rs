@@ -726,6 +726,24 @@ impl DomainSpec {
             // coupled statement this per-domain method cannot make. Reported as unswept rather
             // than swept wrongly.
             DomainSpec::Structure { .. } => return Ok(None),
+            // **A well refines and its eigenstate number does not.** `n` names which standing
+            // shape, not a wavelength in cells, so doubling the grid keeps the same state and the
+            // discrete eigenvalue converges on the continuum one from below — which is the thing
+            // the sweep should see. Scaling `n` with the grid would have been asking about a
+            // different state at every resolution.
+            DomainSpec::Well {
+                name,
+                cells,
+                width_nm,
+                electron_masses,
+                start,
+            } => Some(DomainSpec::Well {
+                name: name.clone(),
+                cells: cells * 2,
+                width_nm: *width_nm,
+                electron_masses: *electron_masses,
+                start: start.clone(),
+            }),
             // **A cavity's resonances are a property of the box**, so refining halves the cell and
             // doubles the counts and the frequency does not move — which is exactly what the sweep
             // should find, and what a mode number scaled with the grid would have destroyed. The

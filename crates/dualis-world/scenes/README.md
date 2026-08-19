@@ -1,6 +1,6 @@
 # Scenes
 
-Twenty-seven worlds described as data, covering ten of the library's eleven domains — twenty-five of them
+Twenty-eight worlds described as data, covering **all eleven** of the library's domains — twenty-six of them
 one physics at a time, and one that is actually a world. Nothing here is Rust: the
 physics, the resolution, the coupling and the run length are all in the file, and the same
 binary runs all of them.
@@ -16,7 +16,7 @@ pointing at a node the scene defines. It reports a parse failure as `file:line:c
 keys that were expected, which is what an editor puts a squiggle under. CI runs it over every
 scene, because it would otherwise be the one entry point nothing exercises.
 
-Every file carries a `format` number, and **absence means 1** — which is what all twenty-seven here
+Every file carries a `format` number, and **absence means 1** — which is what all twenty-eight here
 are: nothing has yet changed what an existing key means. A version this build cannot read is refused
 rather than half-run: `deny_unknown_fields` catches a key that was *added*, but not one whose
 meaning changed, and that is what the number is for.
@@ -32,7 +32,7 @@ No second argument prints the numbers and checks them. A second argument writes 
 | `out.json` | The frames themselves — fields as grids, bodies as positions in space, readings beside them |
 | `out.gltf` | The geometry of the last frame, for Blender, three.js, Omniverse or any USD tool |
 
-`.csv` is the one that reaches the domains a picture cannot. Twelve of these twenty-seven scenes have
+`.csv` is the one that reaches the domains a picture cannot. Twelve of these twenty-eight scenes have
 a domain with no field and no bodies, and for several the scalar *is* the result: `13` is about a
 winding whose resistance follows its own temperature, and it drew nothing at all. As a table it
 shows the feedback directly — 12.46 W at 25 °C rising to 16.01 W at 99 °C, with the resistance
@@ -54,8 +54,8 @@ simulation could not draw it. `dualis_view::{html, svg, readings_csv, to_json}` 
 `dualis_scene::capture` produces, and everything the table above describes is available to any
 program without going near a scene file.
 
-`.gltf` is the one that leaves this workspace. Eighteen of the twenty-seven scenes have geometry to
-export — bodies, ray paths, a 3D field as its cell centres — and the other nine are **refused with
+`.gltf` is the one that leaves this workspace. Eighteen of the twenty-eight scenes have geometry to
+export — bodies, ray paths, a 3D field as its cell centres — and the other ten are **refused with
 a reason** rather than written as an empty scene: a 1D or 2D field is a graph, not something to put
 in a 3D viewer, and the message says which panel and why.
 
@@ -115,6 +115,7 @@ presence is itself the check that `"material": "ice"` reached the domain.
 | `25-what-140-kelvin-does-to-the-solder` | The same module as `24`, with a **structure** on the same grid whose stress-free strain is the block's temperature — the first scene that couples two physics on one mesh, and the first to reach `dualis-elastic` at all. The failure mode of a real module is not its temperature: it is the solder, fatigued by silicon at 2.6e-6 per kelvin sitting on solder at 2.15e-5. Assembled at its reflow temperature of 217 C, so it is **already strained before it is switched on** — cold, the solder wants `2.15e-5 x (40 - 217)` = `-3.8055e-3` exactly — and it *relaxes* as it heats back towards where it was built: 0.2314 J of strain energy falling to 0.0274 J, **8.4x**, monotonically |
 | `26-poiseuille-in-a-cooling-channel` | Water driven down a 2 mm channel by a body force, the first scene to reach `dualis-fluid` — the domain this workspace's own docs call the hardest to trust, because *it looks like a fluid* is the easiest wrong answer in computational physics to accept. So it is written around an exact solution, and against the **discrete** parabola rather than the continuum one: a no-slip wall imposed by reflecting the first cell makes the linear interpolation vanish there, and a parabola is not its own linear interpolation, so the settled mean is `(gh²/12v)(1 + 2/n²)` exactly. Measured `6.691655e-3` against `6.691982e-3` m/s. The tolerance is the **startup transient**, predicted rather than chosen: 4 s is 9.9 time constants of `h²/(pi² v)`, leaving `5.0e-5` of the answer, and the run is off by `4.9e-5` |
 | `27-a-cavity-ringing-at-its-own-frequency` | A 120 x 120 mm vacuum box seeded in its `(1,0,1)` mode, the first scene to reach `dualis-em`. A resonance is a property of the box, so `f = (c/2)sqrt((l/a)^2 + (n/d)^2)` is what it is checked against: **1.766304 GHz measured against 1.766544**, off `1.4e-4` — and the bound is **Yee's own dispersion**, `(k dx)^2/24` = 1.4e-3, with the measurement required to come out *under* the continuum because a wave on this grid travels slow. The energy the audit watches is **not** `1/2 eE^2 + 1/2 uH^2`: E and H are half a step apart, so the naive sum swings 7.4% about the quantity leapfrog actually conserves, which holds to the bit across 200 frames. `div B` stays at 1.9e-13 — an identity of the discrete curl, not a convergence |
+| `28-an-eigenstate-that-does-not-move` | An electron in the third state of a 10 nm hard-walled well — the last of the eleven domains to reach a scene, and the strongest claim a solver can be given: **an eigenstate is stationary.** Energy, position expectation and norm are asserted frame by frame and none of them moves at all. Checked against the **discrete** Hamiltonian's exact eigenvalue `(2hbar^2/m dx^2) sin^2(n pi/2(N+1))`, and the gap to the continuum `n^2 pi^2 hbar^2/2mL^2` is `theta^2/3` exactly — 1.8320e-4 measured against 1.8322e-4 predicted, which is the grid being measured as the grid instead of as the physics |
 
 `22` is the pair to read with `21`, and the ratio between them is the whole point. Diluting the wax to four
 fifths by volume makes a cubic millimetre of buffer hold a fifth less latent heat, so the same twenty watts
@@ -288,7 +289,7 @@ against 6500 K rather than checking one number.
 ## Every one of them is run by CI
 
 A scene in this repository is a claim, and one that parses and then produces nonsense is worse
-than none at all. `tests/scene.rs` runs all twenty-seven on every commit and asserts one number each —
+than none at all. `tests/scene.rs` runs all twenty-eight on every commit and asserts one number each —
 chosen to be a property of the physics rather than of the file, so it would change if the
 library broke and not merely if the scene were edited. Adding a scene without a claim fails
 the test rather than passing quietly. CI also runs the real binary on the real files, which is

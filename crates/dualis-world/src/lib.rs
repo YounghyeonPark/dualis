@@ -880,6 +880,31 @@ pub enum DomainSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         amplitude_v_per_m: Option<f64>,
     },
+    /// One particle in a hard-walled well — `dualis-quantum`'s `Well`.
+    ///
+    /// Marched with Visscher's staggered real/imaginary scheme, which is the same family as the
+    /// Yee grid a `cavity` uses and conserves the quantity that matters the same way — as an
+    /// **identity of the update** rather than as an accuracy claim. What it conserves is the
+    /// paired probability `Σ[R² + I(t+dt/2)·I(t−dt/2)]dx`, not `|ψ|²`, for exactly the reason a
+    /// cavity's invariant is not `½εE² + ½μH²`.
+    ///
+    /// One dimension, and that is not a simplification waiting to be lifted: the well is where the
+    /// closed forms are. `E_n = (2ℏ²/m dx²)sin²(nπ dx/2L)` is the discrete Hamiltonian's exact
+    /// eigenvalue, and an eigenstate is stationary — so a solver that has drifted has nowhere to
+    /// hide.
+    Well {
+        /// Domain name.
+        name: String,
+        /// Interior cells. The walls are the two points outside them, where `ψ` is zero.
+        cells: usize,
+        /// The well's width, wall to wall, in nanometres.
+        width_nm: f64,
+        /// The particle's mass, in electron masses. Absent is one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        electron_masses: Option<f64>,
+        /// How the wavefunction starts. See [`StartSpec`].
+        start: StartSpec,
+    },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
     /// `dualis-electrical`. Every other source in this format states its watts; this one
@@ -1331,6 +1356,7 @@ impl DomainSpec {
             | DomainSpec::Structure { name, .. }
             | DomainSpec::Channel { name, .. }
             | DomainSpec::Cavity { name, .. }
+            | DomainSpec::Well { name, .. }
             | DomainSpec::Hall { name, .. }
             | DomainSpec::Conductor { name, .. }
             | DomainSpec::Puck { name, .. }
@@ -1778,6 +1804,75 @@ impl DomainSpec {
                     dualis::units::Pressure::from_si(*amplitude_pa),
                 ),
             ),
+            DomainSpec::Well {
+                name,
+                cells,
+                width_nm,
+                electron_masses,
+                start,
+            } => {
+                if *cells < 3 {
+                    return Err(format!(
+                        "{name}: a well needs at least three interior cells, got {cells}"
+                    ));
+                }
+                if width_nm.is_nan() || *width_nm <= 0.0 {
+                    return Err(format!("{name}: width_nm must be positive, got {width_nm}"));
+                }
+                let masses = electron_masses.unwrap_or(1.0);
+                if !(masses.is_finite() && masses > 0.0) {
+                    return Err(format!(
+                        "{name}: electron_masses must be positive, got {masses}"
+                    ));
+                }
+                // The electron rest mass, spelled here rather than imported, because it is the
+                // scene's unit and not the domain's — `Well` takes a mass in kilograms.
+                const ELECTRON_KG: f64 = 9.109_383_701_5e-31;
+                let well = dualis::quantum::Well::new(
+                    name.clone(),
+                    dualis::units::Mass::from_si(masses * ELECTRON_KG),
+                    Length::from_si(width_nm * 1e-9),
+                    *cells,
+                );
+                let well = match start {
+                    StartSpec::Eigenstate(n) => {
+                        if *n == 0 || *n > *cells {
+                            return Err(format!(
+                                "{name}: eigenstate {n} does not exist in a well of {cells} \
+                                 cells — they are numbered 1 to {cells}, and the highest is the \
+                                 one that alternates sign every cell"
+                            ));
+                        }
+                        well.in_eigenstate(*n)
+                    }
+                    StartSpec::Gaussian {
+                        centre_nm,
+                        sigma_nm,
+                        k0_per_nm,
+                    } => {
+                        for (what, v) in [("centre_nm", centre_nm), ("sigma_nm", sigma_nm)] {
+                            if !v.is_finite() || *v <= 0.0 {
+                                return Err(format!("{name}: {what} must be positive, got {v}"));
+                            }
+                        }
+                        if !k0_per_nm.is_finite() {
+                            return Err(format!("{name}: {k0_per_nm} is not a wavenumber"));
+                        }
+                        if *centre_nm >= *width_nm {
+                            return Err(format!(
+                                "{name}: a packet centred at {centre_nm} nm is outside a \
+                                 {width_nm} nm well"
+                            ));
+                        }
+                        well.with_gaussian(
+                            Length::from_si(centre_nm * 1e-9),
+                            Length::from_si(sigma_nm * 1e-9),
+                            dualis::quantum::Wavenumber::from_si(k0_per_nm * 1e9),
+                        )
+                    }
+                };
+                Box::new(well)
+            }
             DomainSpec::Cavity {
                 name,
                 cells,
@@ -2451,6 +2546,32 @@ pub enum FluidSpec {
         density: f64,
         /// Kinematic viscosity, m²/s.
         kinematic_viscosity: f64,
+    },
+}
+
+/// How a wavefunction starts.
+///
+/// ```json
+/// "start": { "eigenstate": 3 }
+/// "start": { "gaussian": { "centre_nm": 3.0, "sigma_nm": 0.5, "k0_per_nm": 4.0 } }
+/// ```
+///
+/// An **eigenstate** is stationary: its energy and its position expectation do not move, ever, and
+/// that is what makes it the thing to check a solver against. A **gaussian** does move, which is
+/// what makes it the thing to look at.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+pub enum StartSpec {
+    /// The `n`th eigenstate of the discrete Hamiltonian, `n` counting from one.
+    Eigenstate(usize),
+    /// A gaussian wave packet.
+    Gaussian {
+        /// Where its centre sits, nanometres from the left wall.
+        centre_nm: f64,
+        /// Its width, nanometres.
+        sigma_nm: f64,
+        /// Its mean wavenumber, per nanometre. Positive travels right.
+        k0_per_nm: f64,
     },
 }
 
@@ -3396,6 +3517,16 @@ impl DomainSpec {
             // A cavity's field is the **electric field's magnitude**, at its own cell centres, and
             // the caveat is the channel's: `E` is a vector and this is how big it is. What a
             // resonance looks like is the standing pattern, which a magnitude shows perfectly well.
+            // A well is one-dimensional: the field is a line of samples along the well's width,
+            // which the report draws as a profile rather than as a heatmap.
+            DomainSpec::Well {
+                cells, width_nm, ..
+            } => Placement::field(Extent::volume(
+                LengthVec::from_si(glam::DVec3::new(width_nm * 1e-9, 0.0, 0.0)),
+                *cells,
+                1,
+                1,
+            )),
             DomainSpec::Cavity { cells, cell_mm, .. }
             | DomainSpec::Channel { cells, cell_mm, .. } => Placement::field(Extent::volume(
                 LengthVec::from_si(
