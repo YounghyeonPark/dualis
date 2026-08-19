@@ -7,18 +7,18 @@
 # library must not make on its own behalf, and this crate exists to measure how far apart the two
 # actually land.
 [package]
-name = "dualis-gpu"
-description = "An accelerator for dualis's explicit stencils, with the CPU domain as the reference"
+name = "pantometry-gpu"
+description = "An accelerator for pantometry's explicit stencils, with the CPU domain as the reference"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-dualis-core = { path = "../../crates/dualis-core" }
-dualis-thermal = { path = "../../crates/dualis-thermal" }
+pantometry-core = { path = "../../crates/pantometry-core" }
+pantometry-thermal = { path = "../../crates/pantometry-thermal" }
 pollster = "0.4"
 wgpu = "22"
 
 [dev-dependencies]
-dualis-units = { path = "../../crates/dualis-units" }
+pantometry-units = { path = "../../crates/pantometry-units" }

@@ -3,8 +3,8 @@ name: release python
 # Wheels for PyPI, built on the platforms they run on.
 #
 # This exists because a wheel built locally is a wheel for *one* platform. The 0.3.0 release was
-# prepared on Windows, so the only artefact was `dualis-0.3.0-cp310-abi3-win_amd64.whl` —
-# uploading that alone would make `pip install dualis` fail on Linux and macOS, which is most
+# prepared on Windows, so the only artefact was `pantometry-0.3.0-cp310-abi3-win_amd64.whl` —
+# uploading that alone would make `pip install pantometry` fail on Linux and macOS, which is most
 # people, and the failure would look like the project not supporting them rather than like a
 # release mistake.
 #
@@ -96,7 +96,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install dist/*.whl
-          python tests/test_dualis.py
+          python tests/test_pantometry.py
       - name: not tested here
         if: ${{ !matrix.native }}
         run: echo "::warning::${{ matrix.target }} is cross-compiled on ${{ matrix.os }}; this wheel is built but not executed"
@@ -166,10 +166,10 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/dualis
+      url: https://pypi.org/p/pantometry
     # Trusted publishing: PyPI verifies this workflow's OIDC identity, so there is no API token
     # in the repository's secrets to leak, rotate or accidentally print. Requires configuring
-    # `dualis` on PyPI with this repository, workflow filename and environment name.
+    # `pantometry` on PyPI with this repository, workflow filename and environment name.
     permissions:
       id-token: write
     steps:

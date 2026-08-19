@@ -1,11 +1,11 @@
 [package]
-name = "dualis-py"
-description = "Python bindings for dualis: coupled physics whose conservation audit is an exception"
-version = "0.15.0"
+name = "pantometry-py"
+description = "Python bindings for pantometry: coupled physics whose conservation audit is an exception"
+version = "0.16.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-authors = ["Younghyeon Park and dualis contributors"]
-repository = "https://github.com/YounghyeonPark/dualis"
+authors = ["Younghyeon Park and pantometry contributors"]
+repository = "https://github.com/YounghyeonPark/pantometry"
 publish = false
 
 # **Its own workspace, deliberately.**
@@ -18,21 +18,21 @@ publish = false
 # Python development environment to compile a physics library.
 #
 # So: separate workspace, separate `Cargo.lock`, separate CI job. This is the escalation the
-# repository wrote down for itself in `crates/dualis-world/Cargo.toml`'s sibling note — "move
+# repository wrote down for itself in `crates/pantometry-world/Cargo.toml`'s sibling note — "move
 # to a nested workspace when a heavy dependency arrives" — and pyo3 is that dependency.
 [workspace]
 
 [lib]
-# `dualis` is the importable name; the crate is `dualis-py` so it does not collide with the
+# `pantometry` is the importable name; the crate is `pantometry-py` so it does not collide with the
 # facade in the parent workspace.
-name = "dualis"
+name = "pantometry"
 crate-type = ["cdylib"]
 
 [dependencies]
 # Both a path and a version. The path is what local builds and CI use; the version is what a
 # **source distribution** needs, because an sdist is a tarball rooted at this directory and
-# `../../crates/dualis` points outside it. Without the version the sdist builds here and is
+# `../../crates/pantometry` points outside it. Without the version the sdist builds here and is
 # unbuildable for anyone who downloads it — which is the worst shape for a failure, since the
 # wheels would install fine and only the fallback path would be broken.
-dualis = { path = "../../crates/dualis", version = "0.15.0" }
+pantometry = { path = "../../crates/pantometry", version = "0.16.0" }
 pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }

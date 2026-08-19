@@ -1,0 +1,19 @@
+[package]
+name = "pantometry-elastic"
+description = "Linear elasticity as a field: stress and strain solved from a shape and its loads, not stated"
+keywords = ["elasticity", "stress", "strain", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+pantometry-core = { workspace = true }
+pantometry-units = { workspace = true }
+
+[dev-dependencies]
+glam = { workspace = true }

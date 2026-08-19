@@ -4,7 +4,12 @@ Notable changes, in the format of [Keep a Changelog](https://keepachangelog.com/
 This workspace follows [semantic versioning](https://semver.org/). It is `0.x`, so the API is
 explicitly not stable and a minor bump may break you. The first consumer exists now, and it
 has already found thirty-four places it is awkward, twenty-eight of which have been changed — see
-`crates/dualis-world/FRICTION.md`.
+`crates/pantometry-world/FRICTION.md`.
+
+**Entries below 0.16.0 name crates as `pantometry-*` and they were published as `dualis-*`.** The
+tree was renamed in one pass rather than annotated version by version, because the alternative is a
+changelog in two vocabularies; what a reader needs is the one sentence above and the fact that
+crates.io holds both.
 
 Entries record what was *found* as well as what was added, because several of the more useful
 changes here were corrections to a mistaken assumption rather than new features. The commit
@@ -13,14 +18,38 @@ messages carry the full account.
 `CLAUDE.md`'s gate is a `set -euo pipefail` script now, and carries a table of the five disguises in
 which it has reported a pass it had not earned. Four of them are closed by that one line.
 
+## [0.16.0] — 2026-08-20
+
+### Changed
+
+- **The project is called `pantometry`.** Everything through **0.15.0 was published as `dualis`**, on
+  crates.io as seventeen crates and on PyPI as one — and those names are permanent, so this is not a
+  rename so much as the same project continuing under a name that works.
+
+  `dualis` collided and did not find. It is a common Latin fragment, and a search for it does not
+  arrive here. The new name is a word two books have used and nobody has taken: *Pantometria* (1571)
+  and John Dawes's *Pantometry; Or, an Attempt to Systematize Every Branch of Admeasurement* (1830).
+  It says **the measurement of everything**, which is both what this library is for — a digital twin
+  of physics, chemistry, biology and engineering — and how it answers: by measuring rather than
+  predicting. The cell-size chooser rasterises every candidate instead of extrapolating; a view
+  factor written down as a known error was measured and turned out exact.
+
+  Checked before it was chosen: free on crates.io and PyPI, and no company or trademark that a
+  search surfaces. Six earlier candidates failed exactly there — `clapeyron` is a Julia
+  thermodynamics toolkit, `equipoise` is a live pharmaceutical mark, and `conserva`, `virial`,
+  `adiabat` and `holonomy` are all company names.
+
+  **Nothing else changed in this release.** The code is 0.15.0's, with 1,971 occurrences of one word
+  replaced in 263 files. The `dualis-*` crates are yanked and point here.
+
 ## [0.15.0] — 2026-08-19
 
 ### Added
 
-- **Geometry a person designed can drive the physics: `dualis-shape`, the sixteenth crate.** `Mesh`,
+- **Geometry a person designed can drive the physics: `pantometry-shape`, the sixteenth crate.** `Mesh`,
   `Triangle`, `Voxels` and `Loss`. An STL in, and out comes `|i, j, k| voxels.contains(i, j, k)` — which
   is *already* the signature `Solid3D::fill`, `Block::fill` and `Waves::fill` take, so **no domain
-  changed**. The crate depends on `dualis-units` and nothing else in the workspace, and nothing in the
+  changed**. The crate depends on `pantometry-units` and nothing else in the workspace, and nothing in the
   workspace depends on it except the facade.
 
   Until now the only way to say what shape a thing was, was a closure written by hand. That is a fine
@@ -69,7 +98,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   convergence band with the *box's* boundary fraction while describing the sphere's.
 
 - **A scene can declare a composite, not only a substance.** `Scene::composites`, `CompositeSpec`,
-  `CompositePart`, `Palette::with_composites`. `crates/dualis-world/tests/declared_composites.rs`,
+  `CompositePart`, `Palette::with_composites`. `crates/pantometry-world/tests/declared_composites.rs`,
   `scenes/22-wax-in-an-aluminium-matrix.json`.
 
   **The scene is the pair to read with `21`.** The same wax, now four fifths of a composite whose other
@@ -115,11 +144,11 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   come from `Mix` now, since what is under test there is the boundary condition and not the bound.
 
 - **Every one of the eleven domains can now be asked a question from a file.** `structure`
-  (`dualis-elastic`), `channel` (`dualis-fluid`), `cavity` (`dualis-em`) and `well`
-  (`dualis-quantum`) join the scene format, and each ships a scene written around a closed form the
+  (`pantometry-elastic`), `channel` (`pantometry-fluid`), `cavity` (`pantometry-em`) and `well`
+  (`pantometry-quantum`) join the scene format, and each ships a scene written around a closed form the
   domain's own documentation names.
 
-  Measured rather than noticed: those four crates were referenced **zero** times in `dualis-world`.
+  Measured rather than noticed: those four crates were referenced **zero** times in `pantometry-world`.
   They existed as libraries with their own tests and could not be touched from a scene file, the CLI
   or the browser — which is to say the platform could not ask them anything, while `scenes/README.md`
   had been saying "seven of the library's eleven domains" the whole time.
@@ -137,7 +166,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
   The abstraction is an **eigenstrain** and not a temperature: `Block::stress_free_strain` takes a
   dimensionless strain, so swelling, curing shrinkage and a phase change are the same statement and
-  `dualis-elastic` never has to depend on whatever computed it. Four closed forms check it, each
+  `pantometry-elastic` never has to depend on whatever computed it. Four closed forms check it, each
   blind to a different mistake, and all four exact at any mesh because a uniform eigenstrain makes a
   linear displacement field.
 
@@ -178,7 +207,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   same STL voxelises to the same block **cell by cell** from either source, which is what makes a
   scene that runs in a browser the same scene as one that runs in a terminal.
 
-- **Something chooses the cell size, by measuring.** `dualis_world::fit` rasterises an assembly at
+- **Something chooses the cell size, by measuring.** `pantometry_world::fit` rasterises an assembly at
   every candidate cell and reports what each cost — filled cells, volume error, boundary fraction,
   thin runs, features below the cell, undecidable rows. The ladder is a statement about the assembly
   rather than about millimetres: the thinnest dimension of any part gets 1, 2, 4, 8 … cells.
@@ -187,7 +216,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   after the bulges and the cuts cancel, and a sphere at 2.5, 2.0 and 1.5 mm gives `+4.9%, +5.8%,
   −2.3%` — so the rule steers by boundary fraction, which does fall monotonically.
 
-- **The platform's third verb.** `dualis-world verify` measures what a passing audit does not:
+- **The platform's third verb.** `pantometry-world verify` measures what a passing audit does not:
   determinism to the byte, conservation margins, stability margins, and what moves when the coupling
   window halves or every grid refines.
 
@@ -197,7 +226,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   window, each file gets a material from the library's own catalogue, and **assemble** writes the
   scene.
 
-- **An eleventh domain.** `dualis-quantum`: a wavefunction in a well, marched with Visscher's
+- **An eleventh domain.** `pantometry-quantum`: a wavefunction in a well, marched with Visscher's
   staggered scheme, with probability an identity of the update rather than an accuracy claim.
 
 - **A temperature has a colour, and it is computed.** Planck's law through the CIE 1931 observer to
@@ -271,14 +300,14 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   of those is wrong while the other is the constant that function exists to stop people copying.
 
 - **Four of the nine catalogue materials could not be named from Python.** `bindings/python/src/lib.rs`,
-  `bindings/python/tests/test_dualis.py`.
+  `bindings/python/tests/test_pantometry.py`.
 
   The binding held its own five-arm match — `copper`, `aluminium`, `electrical_steel`, `fr4`, `pla` —
   against a catalogue of nine, so `borosilicate`, `ice`, `stainless_304` and `water` were unreachable and
   nothing said so. The **third** copy of the catalogue's spelling in this workspace, and the third to go
   stale.
 
-  `dualis-world` had the identical defect and it cost eleven releases. The shape is the same every time: a
+  `pantometry-world` had the identical defect and it cost eleven releases. The shape is the same every time: a
   name absent from a lookup is not a wrong answer, it is a substance that never appears, so nothing fails
   and no error is ever raised. `Substance::from_name` exists to be the one place the spelling lives, and
   the binding reads it there now — which also means the refusal lists whatever the catalogue holds rather
@@ -317,8 +346,8 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 - **Hashin–Shtrikman bounds for stiffness, and a witness that says how tight they are.**
   `Mix::bulk_bounds`, `Mix::shear_hashin_shtrikman`, `Mix::bulk_hashin_shtrikman`.
-  `crates/dualis-elastic/tests/a_checkerboard.rs`, and two tests added to
-  `crates/dualis-core/tests/a_mixture.rs`.
+  `crates/pantometry-elastic/tests/a_checkerboard.rs`, and two tests added to
+  `crates/pantometry-core/tests/a_mixture.rs`.
 
   The tighter elastic pair, assuming the microstructure is statistically isotropic. For aluminium against
   PLA at half and half it takes the shear range from 5.545-fold to 2.821-fold and the bulk range from
@@ -367,7 +396,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 - **`Block::fill`, so the static solver takes per-element material too — and gets the same modulus nine
   orders sharper.** `Block::fill`, `Block::materials`, `Block::material_at`.
-  `crates/dualis-elastic/tests/a_layered_block.rs`.
+  `crates/pantometry-elastic/tests/a_layered_block.rs`.
 
   `Waves` got per-element material first because the closed form that checks a composite's stiffness —
   Backus averaging — is about wave speeds, and there was somewhere to point it. That left one crate with
@@ -405,9 +434,9 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   rather than a plane through the interior. Statics gets the sharp half; the wave gets both halves less
   sharply. Neither covers it alone.
 
-- **Per-element material in `dualis-elastic`, and stiffness bounds that something can check.**
+- **Per-element material in `pantometry-elastic`, and stiffness bounds that something can check.**
   `Waves::fill`, `Waves::materials`, `Waves::material_at`, `Elastic: PartialEq`, `Mix::shear_bounds`,
-  `Mix::p_wave_modulus_bounds`. `crates/dualis-elastic/tests/a_layered_wave.rs`.
+  `Mix::p_wave_modulus_bounds`. `crates/pantometry-elastic/tests/a_layered_wave.rs`.
 
   `Mix` shipped without stiffness bounds a release ago, and the reason was stated at the time: `Waves`
   took one material per block, so there was nothing here a bound on stiffness could be *checked* against,
@@ -458,8 +487,8 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 
 - **Composites: two substances made into one, with the bounded properties returned as bounds.**
-  `dualis_core::mixture::Mix`, re-exported as `dualis::prelude::Mix`.
-  `crates/dualis-core/tests/a_mixture.rs`, `crates/dualis-thermal/tests/a_composite.rs`.
+  `pantometry_core::mixture::Mix`, re-exported as `pantometry::prelude::Mix`.
+  `crates/pantometry-core/tests/a_mixture.rs`, `crates/pantometry-thermal/tests/a_composite.rs`.
 
   A motor is copper, steel, magnets and air; a board is FR-4, copper and solder; a buffer is wax in an
   aluminium matrix. Each wants to be **one** `Substance` so a lumped model can hold it, and
@@ -503,14 +532,14 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   tolerance in that file traces to a named constant rather than to what made the run pass.
 
   Elastic and acoustic bounds are deliberately absent: Voigt–Reuss on the bulk and shear moduli is the
-  same theorem, but `dualis-elastic` has no per-cell material, so there is nothing here a stiffness bound
+  same theorem, but `pantometry-elastic` has no per-cell material, so there is nothing here a stiffness bound
   could be checked against. Yield strength is absent for a different reason — a composite's yield is
   governed by the weaker phase and the interface, so a rule of mixtures for it would be wrong rather than
   imprecise.
 
 - **A scene can declare its own substances, so the catalogue stops being the limit.** `Scene.materials`,
   `Palette`, `Substance::CATALOGUE` and `Substance::from_name`.
-  `crates/dualis/tests/substances_from_a_file.rs`, `crates/dualis-world/tests/declared_materials.rs`,
+  `crates/pantometry/tests/substances_from_a_file.rs`, `crates/pantometry-world/tests/declared_materials.rs`,
   `scenes/21-a-wax-thermal-buffer.json`.
 
   Nine catalogue entries against hundreds of thousands of materials: enumeration was never going to
@@ -549,7 +578,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   selecting no cells, one level up.
 
 - **Two-phase conduction, against the two-phase Neumann solution.** `FusionProps::liquid`, `new` and
-  `with_liquid`. `crates/dualis-thermal/tests/two_phase_stefan.rs`.
+  `with_liquid`. `crates/pantometry-thermal/tests/two_phase_stefan.rs`.
 
   The one-phase model is exact while the liquid sits at the melting point, because a face with no
   temperature difference carries no heat whatever its conductivity. It stops being right the moment the
@@ -600,7 +629,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 ### Changed
 
 - **A packed bed's conductivity is Maxwell–Eucken now, not an arithmetic mean.** `Puck::bed_conductivity`
-  and `Puck::conductivity_at`. `crates/dualis-porous/tests/the_beds_conductivity.rs`.
+  and `Puck::conductivity_at`. `crates/pantometry-porous/tests/the_beds_conductivity.rs`.
 
   It was `ε k_l + (1−ε) k_s`, which is the **Voigt bound** — exact only when the two phases lie in
   parallel with the flux, which in a bed of spheres nothing does. Nobody chose it; it is what you get if
@@ -642,7 +671,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   0.14.0 will be the first version with one; re-depositing 0.13.0 would mean deleting and recreating
   its GitHub release, and it is not worth doing to a version that is already out.
 
-  `crates/dualis-world/tests/citation_is_valid.rs` is four checks so the next one fails in the gate
+  `crates/pantometry-world/tests/citation_is_valid.rs` is four checks so the next one fails in the gate
   instead of on a web page: the licence is a list, every field a deposition is built from is present,
   the version matches the crate version, and the author block is a list of mappings rather than a bare
   string — that last being the silent half of this class, since a rejection is loud and a record with
@@ -653,7 +682,7 @@ which it has reported a pass it had not earned. Four of them are closed by that 
 
 **Elastic waves, any material, and one behaviour change that will bite a deserialiser.**
 
-`dualis-elastic` had a `density` field its own documentation called unused; it sets the wave speeds,
+`pantometry-elastic` had a `density` field its own documentation called unused; it sets the wave speeds,
 and `Waves` marches `ρü = ∇·σ` on the element `Block` solves statics with. That closed
 `ARCHITECTURE.md`'s depth list — the last entry turned out not to be finite strain but **inertia**.
 
@@ -674,12 +703,12 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
 
 ### Added
 
-- `dualis_elastic::Waves` — `ρü = ∇·σ`, central differences, lumped mass. `hold`, `clamp_ends`,
+- `pantometry_elastic::Waves` — `ρü = ∇·σ`, central differences, lumped mass. `hold`, `clamp_ends`,
   `release_mode`, `mode_amplitude`, `mode_frequency`, `kinetic_energy`, `strain_energy`,
   `total_energy`, `displacement_at`. Second order in both speeds — 0.161%, 0.040%, 0.010% over 16, 32
   and 64 elements — and the **ratio** holds to `1e-8` because `E` and `ρ` cancel algebraically while
   the mesh error cancels numerically.
-- `dualis_elastic::Axis`, replacing five `usize` axis arguments that disagreed about a fourth one.
+- `pantometry_elastic::Axis`, replacing five `usize` axis arguments that disagreed about a fourth one.
 - `Elastic::p_wave_speed`, `s_wave_speed`, `speed_ratio`, `from_substance`.
 - `Block::as_field` and `Waves::as_field` — the displacement magnitude. Neither half of this crate
   could be drawn before, for as long as the crate has existed.
@@ -704,7 +733,7 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
 
 - **Any material, not the nine in the catalogue.** `Substance::with_thermal`, `with_mechanical`,
   `with_acoustic`, `with_fusion` and `check`, plus `deny_unknown_fields` on `Substance` and all four
-  property blocks. `crates/dualis/tests/any_material.rs`.
+  property blocks. `crates/pantometry/tests/any_material.rs`.
 
   Enumeration does not reach "every material" and data does. `Substance::bulk` set all four property
   blocks to `None` and there was **no way to fill any of them** except a struct literal naming every
@@ -734,10 +763,10 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
   which no catalogue entry has, and `ρLV/P` to within one delivery.
 
 - **`Elastic::from_substance`, and "small strain" spans 130× across the catalogue.** The conversion
-  from `dualis-core`'s material catalogue to `dualis-elastic`'s material existed **in a test** —
+  from `pantometry-core`'s material catalogue to `pantometry-elastic`'s material existed **in a test** —
   `two_wave_speeds.rs` built one by hand — which means every consumer wanting to solve an elastic
   problem with a catalogue material wrote the same four lines. It is in the library now, in
-  `dualis-elastic`, because the kernel must not learn that elasticity exists.
+  `pantometry-elastic`, because the kernel must not learn that elasticity exists.
 
   It **drops the yield strength**, which is the one thing to know: `Substance` says where a material
   stops coming back and this type has no yield, so a solve past it returns a displacement that is
@@ -756,7 +785,7 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
   polymer is not a metal. The bound was wrong, not the data, so the claim is now the **spread**: 130×,
   meaning a strain bound that would be absurdly conservative for PLA is already past yield for ice.
 
-- **Neither half of `dualis-elastic` could be drawn, and its two constructors disagreed.** A
+- **Neither half of `pantometry-elastic` could be drawn, and its two constructors disagreed.** A
   stabilisation pass, continued: `Block::as_field`, `Face::on`, and `Waves::new`'s arguments in
   `Block::new`'s order.
 
@@ -771,7 +800,7 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
   `Face::axis` returns an index and predates `Axis`; `Face::on` returns the type. Two spellings of one
   idea inside one crate drift, so a test pins all six faces to both.
 
-- **`dualis_elastic::Axis`, and `Waves` is drawable.** A stabilisation pass over what landed
+- **`pantometry_elastic::Axis`, and `Waves` is drawable.** A stabilisation pass over what landed
   unreleased, which is the moment to change an API rather than after somebody depends on it.
 
   Five methods on `Waves` took an axis as a `usize` and **disagreed about a fourth one**: four returned
@@ -792,11 +821,11 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
   left alone. A wave crossing a 32 mm body is about 90 steps; a body left ringing for a millisecond is
   8,700 and three minutes.
 
-- **Elastic waves: `dualis_elastic::Waves`, and `ARCHITECTURE.md`'s depth list is closed.**
+- **Elastic waves: `pantometry_elastic::Waves`, and `ARCHITECTURE.md`'s depth list is closed.**
   `ρü = ∇·σ` on the same trilinear element `Block` solves statics with, marched with central
   differences and a lumped mass. `Waves::hold`, `clamp_ends`, `release_mode`, `mode_amplitude`,
   `mode_frequency`, `kinetic_energy`, `strain_energy`, `total_energy`, `displacement_at`.
-  `crates/dualis-elastic/tests/two_speeds_marched.rs`.
+  `crates/pantometry-elastic/tests/two_speeds_marched.rs`.
 
   A sibling type rather than a mode on `Block`, because `Block` is `Kind::QuasiStatic` and is right
   about itself — a body with velocity has a different lifecycle, a different stability limit and a
@@ -830,8 +859,8 @@ except a struct literal — which 0.12.0 broke when it added `fusion`.
   computed.
 
 - **A solid has two wave speeds, and the catalogue's one field means both of them.**
-  `Elastic::p_wave_speed`, `s_wave_speed` and `speed_ratio` in `dualis-elastic`, and
-  `crates/dualis/tests/two_wave_speeds.rs` — the fourth cross-domain test of that shape, after
+  `Elastic::p_wave_speed`, `s_wave_speed` and `speed_ratio` in `pantometry-elastic`, and
+  `crates/pantometry/tests/two_wave_speeds.rs` — the fourth cross-domain test of that shape, after
   `fields_and_rays`, `loss_and_lumps` and `a_slit`.
 
   `Elastic::density` was documented as "unused by the static solve and carried so a mass can be
@@ -886,13 +915,13 @@ for a thin or filled block than 0.11.0 did — read the entry below before pinni
 ### Added
 
 - **Latent heat, against Neumann's exact solution of Stefan's problem.** `LatentHeat` in
-  `dualis-units`, `FusionProps` and `Substance::fusion`, `Substance::latent_energy` and
-  `Substance::ice` in `dualis-core`, `Solid3D::set_melted_fraction`, `melted_fraction_at` and
-  `melted_volume` in `dualis-thermal`, `"ice"` in the scene format's materials.
-  `crates/dualis-thermal/tests/a_freezing_front.rs` and `20-melting-a-block-of-ice`.
+  `pantometry-units`, `FusionProps` and `Substance::fusion`, `Substance::latent_energy` and
+  `Substance::ice` in `pantometry-core`, `Solid3D::set_melted_fraction`, `melted_fraction_at` and
+  `melted_volume` in `pantometry-thermal`, `"ice"` in the scene format's materials.
+  `crates/pantometry-thermal/tests/a_freezing_front.rs` and `20-melting-a-block-of-ice`.
 
   The second of `ARCHITECTURE.md`'s three depth entries — every domain was single-phase — and it left
-  one: small-strain. No new crate, and nothing outside `dualis-thermal` but the material data.
+  one: small-strain. No new crate, and nothing outside `pantometry-thermal` but the material data.
 
   **Why this problem:** it has an exact solution, which almost nothing with a moving boundary does. A
   semi-infinite liquid at its melting point, surface dropped to `T_s`, freezes to `X(t) = 2λ√(αt)`
@@ -942,12 +971,12 @@ for a thin or filled block than 0.11.0 did — read the entry below before pinni
     ledger reads the state that was corrupted.
 
 - **A block can be made of more than one material.** `Solid3D::fill`, `substance_at`, `substances`,
-  `face_conductance`, `heat_capacity` and `stability_ratio` in `dualis-thermal`, and `regions` plus
-  `material` on the scene format's `block`. `crates/dualis-thermal/tests/a_layered_wall.rs` and
+  `face_conductance`, `heat_capacity` and `stability_ratio` in `pantometry-thermal`, and `regions` plus
+  `material` on the scene format's `block`. `crates/pantometry-thermal/tests/a_layered_wall.rs` and
   `19-a-coating-stops-the-heat`.
 
   The first of `ARCHITECTURE.md`'s three *depth* entries — single-phase, single-material,
-  small-strain — and it cost no new crate and nothing outside `dualis-thermal`.
+  small-strain — and it cost no new crate and nothing outside `pantometry-thermal`.
 
   The number it turns on is the conductivity **on a face**, which is the harmonic mean
   `2k_Lk_R/(k_L+k_R)` and not the arithmetic one. For aluminium against borosilicate those are
@@ -971,8 +1000,8 @@ for a thin or filled block than 0.11.0 did — read the entry below before pinni
   offset it could have predicted.
 
 - **Diffraction, and where scalar theory stops being true.** `single_slit_intensity` and `slit_zero`
-  in `dualis-optics`, and `Cavity::obstruct` in `dualis-em` for a perfect conductor with a hole in
-  it. `crates/dualis/tests/a_slit.rs` holds one against the other.
+  in `pantometry-optics`, and `Cavity::obstruct` in `pantometry-em` for a perfect conductor with a hole in
+  it. `crates/pantometry/tests/a_slit.rs` holds one against the other.
 
   `sinc²(π a sinθ/λ)` rests on **Kirchhoff's** boundary condition — the field in the opening is the
   incident field — and Maxwell's equations do not say that. The metal carries currents and the
@@ -1038,7 +1067,7 @@ for a thin or filled block than 0.11.0 did — read the entry below before pinni
   same faces the sweep uses rather than reconstructed as `α·∇²T` from a diffusivity a filled block
   has no single value of. `laplacian` stays `∇²T`, which is what the trait asks for.
 
-- **The scene format's material names live in one table**, `dualis_world::MATERIALS`, with
+- **The scene format's material names live in one table**, `pantometry_world::MATERIALS`, with
   `stainless_304`, `borosilicate` and `ice` added. It was a `match` inside the network builder; the
   moment a second domain wanted a material that would have been two lists that agree until they do not.
 
@@ -1113,7 +1142,7 @@ Neither closes a gap by making one domain do another's job.
 - **What a lumped resistance cannot say, measured.** `Winding` states a resistance; `Conductor`
   solves for one from a shape but is quasi-static, so neither has a frequency in it. A field does.
 
-  `crates/dualis/tests/loss_and_lumps.rs` measures the amplitude decay inside a conducting
+  `crates/pantometry/tests/loss_and_lumps.rs` measures the amplitude decay inside a conducting
   half-space against the closed form that holds for **any** conductivity, not just a good one:
 
   ```text
@@ -1133,7 +1162,7 @@ Neither closes a gap by making one domain do another's job.
   Beside it, copper: 9.22 mm at 50 Hz, exactly a tenfold thinner per hundredfold in frequency, and
   a `Winding` reporting 0.1724 Ω at every one of them.
 
-- **`dualis-em` carries structures now, and a Yee grid and Fresnel's algebra agree on a
+- **`pantometry-em` carries structures now, and a Yee grid and Fresnel's algebra agree on a
   reflectance.**
 
   Per-cell media, so a slab or a coating goes into the box, and a *magnetic* boundary so a plane
@@ -1141,8 +1170,8 @@ Neither closes a gap by making one domain do another's job.
   faces, and a conductor there turns it into a waveguide mode with a cutoff and the wrong phase
   velocity.
 
-  `crates/dualis/tests/fields_and_rays.rs` is the check the two crates existed to make possible.
-  `dualis-optics` gets a reflectance from algebra on two indices; `dualis-em` marches Maxwell and
+  `crates/pantometry/tests/fields_and_rays.rs` is the check the two crates existed to make possible.
+  `pantometry-optics` gets a reflectance from algebra on two indices; `pantometry-em` marches Maxwell and
   knows nothing about either. They share no code and do not depend on each other:
 
   ```text
@@ -1179,7 +1208,7 @@ Neither closes a gap by making one domain do another's job.
   in a debug build — the mode CI's OS matrix runs. Two by one is the smallest grid with an interior,
   gives the same numbers to the last digit, and takes 36 s.
 
-- **An open boundary for `dualis-em`, and the source that showed why the first measurement of it
+- **An open boundary for `pantometry-em`, and the source that showed why the first measurement of it
   was meaningless.**
 
   Mur's first-order condition: exact for a wave arriving along the normal, worse away from it as
@@ -1204,7 +1233,7 @@ Neither closes a gap by making one domain do another's job.
   `Cavity::mur_coefficient` is `(cΔt − Δ)/(cΔt + Δ)` — a function of the Courant number alone, which
   a test checks by getting the same number out of vacuum at 2 mm and glass at 6 mm.
 
-- **A tenth domain: `dualis-fluid`, and the list `ARCHITECTURE.md` opened with is closed.**
+- **A tenth domain: `pantometry-fluid`, and the list `ARCHITECTURE.md` opened with is closed.**
   Incompressible Navier–Stokes by projection on a staggered grid — velocities on cell faces,
   pressure at centres, which is the arrangement Yee uses for electromagnetism and for the same
   reason.
@@ -1257,7 +1286,7 @@ Neither closes a gap by making one domain do another's job.
   is larger and has the other sign. Two errors, each with a formula, which is what makes the
   comparison mean anything.
 
-- **A ninth domain: `dualis-em`.** Maxwell's equations in three dimensions, on the grid Yee built
+- **A ninth domain: `pantometry-em`.** Maxwell's equations in three dimensions, on the grid Yee built
   for them, and the reason that grid is the grid.
 
   `E` on cell edges and `H` on cell faces, each half a cell from the others, so every curl is a
@@ -1304,7 +1333,7 @@ Neither closes a gap by making one domain do another's job.
   cycle, so comparing it at two instants compares two denominators. The injection test read 1.099
   and then 0.5387 for a quantity that had not moved.
 
-- **An eighth domain: `dualis-elastic`.** What a shape does under load — `∇·σ = 0` with
+- **An eighth domain: `pantometry-elastic`.** What a shape does under load — `∇·σ = 0` with
   `σ = λ tr(ε)I + 2μ ε` — solved rather than stated, so a stiffness is a property of a geometry the
   way `Conductor` made a resistance one.
 
@@ -1353,14 +1382,14 @@ Neither closes a gap by making one domain do another's job.
   now asserts both — that the normal is zero *and* that the magnitude is not, so the distinction
   cannot quietly stop mattering.
 
-  **Two domains wanted the name `Body`.** `dualis-mechanics` had it for a rigid one. The prelude is
+  **Two domains wanted the name `Body`.** `pantometry-mechanics` had it for a rigid one. The prelude is
   where that shows, and only because both are exported there. The elastic one is `Block`.
 
 - **The native viewer opens the espresso run, and two things `runtime/viewer`'s README already
   claimed turned out not to be true of its renderer.**
 
   `portafilter_flow flow.json` writes the wire format, and `runtime/viewer` reads it — that viewer
-  does not link `dualis` at all, so a run that opens there is the format demonstrating it carries
+  does not link `pantometry` at all, so a run that opens there is the format demonstrating it carries
   enough to draw a run. It did, unchanged.
 
   What it drew was wrong in two ways, both found by pointing it at a run shaped unlike the
@@ -1431,14 +1460,14 @@ Neither closes a gap by making one domain do another's job.
   a better reservoir and a worse spreader, which is why a group head is brass and a basket is not.
 
   The wall sets the explicit solver's step, and the limit goes as the diffusivity, so steel's is
-  seventeen times larger. `dualis-porous`'s suite went from **152 s to 5.8 s** in release and 52 s
+  seventeen times larger. `pantometry-porous`'s suite went from **152 s to 5.8 s** in release and 52 s
   to 6.7 s in debug — the mode CI actually runs — and the model got more accurate in the same
   edit. It had made the debug matrix jobs ten times slower than the whole workspace had been.
 
   Reaching for the metal already in the catalogue cost an order of magnitude in run time *and*
   understated the thermal mass by 65%.
 
-- **A seventh domain: `dualis-porous`.** Flow through a packed bed, the heat it carries, and the
+- **A seventh domain: `pantometry-porous`.** Flow through a packed bed, the heat it carries, and the
   dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed, a leaching
   heap and an aquifer.
 
@@ -1504,7 +1533,7 @@ Neither closes a gap by making one domain do another's job.
   runs. A cut and not a volume: nine volumes on fifty frames is 45 MB to animate three baskets
   that are not moving, and the question was about a cross-section.
 
-- **`dualis_scene::sample_field` is public.** One field per domain is not enough and the limit is
+- **`pantometry_scene::sample_field` is public.** One field per domain is not enough and the limit is
   the trait's rather than the physics'. A bed under flow has a temperature, a pressure, a speed,
   an extraction state and a concentration on the same grid, all true at once, and `as_field` can
   nominate one. A caller that wants the other four builds them here.
@@ -1525,7 +1554,7 @@ Neither closes a gap by making one domain do another's job.
   out flat.
 
 - **`scenes/18-an-espresso-shot`**, so all seven domains have scenes, and `DynamicViscosity`,
-  `MassFlow` and `Concentration` in `dualis-units`.
+  `MassFlow` and `Concentration` in `pantometry-units`.
 
 - **The scene format carries a version**, and `--check` validates a file without running it.
 
@@ -1538,7 +1567,7 @@ Neither closes a gap by making one domain do another's job.
   number closes. The promise attached is narrow and stated: within one version, a file that loads
   today loads tomorrow.
 
-  `dualis-world --check scene.json` parses and builds without running, and reports a parse failure
+  `pantometry-world --check scene.json` parses and builds without running, and reports a parse failure
   as `file:line:column` with the keys that were expected. CI runs it over every shipped scene, so
   it is not the one entry point nothing exercises.
 
@@ -1576,10 +1605,10 @@ Neither closes a gap by making one domain do another's job.
   The stencil is linear, so subtracting a constant commutes with it exactly and the fix cost
   nothing.
 
-- **`dualis_view::gltf`**: a frame as glTF 2.0, so Blender, three.js, Omniverse, a USD pipeline
+- **`pantometry_view::gltf`**: a frame as glTF 2.0, so Blender, three.js, Omniverse, a USD pipeline
   or macOS Quick Look can open a result. **No new dependency** — glTF is JSON with the binary
-  base64'd into a `data:` URI, and this crate already writes JSON by hand, so `dualis-view` still
-  depends on exactly one thing and it is `dualis-scene`.
+  base64'd into a `data:` URI, and this crate already writes JSON by hand, so `pantometry-view` still
+  depends on exactly one thing and it is `pantometry-scene`.
 
   Paths become `LINES`, points and 3D fields become `POINTS`, and a 1D or 2D field becomes
   **nothing, reported**: a line of samples is a graph, not something to put in a 3D viewer, and
@@ -1599,7 +1628,7 @@ Neither closes a gap by making one domain do another's job.
   workspace**, excluded from the library's. Measured: the library resolves 12 external crates, the
   python bindings 15, and this 86.
 
-  It does **not depend on `dualis`**. It reads the JSON a run wrote and nothing else, so "the wire
+  It does **not depend on `pantometry`**. It reads the JSON a run wrote and nothing else, so "the wire
   format carries enough to draw a run" is demonstrated rather than claimed.
 
   `viewer-core` holds everything a renderer gets wrong the same way twice — one colour scale
@@ -1608,7 +1637,7 @@ Neither closes a gap by making one domain do another's job.
   `--snapshot out.ppm` renders one frame headlessly, because a window nobody can photograph only
   proves the program did not panic.
 
-- **`PanelData::Paths`** in `dualis-scene`, and a **`layout`** view in `dualis-view`: runs of
+- **`PanelData::Paths`** in `pantometry-scene`, and a **`layout`** view in `pantometry-view`: runs of
   connected points in space — a ray through a lens train, a trajectory, a field line — drawn
   rotatably and depth-sorted beside the field and body views.
 
@@ -1661,10 +1690,10 @@ Neither closes a gap by making one domain do another's job.
   does not have *at all*, and a mode count checked against Weyl's three-term estimate.
 
 - **`Solid3D`, `Reading`, `Bodies` and `Tolerances` in the prelude.** Each was reachable only
-  through `dualis::core` or its own crate, and each is a type a consumer meets while building a
+  through `pantometry::core` or its own crate, and each is a type a consumer meets while building a
   frame, setting an audit or writing a domain. Found by examples reaching for them.
 
-- **A `volume` view** in `dualis-view`: a 3D field is raycast — trilinear sampling, front-to-back
+- **A `volume` view** in `pantometry-view`: a 3D field is raycast — trilinear sampling, front-to-back
   compositing, rotatable with the same camera the bodies view uses — **beside** the slice montage
   rather than instead of it. A render shows shape and a reader cannot get a number back out of it;
   a montage is quantitative and unreadable as a shape. `ARCHITECTURE.md` gap 6, and the answer
@@ -1682,12 +1711,12 @@ Neither closes a gap by making one domain do another's job.
 
 Three domains gained a third dimension and electricity gained a field, so
 `ARCHITECTURE.md`'s six gaps are down to one. **Breaking**, in two places, both in
-`dualis-scene`: `Extent::new` takes an `nz`, and `Panel::grid` returns a triple. Everything
+`pantometry-scene`: `Extent::new` takes an `nz`, and `Panel::grid` returns a triple. Everything
 else is additive.
 
 ### Added
 
-- **`Solid3D`** in `dualis-thermal`: conduction through a block in three dimensions. A seven-point
+- **`Solid3D`** in `pantometry-thermal`: conduction through a block in three dimensions. A seven-point
   stencil on cubic cells, insulated faces by mirroring, and the explicit limit `dx²/6α` — a third
   of `Bar1D`'s, because the limit tightens with every axis.
 
@@ -1701,7 +1730,7 @@ else is additive.
   continuum: that discrete rate approaches `α·π²/L²` at second order, checked as a *rate*, since
   a first-order scheme also converges.
 
-- **`Domain::books_balance`** in `dualis-core`: an opt-in claim that a domain's ledger changes by
+- **`Domain::books_balance`** in `pantometry-core`: an opt-in claim that a domain's ledger changes by
   exactly what it took from the bus minus what it published. A domain that makes it is checked
   **on its own scale** every step, rather than inside the sum of every ledger.
 
@@ -1718,7 +1747,7 @@ else is additive.
   visits domains one at a time, so the bus traffic between the snapshot before and the snapshot
   after belongs to exactly one domain.
 
-- **`Tolerances`** in `dualis-core`, and `Simulation::conservation_tolerance_for`: a relative
+- **`Tolerances`** in `pantometry-core`, and `Simulation::conservation_tolerance_for`: a relative
   tolerance **per conserved quantity** rather than one for the whole simulation.
 
   The failure it closes, demonstrated in `per_quantity_tolerances.rs` in both directions: a
@@ -1736,7 +1765,7 @@ else is additive.
   **refused** rather than ignored — the same failure `aluminum` for `aluminium` produced in this
   format once already, where one character turned off the check the library exists for.
 
-- **`Conductor`** in `dualis-electrical`: current as a field. `∇·(σ∇φ) = 0` solved by conjugate
+- **`Conductor`** in `pantometry-electrical`: current as a field. `∇·(σ∇φ) = 0` solved by conjugate
   gradients on a block with two electrodes, `J = −σ∇φ` read off it, and the dissipation as
   `∫σ|∇φ|²dV`. **Nobody states a resistance** — it comes out of the shape.
 
@@ -1755,13 +1784,13 @@ else is additive.
   exactly like an answer. `step` refuses one that did not converge, `residual` is a *reading*, and
   `with_solver` exists so the refusal path can be provoked from a test.
 
-- **`Resistivity`, `Conductivity`, `ElectricField`, `CurrentDensity`** in `dualis-units`, with
+- **`Resistivity`, `Conductivity`, `ElectricField`, `CurrentDensity`** in `pantometry-units`, with
   `product!` declarations for `J = σE` and `E = ρJ` — those lines compiling is the check that
   (S/m)·(V/m) is A/m².
 
 - **`DomainSpec::Conductor`** and scene 17 — a copper busbar with a notch. Seventeen scenes.
 
-- **`Hall`** in `dualis-acoustic`: the wave equation in three dimensions. A staggered grid with
+- **`Hall`** in `pantometry-acoustic`: the wave equation in three dimensions. A staggered grid with
   pressure on nodes and velocity on the faces between them, rigid surfaces, and `dx/(c√3)`.
 
   It is not a more accurate `Room`. A floor plan **does not have** the vertical and oblique modes
@@ -1782,14 +1811,14 @@ else is additive.
 - **`DomainSpec::Hall`** and scene 16 — the same 4.4 × 3.1 m room with a 2.4 m ceiling, released
   in its oblique (1,1,1) mode. Sixteen scenes.
 
-- **`Extent` and `PanelData::Field` gained a third axis** in `dualis-scene`. Breaking:
+- **`Extent` and `PanelData::Field` gained a third axis** in `pantometry-scene`. Breaking:
   `Extent::new` takes `nz`, `Panel::grid` returns a triple, `PanelData::Field` carries `nz`.
   `Extent::volume`, `Extent::count`, `Extent::dimensions` and `Panel::slice` are new.
 
-- **`DomainSpec::Block`** in `dualis-world`, and scene 15 — a hot spot in a 9×9×9 aluminium block.
+- **`DomainSpec::Block`** in `pantometry-world`, and scene 15 — a hot spot in a 9×9×9 aluminium block.
   Fifteen scenes now, all run by CI through the real binary.
 
-- **A `slices` view** in `dualis-view`: a 3D field is drawn as every z-slice at once rather than
+- **A `slices` view** in `pantometry-view`: a 3D field is drawn as every z-slice at once rather than
   one plane behind a slider, because a viewer who never touches the slider would see a picture of
   a solid that was really a picture of one plane. The filmstrip has no room for a montage, so it
   draws the middle slice and labels it `z-slice 5/9`.
@@ -1825,7 +1854,7 @@ else is additive.
   of a block, two thirds of the samples missing, nothing anywhere to say so.
 
   `FRICTION.md` 23, and the lesson is not about `Extent`. A layer's assumptions are only visible
-  from below: `dualis-scene` names no domain and succeeded at that, and could not have discovered
+  from below: `pantometry-scene` names no domain and succeeded at that, and could not have discovered
   that it assumed flatness, because everything it had ever been handed was flat.
 
 - **A test that was green and measured nothing.** Replacing `Solid3D`'s stability constant `1/6`
@@ -1839,7 +1868,7 @@ else is additive.
 
 ### Added
 
-- **`dualis-view`**, the eleventh crate and the top of the three layers: a filmstrip as SVG, a
+- **`pantometry-view`**, the eleventh crate and the top of the three layers: a filmstrip as SVG, a
   self-contained HTML report, a CSV of every domain's scalars, and the frames as JSON. No
   dependencies — SVG and HTML are text, so a `format!` and a file write is the whole renderer.
 
@@ -1851,16 +1880,16 @@ else is additive.
   Every view holds one scale for the whole run. A picture that renormalises per frame makes a
   decay look like a steady state, and it is what you get if you do not think about it.
 
-- **`dualis-scene`**, the tenth crate and the middle of the three layers `ARCHITECTURE.md`
+- **`pantometry-scene`**, the tenth crate and the middle of the three layers `ARCHITECTURE.md`
   describes. `Placement`, `Extent`, `Frame`, `Panel`, `PanelData`, `capture`, `settle_framing`
   — where a domain sits, and what one instant of a run looks like.
 
   It **names no domain**, and `knows_no_physics.rs` demonstrates that rather than asserting it:
   the test defines a physics inside the test file — a field, two bodies and a reading, in a crate
-  `dualis-scene` cannot possibly know about — places it and captures all three shapes. If a
+  `pantometry-scene` cannot possibly know about — places it and captures all three shapes. If a
   physics invented in a test comes back whole, a real one costs one crate and nothing else moves.
 
-  Both crates were modules in `dualis-world`, which is `publish = false`. A consumer who could
+  Both crates were modules in `pantometry-world`, which is `publish = false`. A consumer who could
   state a simulation and run it could reach neither the shape of the answer nor any view of it —
   the largest gap between what was built and what was usable.
 
@@ -1884,7 +1913,7 @@ else is additive.
 - **`ScalarField::unit`**: two characters for a legend, and the fifth place a layer had been
   matching on domain types to get something a domain already knew.
 
-- **`Pose`** in `dualis-core`: a rigid motion, rotation and translation, no scale and no shear.
+- **`Pose`** in `pantometry-core`: a rigid motion, rotation and translation, no scale and no shear.
   An isometry preserves every distance and angle exactly, which is the only class of placement a
   physics can be moved by without its physics changing. The first test is
   `placing_something_cannot_change_a_distance`.
@@ -1907,7 +1936,7 @@ else is additive.
 
 ### Added
 
-- **`Ensemble`** in `dualis-core`: many independent samples, run in parallel, with an answer that
+- **`Ensemble`** in `pantometry-core`: many independent samples, run in parallel, with an answer that
   does not depend on how many threads produced it. The other axis of parallelism — `TreeNBody`
   splits one evaluation across cores, this splits many evaluations, which is the shape a Monte
   Carlo study and a parameter sweep both have. Measured 8.74× on sixteen threads.
@@ -1972,7 +2001,7 @@ else is additive.
   is **4.28 A**. The hand-assembled formula understated the margin by 4%.
 
   Found by a sizing tool written against the published 0.6.0 — a consumer deliberately unlike
-  `dualis-world`: no scenes, no rendering, no fields, asking for settled answers rather than
+  `pantometry-world`: no scenes, no rendering, no fields, asking for settled answers rather than
   stepping. It had to assemble that conductance out of numbers the network already held, which
   is `FRICTION.md` 20 and is what `path_conductance` now answers.
 
@@ -1989,7 +2018,7 @@ else is additive.
   loop by design, and not outside it by omission.
 
   The case is a copper winding whose resistance rises 0.393%/K. Its temperature lives in
-  `dualis-thermal`, its resistance in `dualis-electrical`, and neither can see the other's state
+  `pantometry-thermal`, its resistance in `pantometry-electrical`, and neither can see the other's state
   — correctly, since domains meeting only on `Exchange` is the property the crate split defends.
   The caller between frames can see both.
 
@@ -2026,8 +2055,8 @@ else is additive.
 
 ### Added
 
-- **`dualis-electrical`**, the sixth domain and the tenth crate. `Winding` computes
-  `R = ρ(T)·L/A` and publishes `I²R` onto the channel `dualis-thermal` already takes from, with
+- **`pantometry-electrical`**, the sixth domain and the tenth crate. `Winding` computes
+  `R = ρ(T)·L/A` and publishes `I²R` onto the channel `pantometry-thermal` already takes from, with
   neither crate naming the other.
 
   It closes a real gap rather than adding a sixth for its own sake. Every other producer of heat
@@ -2048,7 +2077,7 @@ else is additive.
   a domain would have to read another's temperature inside the step loop, and `Exchange` carries
   amounts, not state. Resistance is evaluated at a temperature the caller states.
 
-- **`Resistance`** in `dualis-units`, with `product!(Resistance, Current => Voltage)` — that line
+- **`Resistance`** in `pantometry-units`, with `product!(Resistance, Current => Voltage)` — that line
   compiling is the check that ohms times amperes are volts. Plus `Current::a`, `Voltage::v` and
   `Resistance::ohm`/`milliohm` constructors.
 
@@ -2057,7 +2086,7 @@ else is additive.
   other, so the guess was good — and this is the scene that would have caught it if it had not
   been. Twelve scenes now cover all six domains.
 
-- **Two tests that keep prose from aging.** `documented_version.rs` reads every `dualis = "x.y"`
+- **Two tests that keep prose from aging.** `documented_version.rs` reads every `pantometry = "x.y"`
   in the documentation and every "the tree is X.Y.Z" in `.claude/agents/`, and compares them
   against `CARGO_PKG_VERSION`. Both fail if they find *nothing*, because a check that stopped
   matching would pass forever. The `invariant-guard` line they now cover had been a release
@@ -2104,7 +2133,7 @@ else is additive.
 
 ### Added
 
-- **`ThermalNetwork`**, the third domain in `dualis-thermal`: n lumped bodies joined by
+- **`ThermalNetwork`**, the third domain in `pantometry-thermal`: n lumped bodies joined by
   conductances, as *one* domain. Winding, stator, housing — and the **drop across each joint**,
   which is the number that decides whether a motor survives and the one a `LumpedMass` cannot
   give, because it reports the whole assembly as a single temperature. It also expresses a
@@ -2133,7 +2162,7 @@ else is additive.
 
   Closes #2.
 
-- **`Conductance`** and **`HeatCapacity::j_per_k`** in `dualis-units`. `Conductance × Temperature
+- **`Conductance`** and **`HeatCapacity::j_per_k`** in `pantometry-units`. `Conductance × Temperature
   = Power` and `Conductance × Time = HeatCapacity` are declared, and the declarations compiling
   is itself the check that `UA·ΔT` is watts and `C/UA` is a time.
 
@@ -2143,7 +2172,7 @@ else is additive.
   becoming an interior node that looks like it is cooling and is not. `temperature()` refuses a
   network rather than averaging it, and names the calls that answer.
 
-- **The Python bindings are on PyPI**, as `dualis`. `pip install dualis` gets an abi3 wheel for
+- **The Python bindings are on PyPI**, as `pantometry`. `pip install pantometry` gets an abi3 wheel for
   Linux x86_64/aarch64, macOS x86_64/aarch64 or Windows x64, plus an sdist to fall back on.
   Built by `.github/workflows/release-python.yml` on a tag, because a wheel built on one
   machine is a wheel for one platform — uploading the Windows one alone would have made
@@ -2157,8 +2186,8 @@ else is additive.
   being on it costs a named check rather than buying a pass.
 
 - **Python bindings**, in `bindings/python`, as their own cargo workspace. `pip install` the
-  wheel and `import dualis`: a `Simulation`, the library's heater, bar and lumped-mass domains,
-  and the conservation audit as a `dualis.Violation` carrying `quantity`, `site`, `before`,
+  wheel and `import pantometry`: a `Simulation`, the library's heater, bar and lumped-mass domains,
+  and the conservation audit as a `pantometry.Violation` carrying `quantity`, `site`, `before`,
   `after`, `scale` and `tolerance` — addressable rather than a sentence to parse. A refused step
   does not move the clock.
 
@@ -2246,7 +2275,7 @@ had while the conservation audit reported clean to 1e-12.
   `quantity` and `Display` had no branch for them, so the first error a consumer ever saw read
   "substance has no heat capacity is not conserved at plate: inf". A third branch.
 - **`Report` could not be named without a module path**, though it is what `advance` returns.
-  Added to `dualis-core`'s root and the prelude.
+  Added to `pantometry-core`'s root and the prelude.
 - **`Substance` was in the prelude and unbuildable from it**: `bulk` leaves `thermal: None`,
   which `LumpedMass` refuses to step, and the three types needed to supply one were not exported.
   `ThermalProps`, `MechanicalProps`, `AcousticProps`, `ThermalConductivity` and
@@ -2312,10 +2341,10 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
 
 ### Added
 
-- **`dualis-world`** — the first consumer, and not published. Scenes described as JSON, built
+- **`pantometry-world`** — the first consumer, and not published. Scenes described as JSON, built
   into a `Simulation`, run, and drawn as an SVG filmstrip with no dependency. It exists to use
   the SDK from outside rather than to be a good application, and it reports what that was like
-  in `crates/dualis-world/FRICTION.md`: twelve findings, seven fixed. Five are recorded rather
+  in `crates/pantometry-world/FRICTION.md`: twelve findings, seven fixed. Five are recorded rather
   than actioned, and the reasons differ: sharing the examples' SVG plotting would mean
   committing to a public drawing API in a workspace whose scope excludes rendering; validating
   a scene's schedule against its domains at build time is something an application can already
@@ -2323,7 +2352,7 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   `Exchange::publish_on` already refuses the mismatch by name. The report also says what it
   does *not* cover.
 
-  **Ten scenes ship**, in `crates/dualis-world/scenes/`, covering all five domains,
+  **Ten scenes ship**, in `crates/pantometry-world/scenes/`, covering all five domains,
   and CI runs every one through the real binary as well as the test harness. Three acoustic —
   two room modes and a clap that reflects off all four walls; two thermal, which are the same
   heat told over a plain channel and over a shared boundary and are the argument for
@@ -2361,7 +2390,7 @@ reversed, and the cost was one order of magnitude smaller than the argument for 
   That closes the gap the report itself had flagged — until then no `publish`, `take`,
   `Exchange`, `Interface` or `Flux` appeared anywhere in the consumer, so the part of the API
   this workspace exists for had only ever been driven from inside. Writing both domains from
-  outside needed nothing beyond `dualis::prelude`.
+  outside needed nothing beyond `pantometry::prelude`.
   Excluded from the wasm, determinism and 1.78 jobs, which are promises the *library* makes to
   the people who depend on it.
 
@@ -2412,31 +2441,31 @@ and are not obvious from the outside:
 
 ### Added
 
-- **`dualis-units`** — dimensional analysis with the SI exponents in the type, so `Length +
+- **`pantometry-units`** — dimensional analysis with the SI exponents in the type, so `Length +
   Time` does not compile. Const-generic `Qty` and `QVec3`, macro-generated products, and
   unit-bearing constructors as the only place a factor of a thousand may appear.
-- **`dualis-core`** — the kernel. Conservation as an audit (`Ledger`, `audit`, `Violation`),
+- **`pantometry-core`** — the kernel. Conservation as an audit (`Ledger`, `audit`, `Violation`),
   fixed-step integrators including `velocity_verlet`, multi-domain scheduling with
   quasi-static, multirate and iterative coupling, deterministic sampling through
   `Rng::for_index`, an accurate discrete Fourier transform, closed-form rigid motion, scalar
   and vector fields, and shared boundaries (`Interface`, `Flux`).
-- **`dualis-optics`** — spectral radiometry, surface optics with Fresnel and coatings,
+- **`pantometry-optics`** — spectral radiometry, surface optics with Fresnel and coatings,
   Sellmeier and Cauchy dispersion, ray geometry, Airy diffraction and the ideal MTF, Zernike
   wavefronts and aberrated PSFs, angular-spectrum propagation, partial coherence, and a
   detector with the four noises that come with counting photons.
-- **`dualis-thermal`** — lumped masses and explicit one-dimensional conduction, with radiative
+- **`pantometry-thermal`** — lumped masses and explicit one-dimensional conduction, with radiative
   and convective loss.
-- **`dualis-mechanics`** — exact N-body, Barnes-Hut with a quadrupole, penalty contact with
+- **`pantometry-mechanics`** — exact N-body, Barnes-Hut with a quadrupole, penalty contact with
   Coulomb friction, rolling, and rigid-body rotation with Euler's equations.
-- **`dualis-acoustic`** — the linear wave equation on a staggered grid, in a tube and in a
+- **`pantometry-acoustic`** — the linear wave equation on a staggered grid, in a tube and in a
   room, with impedance boundaries.
-- **`dualis-molecular`** — Lennard-Jones fluids in periodic boxes, cell lists, a Langevin
+- **`pantometry-molecular`** — Lennard-Jones fluids in periodic boxes, cell lists, a Langevin
   thermostat, virial pressure, and radial distribution functions.
 - **Five examples**, each of which asserts its numbers and is run by CI. Give one a path and
   it writes an SVG; the plotting has no dependency. Two further examples are checks rather
   than showcases: `agents_quickstart` and `readme_check`.
 - **`AGENTS.md` and `CLAUDE.md`** — the API on one page for a consumer, and the gate and
-  conventions for a contributor. Written after an AI agent looked for dualis on `PATH`, as a
+  conventions for a contributor. Written after an AI agent looked for pantometry on `PATH`, as a
   Python package, and in a consuming repository, found it in none of the three, and used
   MuJoCo instead. That is a distribution failure and not a documentation one, but the
   quickstart it now lands on is `examples/agents_quickstart.rs`, which CI runs, so it cannot
@@ -2482,20 +2511,20 @@ and are not obvious from the outside:
 ### Documented
 
 - Every public item, with `#![deny(missing_docs)]` in all eight crates so it stays that way.
-  244 items had no doc comment; the concentration was in `dualis-units`, which is the API
+  244 items had no doc comment; the concentration was in `pantometry-units`, which is the API
   nobody can avoid.
 - A `compile_fail` doctest proving `Length + Time` does not build — the workspace's reason for
   existing, previously asserted only in prose.
 
-[Unreleased]: https://github.com/YounghyeonPark/dualis/compare/v0.11.0...HEAD
-[0.11.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.11.0
-[0.10.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.10.0
-[0.9.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.9.0
-[0.8.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.8.0
-[0.7.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.7.0
-[0.6.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.6.0
-[0.5.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.5.0
-[0.4.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.4.0
-[0.3.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.3.0
-[0.2.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.2.0
-[0.1.0]: https://github.com/YounghyeonPark/dualis/releases/tag/v0.1.0
+[Unreleased]: https://github.com/YounghyeonPark/pantometry/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.11.0
+[0.10.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.10.0
+[0.9.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.9.0
+[0.8.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.8.0
+[0.7.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.7.0
+[0.6.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.6.0
+[0.5.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.5.0
+[0.4.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.4.0
+[0.3.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.3.0
+[0.2.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.2.0
+[0.1.0]: https://github.com/YounghyeonPark/pantometry/releases/tag/v0.1.0

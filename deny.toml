@@ -4,7 +4,7 @@
 # all permissive, three of which reach a built artifact. That was a snapshot. One added
 # dependency, or one upstream relicensing, and it stops being true silently.
 #
-# This matters more than it looks, because `dualis-world` is coming and a windowing and GPU
+# This matters more than it looks, because `pantometry-world` is coming and a windowing and GPU
 # stack is several hundred crates. Nobody audits that by reading. Better to have the gate
 # standing before the flood than to write it afterwards.
 #

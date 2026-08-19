@@ -1,0 +1,16 @@
+[package]
+name = "pantometry-acoustic"
+description = "Sound as a simulation domain: the wave equation on a grid, impedance boundaries and standing modes"
+keywords = ["acoustics", "wave-equation", "sound", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+pantometry-core = { workspace = true }
+pantometry-units = { workspace = true }
+glam = { workspace = true }

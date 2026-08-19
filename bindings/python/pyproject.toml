@@ -3,8 +3,8 @@ requires = ["maturin>=1.7,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "dualis"
-version = "0.15.0"
+name = "pantometry"
+version = "0.16.0"
 description = "Coupled physics whose conservation audit is an exception you can catch"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/YounghyeonPark/dualis"
+Repository = "https://github.com/YounghyeonPark/pantometry"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

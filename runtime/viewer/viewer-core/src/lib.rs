@@ -1,6 +1,6 @@
-//! Reads a dualis run and turns it into something a renderer can draw.
+//! Reads a pantometry run and turns it into something a renderer can draw.
 //!
-//! No GPU, no window, no `dualis` dependency. That last one is deliberate and is the point of the
+//! No GPU, no window, no `pantometry` dependency. That last one is deliberate and is the point of the
 //! crate: if a viewer can be written against the **file** a run produces and nothing else, then
 //! the wire format is complete. If it needed to reach back into the library for something the
 //! file did not carry, the format would be the thing to fix — and finding that out is worth more
@@ -8,7 +8,7 @@
 //!
 //! # What a run is
 //!
-//! What `dualis_view::to_json` writes: a title and a list of frames, each with a time, some
+//! What `pantometry_view::to_json` writes: a title and a list of frames, each with a time, some
 //! panels and some readings. A panel is one of three shapes — a field on a grid, a set of points,
 //! or runs of connected points — and the reader below accepts all three by name.
 //!
@@ -159,9 +159,9 @@ impl Panel {
 }
 
 impl Run {
-    /// Read a run from the JSON a `dualis` run wrote.
+    /// Read a run from the JSON a `pantometry` run wrote.
     pub fn from_json(text: &str) -> Result<Run, String> {
-        serde_json::from_str(text).map_err(|e| format!("not a dualis run: {e}"))
+        serde_json::from_str(text).map_err(|e| format!("not a pantometry run: {e}"))
     }
 
     /// The value range of one panel **across every frame**.

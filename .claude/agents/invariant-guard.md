@@ -11,12 +11,12 @@ Report violations most severe first, each with file, line and the fix. Say plain
 
 ## 1. The kernel must never depend on a domain
 
-`dualis-core` knows about conservation, integration, scheduling, boundaries, fields and
+`pantometry-core` knows about conservation, integration, scheduling, boundaries, fields and
 sampling. It knows nothing about light, heat, motion, sound, electricity or matter — and nothing
 about the two layers above it either, which is the same rule pointing the other way.
 
 ```sh
-grep -rn "dualis_optics\|dualis_thermal\|dualis_mechanics\|dualis_acoustic\|dualis_molecular\|dualis_electrical\|dualis_scene\|dualis_view" crates/dualis-core/ crates/dualis-units/
+grep -rn "pantometry_optics\|pantometry_thermal\|pantometry_mechanics\|pantometry_acoustic\|pantometry_molecular\|pantometry_electrical\|pantometry_scene\|pantometry_view" crates/pantometry-core/ crates/pantometry-units/
 ```
 
 Must be empty, including doc comments and doc links.
@@ -34,8 +34,8 @@ Match on the **underscore** form in source and on the dependency in the manifest
 for a in optics thermal mechanics acoustic molecular electrical; do
   for b in optics thermal mechanics acoustic molecular electrical; do
     [ "$a" = "$b" ] && continue
-    grep -n "dualis_$b" crates/dualis-$a/src/*.rs 2>/dev/null
-    grep -n "^dualis-$b" crates/dualis-$a/Cargo.toml 2>/dev/null
+    grep -n "pantometry_$b" crates/pantometry-$a/src/*.rs 2>/dev/null
+    grep -n "^pantometry-$b" crates/pantometry-$a/Cargo.toml 2>/dev/null
   done
 done
 ```
@@ -45,26 +45,26 @@ of the same rule and the reason "add a physics" costs one crate:
 
 ```sh
 for d in optics thermal mechanics acoustic molecular electrical; do
-  grep -rn "dualis_$d\|dualis-$d" crates/dualis-scene/ crates/dualis-view/
+  grep -rn "pantometry_$d\|pantometry-$d" crates/pantometry-scene/ crates/pantometry-view/
 done
 ```
 
 Must also be empty — including tests. Both crates test that property by construction rather than
-by grep (`dualis-scene` defines a physics inside its test file; `dualis-view` builds frames by
+by grep (`pantometry-scene` defines a physics inside its test file; `pantometry-view` builds frames by
 hand), so a test that reached for a real domain would be the first sign the property was being
 given up for convenience.
 
 The underscore matters and a coarser pattern gives false positives — this check was written the
-lazy way first and immediately flagged three. **Prose mentions are fine**, and `dualis-mechanics`
-legitimately writes `` `dualis-thermal` `` in three doc comments to explain that friction
+lazy way first and immediately flagged three. **Prose mentions are fine**, and `pantometry-mechanics`
+legitimately writes `` `pantometry-thermal` `` in three doc comments to explain that friction
 publishes heat on the channel thermal consumes. That is the architecture being described, not
 violated. The hyphenated form cannot be a Rust path, so it can only be prose; the underscore
 form is code or a doc link, and both are violations.
 
-Rustdoc enforces the doc-link half independently: a `[`Bar1D`]` link from `dualis-acoustic`
+Rustdoc enforces the doc-link half independently: a `[`Bar1D`]` link from `pantometry-acoustic`
 cannot resolve, and `-D warnings` turns that into a build failure.
 
-Only `dualis` (the facade) may depend on every domain.
+Only `pantometry` (the facade) may depend on every domain.
 
 ## 3. Nothing is random, nothing consults a clock
 
@@ -94,7 +94,7 @@ cargo clippy --workspace --lib -- -W missing_docs 2>&1 | grep -c "^warning: miss
 ```
 
 Must be `0`. All eighteen crates carry `#![deny(missing_docs)]` — the seventeen published ones
-and `dualis-world` — so a regression is a build
+and `pantometry-world` — so a regression is a build
 failure — but check that the attribute is still present and still positioned before any item,
 since an inner attribute after the first item is a compile error and it is easy to reintroduce
 while editing the top of a file.
@@ -111,7 +111,7 @@ Run these exactly as CI does:
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
-cargo +1.78 build --locked --workspace --exclude dualis-world     # the declared MSRV
+cargo +1.78 build --locked --workspace --exclude pantometry-world     # the declared MSRV
 cargo deny check                             # licences and advisories
 ```
 
@@ -120,7 +120,7 @@ cargo deny check                             # licences and advisories
 - **`--locked` throughout.** A change that needs `Cargo.lock` updated must update it in the
   same commit.
 - **A new dependency** must be justified and must pass `deny.toml`'s allow-list. The workspace
-  has twelve external crates, three of which reach a *published* artifact; `dualis-world`
+  has twelve external crates, three of which reach a *published* artifact; `pantometry-world`
   links four more and is not published. If a change adds one,
   report what it costs and whether the licence is on the list.
 
@@ -140,7 +140,7 @@ for d in crates/*/; do printf "%s " "$d"; ls "$d" | grep -c LICENSE; done   # ea
 New since the workspace went to crates.io, and the one invariant here that cannot be fixed after
 the fact: a published version is permanent. You may yank it, you may not replace it.
 
-`dualis` 0.12.0 is on crates.io and the tree is 0.15.0. So a change to the public API has a
+`pantometry` 0.12.0 is on crates.io and the tree is 0.16.0. So a change to the public API has a
 version consequence, and `0.x` semantics mean **a breaking change needs the minor bumped**.
 
 Do not take those two numbers on trust — this line has been stale before. The two commands
@@ -148,7 +148,7 @@ below are the check, and they are the answer to this section rather than an illu
 
 ```sh
 grep -m1 '^version' Cargo.toml                    # what the tree says
-curl -s https://crates.io/api/v1/crates/dualis | grep -o '"max_version":"[^"]*"'
+curl -s https://crates.io/api/v1/crates/pantometry | grep -o '"max_version":"[^"]*"'
 ```
 
 Breaking, in this workspace, has concretely meant: a trait method's signature (`Domain::name`

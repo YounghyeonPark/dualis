@@ -1,0 +1,18 @@
+[package]
+name = "pantometry-view"
+description = "Drawing a pantometry run: filmstrips, self-contained HTML reports, CSV and JSON"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords = ["visualization", "simulation", "svg", "physics"]
+categories = ["visualization", "science", "simulation"]
+
+[dependencies]
+pantometry-scene = { workspace = true }
+
+[dev-dependencies]
+pantometry-core = { workspace = true }
+pantometry-units = { workspace = true }

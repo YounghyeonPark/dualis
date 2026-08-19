@@ -27,15 +27,15 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 function take(ptr) {
   const len = new DataView(mem.buffer).getUint32(ptr, true);
   const body = dec.decode(new Uint8Array(mem.buffer, ptr + 4, len));
-  w.dualis_free(ptr, len + 4);
+  w.pantometry_free(ptr, len + 4);
   return JSON.parse(body);
 }
 function call(fn, str) {
   const bytes = enc.encode(str);
-  const ptr = w.dualis_alloc(bytes.length);
+  const ptr = w.pantometry_alloc(bytes.length);
   new Uint8Array(mem.buffer, ptr, bytes.length).set(bytes);
   const out = take(fn(ptr, bytes.length));
-  w.dualis_free(ptr, bytes.length);
+  w.pantometry_free(ptr, bytes.length);
   return out;
 }
 
@@ -57,7 +57,7 @@ const HOT = JSON.stringify({
 console.log('the browser path, in a host that is not a browser');
 
 // A scene checks, and its geometry comes back for the page to wireframe.
-const checked = call(w.dualis_check, HOT);
+const checked = call(w.pantometry_check, HOT);
 ok('a valid scene checks clean', !checked.error, checked.error);
 ok('the summary names the scene', (checked.summary || '').includes('hot enough to glow'));
 ok('one placed box comes back', checked.boxes.length === 1);
@@ -65,24 +65,24 @@ ok('the box has eight corners', checked.boxes[0].corners.length === 8);
 ok('the bounds are finite', Array.isArray(checked.bounds) && checked.bounds.every(Number.isFinite));
 
 // A bad scene is an error with a position, not a crash.
-const bad = call(w.dualis_check, '{ "title": ');
+const bad = call(w.pantometry_check, '{ "title": ');
 ok('a truncated scene reports line:column', /^1:/.test(bad.error || ''), bad.error);
 
 // A scene that did not check must not be runnable off the back of the stored text: the module
 // refuses with the check's own message rather than deriving a second, worse one. This ordering
 // -- check something bad, then press run -- is what a page with a missing guard would do, and
 // it is how this claim came to be here.
-const refused = take(w.dualis_run());
+const refused = take(w.pantometry_run());
 ok('run refuses a scene that did not check', /^1:/.test(refused.error || ''), refused.error);
 
 // The run is the CLI's run.
-call(w.dualis_check, HOT);
-const ran = take(w.dualis_run());
+call(w.pantometry_check, HOT);
+const ran = take(w.pantometry_run());
 ok('the scene runs', !ran.error, ran.error);
 ok('it produced its frames', ran.frames === 5, `got ${ran.frames}`);
 
 // The draw call hands back primitives with every colour resolved.
-const drawn = call(w.dualis_draw, JSON.stringify({
+const drawn = call(w.pantometry_draw, JSON.stringify({
   azimuth: 0.7, elevation: 0.4, distance: 2.5, scale: 1.0,
   aspect: 1.6, frame: 0, fit: true,
 }));
@@ -108,15 +108,15 @@ ok('a glowing block runs red over blue',
 
 // A cool scene must NOT claim a computed colour — the fallback is the honest half.
 const COOL = HOT.replace('"initial_c":1200', '"initial_c":20').replace('"initial_c": 1200', '"initial_c": 20');
-call(w.dualis_check, COOL);
-take(w.dualis_run());
-const cool = call(w.dualis_draw, JSON.stringify({ aspect: 1.6, frame: 0, fit: true }));
+call(w.pantometry_check, COOL);
+take(w.pantometry_run());
+const cool = call(w.pantometry_draw, JSON.stringify({ aspect: 1.6, frame: 0, fit: true }));
 ok('a cool field says it is false colour',
    (cool.notes || []).some(n => n.includes('false colour')), JSON.stringify(cool.notes));
 
 // The battery runs in the page too, and says the same things.
-call(w.dualis_check, HOT);
-const verified = take(w.dualis_verify(0));
+call(w.pantometry_check, HOT);
+const verified = take(w.pantometry_verify(0));
 ok('verify returns a report', typeof verified.report === 'string' && verified.report.length > 50);
 ok('the report carries the determinism line', (verified.report || '').includes('determinism'));
 ok('a clean scene has no findings', verified.findings === 0, `${verified.findings} findings`);
@@ -129,26 +129,26 @@ ok('a clean scene has no findings', verified.findings === 0, `${verified.finding
 // the voxeliser -- in a host that is not a browser.
 
 function putBytes(u8) {
-  const ptr = w.dualis_alloc(u8.length);
+  const ptr = w.pantometry_alloc(u8.length);
   new Uint8Array(mem.buffer, ptr, u8.length).set(u8);
   return [ptr, u8.length];
 }
 function sendPart(name, u8) {
   const nb = enc.encode(name);
-  const np = w.dualis_alloc(nb.length);
+  const np = w.pantometry_alloc(nb.length);
   new Uint8Array(mem.buffer, np, nb.length).set(nb);
   const [dp, dl] = putBytes(u8);
-  const out = take(w.dualis_part(np, nb.length, dp, dl));
-  w.dualis_free(np, nb.length);
-  w.dualis_free(dp, dl);
+  const out = take(w.pantometry_part(np, nb.length, dp, dl));
+  w.pantometry_free(np, nb.length);
+  w.pantometry_free(dp, dl);
   return out;
 }
 function forgetPart(name) {
   const nb = enc.encode(name);
-  const np = w.dualis_alloc(Math.max(1, nb.length));
+  const np = w.pantometry_alloc(Math.max(1, nb.length));
   if (nb.length) new Uint8Array(mem.buffer, np, nb.length).set(nb);
-  const out = take(w.dualis_forget_part(np, nb.length));
-  w.dualis_free(np, Math.max(1, nb.length));
+  const out = take(w.pantometry_forget_part(np, nb.length));
+  w.pantometry_free(np, Math.max(1, nb.length));
   return out;
 }
 
@@ -187,7 +187,7 @@ const ASSEMBLY = JSON.stringify({
 // The failure this prevents is the one that wastes an afternoon: a misspelt name and a message
 // that says only "not found", with three files sitting in the tab under other spellings.
 forgetPart('');
-const missing = call(w.dualis_check, ASSEMBLY);
+const missing = call(w.pantometry_check, ASSEMBLY);
 ok('an un-uploaded part is refused', !!missing.error && missing.error.includes('bracket.stl'),
    JSON.stringify(missing.error));
 ok('and the refusal says nothing has been uploaded',
@@ -201,7 +201,7 @@ ok('an upload is acknowledged by name', !added.error && added.names.length === 1
 ok('and by size', added.bytes === stl.length, `${added.bytes} against ${stl.length}`);
 
 // **And now the same scene builds** -- same bytes, same builder, same voxeliser as the CLI.
-const built = call(w.dualis_check, ASSEMBLY);
+const built = call(w.pantometry_check, ASSEMBLY);
 ok('the scene builds once its part is here', !built.error, JSON.stringify(built.error));
 ok('and the voxeliser reports what it cost',
    built.notes.some(n => n.includes('bracket.stl') && n.includes('filled')),
@@ -215,14 +215,14 @@ ok('a 20 mm part on a 20 mm block fills all 64 cells',
 
 // **The run is the CLI's run.** A check that builds and a run that does not is the failure worth
 // separating, because the page shows the first and the user asked for the second.
-const ranOut = take(w.dualis_run());
+const ranOut = take(w.pantometry_run());
 ok('an uploaded assembly runs', !ranOut.error, JSON.stringify(ranOut.error));
 
 // **Forgetting is real**, or a page that lets somebody remove a file would keep running the old
 // bytes and show a stale answer as a fresh one.
 const cleared = forgetPart('bracket.stl');
 ok('forgetting empties the list', !cleared.error && cleared.names.length === 0, JSON.stringify(cleared));
-const gone = call(w.dualis_check, ASSEMBLY);
+const gone = call(w.pantometry_check, ASSEMBLY);
 ok('and the scene is refused again', !!gone.error && gone.error.includes('bracket.stl'), gone.error);
 
 // **An empty upload is refused where it can be named.** A zero-byte file is what a failed read in
@@ -240,10 +240,10 @@ ok('an empty upload is refused as an upload', !!empty.error && empty.error.inclu
 
 function fitGrid(budget, material) {
   const mb = enc.encode(material);
-  const mp = w.dualis_alloc(Math.max(1, mb.length));
+  const mp = w.pantometry_alloc(Math.max(1, mb.length));
   if (mb.length) new Uint8Array(mem.buffer, mp, mb.length).set(mb);
-  const out = take(w.dualis_fit(budget, mp, mb.length));
-  w.dualis_free(mp, Math.max(1, mb.length));
+  const out = take(w.pantometry_fit(budget, mp, mb.length));
+  w.pantometry_free(mp, Math.max(1, mb.length));
   return out;
 }
 
@@ -281,7 +281,7 @@ ok('and carries the grid it measured',
 
 // **And the fragment builds.** A table nobody can act on is a table; this is the round trip from
 // two dropped files to a running scene with nothing in between to get wrong.
-const assembled = call(w.dualis_check, `{ "title": "from the fitter", "duration_s": 1.0, "frames": 2,
+const assembled = call(w.pantometry_check, `{ "title": "from the fitter", "duration_s": 1.0, "frames": 2,
   "domains": [{ "kind": "block", "name": "assembly", "initial_c": 20.0,
 ${fitted.fragment} }] }`);
 ok('the suggested grid builds', !assembled.error, JSON.stringify(assembled.error));
@@ -303,17 +303,17 @@ ok('fitting nothing is refused by name', !!nothing.error && nothing.error.includ
 
 
 // --- the material menu, which a page must not type out for itself ------------------------------
-const cat = take(w.dualis_materials()).materials;
+const cat = take(w.pantometry_materials()).materials;
 ok('the catalogue comes back', Array.isArray(cat) && cat.length >= 5, JSON.stringify(cat));
 ok('and every name in it builds a scene',
-   cat.every(m => !call(w.dualis_check, `{ "title": "t", "duration_s": 1e-4, "frames": 2,
+   cat.every(m => !call(w.pantometry_check, `{ "title": "t", "duration_s": 1e-4, "frames": 2,
      "domains": [{ "kind": "block", "name": "b", "cells": [2,2,2], "cell_mm": 1.0,
        "initial_c": 20.0, "material": ${JSON.stringify(m)} }] }`).error),
    JSON.stringify(cat));
 // The claim that makes it worth exporting at all: a name the menu offers and the builder refuses
 // is the failure a hardcoded list produces, and it would look like a user error.
 ok('and a name outside it is refused',
-   !!call(w.dualis_check, `{ "title": "t", "duration_s": 1e-4, "frames": 2,
+   !!call(w.pantometry_check, `{ "title": "t", "duration_s": 1e-4, "frames": 2,
      "domains": [{ "kind": "block", "name": "b", "cells": [2,2,2], "cell_mm": 1.0,
        "initial_c": 20.0, "material": "unobtainium" }] }`).error);
 

@@ -86,7 +86,7 @@ That costs one pass over the inputs and is the difference between an edit that d
 edit that half did.
 
 The eighth is the only one in the failure direction, and it earned its place by how close it came to
-being a pass. This checkout moved from `C:\dev\dualis-core` to `C:\dev\dualis`, and the next
+being a pass. This checkout moved from `C:\dev\pantometry-core` to `C:\dev\pantometry`, and the next
 `cargo test` re-linked and ran a binary compiled before the move, with the old path still baked in
 through `env!("CARGO_MANIFEST_DIR")` — cargo's fingerprint survived a change to an environment
 variable its own dep-info records. Six citation tests panicked reading files from a directory that no
@@ -142,18 +142,18 @@ fail there rather than quietly producing different physics.
 
 ### The kernel must never depend on a domain
 
-`dualis-core` knows about conservation, integration, scheduling and boundaries. It knows
+`pantometry-core` knows about conservation, integration, scheduling and boundaries. It knows
 nothing about light, heat, motion, sound, electricity or matter. If a new physics needs the kernel changed,
 the kernel was wrong — with one narrow exception, which is that the *coupling mechanism* itself
 can turn out to be under-specified. That happened once and the README explains why it was not a
 violation of the rule.
 
 Domain crates do not depend on each other either. Rustdoc enforces this in a way worth
-knowing: an intra-doc link from `dualis-acoustic` to `Bar1D` does not resolve, because the
+knowing: an intra-doc link from `pantometry-acoustic` to `Bar1D` does not resolve, because the
 dependency is not there, and `-D warnings` turns that into a build failure.
 
-The same rule runs the other way for the two layers above the domains. `dualis-scene` and
-`dualis-view` depend on the kernel and on each other, and on **no domain at all** — so a physics
+The same rule runs the other way for the two layers above the domains. `pantometry-scene` and
+`pantometry-view` depend on the kernel and on each other, and on **no domain at all** — so a physics
 added tomorrow is captured and drawn without either being edited. Each proves that rather than
 asserting it: the scene layer's test defines a physics inside the test file, and the view
 layer's tests are driven by frames written out by hand. A test that ran a real simulation could

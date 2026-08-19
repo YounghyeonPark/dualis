@@ -26,7 +26,7 @@
 //!
 //! Every export returns a pointer to a **length-prefixed** buffer: four little-endian bytes of
 //! length, then that many bytes of UTF-8. The page reads the length, decodes the body, then
-//! calls [`dualis_free`] with the pointer and `4 + length`. Every return is JSON, errors
+//! calls [`pantometry_free`] with the pointer and `4 + length`. Every return is JSON, errors
 //! included, so a caller has one shape to parse rather than two.
 
 /// What the page keeps between calls, held here so a megabyte of frames does not cross the
@@ -65,7 +65,7 @@ fn state() -> &'static mut State {
 
 /// Give the page a buffer to write a scene into.
 #[no_mangle]
-pub extern "C" fn dualis_alloc(len: usize) -> *mut u8 {
+pub extern "C" fn pantometry_alloc(len: usize) -> *mut u8 {
     let mut buf = Vec::<u8>::with_capacity(len);
     let ptr = buf.as_mut_ptr();
     std::mem::forget(buf);
@@ -78,7 +78,7 @@ pub extern "C" fn dualis_alloc(len: usize) -> *mut u8 {
 ///
 /// `ptr` and `len` must be a pair this module handed out and that has not been freed.
 #[no_mangle]
-pub unsafe extern "C" fn dualis_free(ptr: *mut u8, len: usize) {
+pub unsafe extern "C" fn pantometry_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
         drop(Vec::from_raw_parts(ptr, len, len));
     }
@@ -102,7 +102,7 @@ fn s_files() -> editor_core::Uploaded {
 ///
 /// `name` must be valid for `name_len` bytes of UTF-8 and `data` for `data_len` bytes.
 #[no_mangle]
-pub unsafe extern "C" fn dualis_part(
+pub unsafe extern "C" fn pantometry_part(
     name: *const u8,
     name_len: usize,
     data: *const u8,
@@ -146,7 +146,7 @@ pub unsafe extern "C" fn dualis_part(
 ///
 /// `material` must be valid for `material_len` bytes of UTF-8.
 #[no_mangle]
-pub unsafe extern "C" fn dualis_fit(
+pub unsafe extern "C" fn pantometry_fit(
     budget_cells: u32,
     material: *const u8,
     material_len: usize,
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn dualis_fit(
 /// list that drifts, and the failure is a menu offering something the builder then refuses. This is
 /// `Substance::CATALOGUE` itself, so the two cannot disagree.
 #[no_mangle]
-pub extern "C" fn dualis_materials() -> *mut u8 {
+pub extern "C" fn pantometry_materials() -> *mut u8 {
     give(serde_json::json!({ "materials": editor_core::MATERIALS }).to_string())
 }
 
@@ -184,7 +184,7 @@ pub extern "C" fn dualis_materials() -> *mut u8 {
 ///
 /// `name` must be valid for `name_len` bytes of UTF-8.
 #[no_mangle]
-pub unsafe extern "C" fn dualis_forget_part(name: *const u8, name_len: usize) -> *mut u8 {
+pub unsafe extern "C" fn pantometry_forget_part(name: *const u8, name_len: usize) -> *mut u8 {
     let label = borrow(name, name_len);
     let s = state();
     if label.is_empty() {
@@ -240,7 +240,7 @@ fn give(s: String) -> *mut u8 {
 ///
 /// `ptr` must be valid for `len` bytes of UTF-8.
 #[no_mangle]
-pub unsafe extern "C" fn dualis_check(ptr: *const u8, len: usize) -> *mut u8 {
+pub unsafe extern "C" fn pantometry_check(ptr: *const u8, len: usize) -> *mut u8 {
     let text = borrow(ptr, len);
     let checked = editor_core::check(&text, &s_files());
     let boxes: Vec<serde_json::Value> = checked
@@ -261,12 +261,12 @@ pub unsafe extern "C" fn dualis_check(ptr: *const u8, len: usize) -> *mut u8 {
     give(out.to_string())
 }
 
-/// Run the scene last handed to [`dualis_check`], and keep the frames.
+/// Run the scene last handed to [`pantometry_check`], and keep the frames.
 ///
 /// Returns `{frames}` or `{error}`. It is the CLI's run — same builder, same audit — so a
 /// violation arrives worded by the kernel rather than paraphrased here.
 #[no_mangle]
-pub extern "C" fn dualis_run() -> *mut u8 {
+pub extern "C" fn pantometry_run() -> *mut u8 {
     let s = state();
     // The text is stored whether or not it checked, because a shell re-checks from it — but a
     // scene that did not check must not be run off the back of that. The page disables the
@@ -301,9 +301,9 @@ pub extern "C" fn dualis_run() -> *mut u8 {
 /// Returns `{report, findings}` or `{error}` — the same report the CLI prints, because it is
 /// the same battery.
 #[no_mangle]
-pub extern "C" fn dualis_verify(deep: u32) -> *mut u8 {
+pub extern "C" fn pantometry_verify(deep: u32) -> *mut u8 {
     let s = state();
-    // The same refusal as `dualis_run`, and for the same reason.
+    // The same refusal as `pantometry_run`, and for the same reason.
     if let Some(why) = &s.checked.error {
         return give(serde_json::json!({ "error": why }).to_string());
     }
@@ -329,7 +329,7 @@ pub extern "C" fn dualis_verify(deep: u32) -> *mut u8 {
 ///
 /// `ptr` must be valid for `len` bytes of UTF-8 JSON.
 #[no_mangle]
-pub unsafe extern "C" fn dualis_draw(ptr: *const u8, len: usize) -> *mut u8 {
+pub unsafe extern "C" fn pantometry_draw(ptr: *const u8, len: usize) -> *mut u8 {
     let req: serde_json::Value = match serde_json::from_str(&borrow(ptr, len)) {
         Ok(v) => v,
         Err(e) => return give(serde_json::json!({ "error": e.to_string() }).to_string()),

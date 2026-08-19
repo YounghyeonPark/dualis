@@ -796,180 +796,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
-name = "dualis"
-version = "0.14.0"
-dependencies = [
- "dualis-acoustic",
- "dualis-core",
- "dualis-elastic",
- "dualis-electrical",
- "dualis-em",
- "dualis-fluid",
- "dualis-mechanics",
- "dualis-molecular",
- "dualis-optics",
- "dualis-porous",
- "dualis-quantum",
- "dualis-scene",
- "dualis-shape",
- "dualis-thermal",
- "dualis-units",
- "dualis-view",
-]
-
-[[package]]
-name = "dualis-acoustic"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-core"
-version = "0.14.0"
-dependencies = [
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-elastic"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-electrical"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-em"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-fluid"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-mechanics"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-molecular"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-optics"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-porous"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-quantum"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
-]
-
-[[package]]
-name = "dualis-scene"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-shape"
-version = "0.14.0"
-dependencies = [
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-thermal"
-version = "0.14.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-units"
-version = "0.14.0"
-dependencies = [
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-view"
-version = "0.14.0"
-dependencies = [
- "dualis-scene",
-]
-
-[[package]]
-name = "dualis-world"
-version = "0.14.0"
-dependencies = [
- "dualis",
- "glam",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ecolor"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -983,9 +809,9 @@ dependencies = [
 name = "editor"
 version = "0.1.0"
 dependencies = [
- "dualis",
  "editor-core",
  "eframe",
+ "pantometry",
  "viewer-core",
 ]
 
@@ -993,8 +819,8 @@ dependencies = [
 name = "editor-core"
 version = "0.1.0"
 dependencies = [
- "dualis",
- "dualis-world",
+ "pantometry",
+ "pantometry-world",
  "serde_json",
  "viewer-core",
 ]
@@ -1003,8 +829,8 @@ dependencies = [
 name = "editor-wasm"
 version = "0.1.0"
 dependencies = [
- "dualis",
  "editor-core",
+ "pantometry",
  "serde_json",
  "viewer-core",
 ]
@@ -2412,6 +2238,180 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36820e9051aca1014ddc75770aab4d68bc1e9e632f0f5627c4086bc216fb583b"
 dependencies = [
  "ttf-parser",
+]
+
+[[package]]
+name = "pantometry"
+version = "0.16.0"
+dependencies = [
+ "pantometry-acoustic",
+ "pantometry-core",
+ "pantometry-elastic",
+ "pantometry-electrical",
+ "pantometry-em",
+ "pantometry-fluid",
+ "pantometry-mechanics",
+ "pantometry-molecular",
+ "pantometry-optics",
+ "pantometry-porous",
+ "pantometry-quantum",
+ "pantometry-scene",
+ "pantometry-shape",
+ "pantometry-thermal",
+ "pantometry-units",
+ "pantometry-view",
+]
+
+[[package]]
+name = "pantometry-acoustic"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-core"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-elastic"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-electrical"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-em"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-fluid"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-mechanics"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-molecular"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-optics"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-porous"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-quantum"
+version = "0.16.0"
+dependencies = [
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-scene"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-shape"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-thermal"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-units"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-view"
+version = "0.16.0"
+dependencies = [
+ "pantometry-scene",
+]
+
+[[package]]
+name = "pantometry-world"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

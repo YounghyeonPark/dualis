@@ -1,20 +1,20 @@
-# dualis for Python
+# pantometry for Python
 
 Coupled physics whose conservation audit is an exception you can catch.
 
 ```sh
-pip install dualis        # wheels for linux, macos and windows; abi3, so 3.10 upward
+pip install pantometry        # wheels for linux, macos and windows; abi3, so 3.10 upward
 ```
 
 ```python
-import dualis
+import pantometry
 
-sim = dualis.Simulation(schedule="multirate", conservation_tolerance=1e-9)
+sim = pantometry.Simulation(schedule="multirate", conservation_tolerance=1e-9)
 sim.add_heater("element", watts=2.0, reserve_j=6.0)
 sim.add_bar("bar", length_m=0.020, cells=41, area_m2=1e-4)
 
 for _ in range(8):
-    sim.advance(0.5)          # raises dualis.Violation if the books do not close
+    sim.advance(0.5)          # raises pantometry.Violation if the books do not close
 
 print(sim.temperature("bar"))     # 294.39 K
 print(sim.profile("bar")[:3])     # warmer at the fed end
@@ -27,7 +27,7 @@ motor survives is the *winding*, which is hotter than the case by however much t
 between them resists — so for that, a network:
 
 ```python
-sim = dualis.Simulation(schedule="staggered")
+sim = pantometry.Simulation(schedule="staggered")
 sim.add_heater("losses", watts=6.0, reserve_j=5_400.0)
 sim.add_network("motor",
     nodes=[{"name": "winding", "material": "copper", "volume_m3": 18e-6,
@@ -72,7 +72,7 @@ than a sentence to parse:
 ```python
 try:
     sim.advance(0.5)
-except dualis.Violation as v:
+except pantometry.Violation as v:
     v.quantity     # 'energy'
     v.site         # 'bus (published but not consumed)'
     v.before, v.after, v.scale, v.tolerance
@@ -83,12 +83,12 @@ except dualis.Violation as v:
 the bus, and a domain refusing a step it cannot take. It does *not* catch a model that is
 internally consistent and physically wrong. For that, check against something the library did not
 compute — which is what `heat_capacity_j_per_k` is exported for, and what
-`tests/test_dualis.py` does throughout.
+`tests/test_pantometry.py` does throughout.
 
 ## What crosses the boundary, and what does not
 
 Values cross as **SI floats with the unit in the parameter name**: `length_m`, `watts`,
-`initial_k`. dualis's dimensional types are a compile-time thing — `Length + Time` does not
+`initial_k`. pantometry's dimensional types are a compile-time thing — `Length + Time` does not
 compile in Rust — and Python cannot have that. A runtime `Quantity` wrapper would cost an
 allocation and a check per operation to catch, at run time, a class of error a Python caller
 mostly does not make, because it passes values in and reads them out rather than doing algebra on
@@ -110,13 +110,13 @@ a half-advanced simulation. All three are answerable and none cheaply, so this b
 the library has and says so rather than shipping a subtly wrong version of that.
 
 So: enough to **run and audit** coupled physics from Python, not enough to **extend** it. The
-extending lives in Rust, and [the workspace](https://github.com/YounghyeonPark/dualis) is where.
+extending lives in Rust, and [the workspace](https://github.com/YounghyeonPark/pantometry) is where.
 
 A `Simulation` is also bound to the thread that created it. `Domain` is not `Send`, and the
 binding says so rather than asking the kernel for a bound it does not offer.
 
-**There is no scene or view binding.** The Rust side has `dualis-scene` for capturing a run and
-`dualis-view` for drawing one; neither crosses. Nothing forbids it in principle — the reason is
+**There is no scene or view binding.** The Rust side has `pantometry-scene` for capturing a run and
+`pantometry-view` for drawing one; neither crosses. Nothing forbids it in principle — the reason is
 that a Python caller already has matplotlib, pandas and every plotting stack there is, and what
 they want from this side is the *numbers*: `profile`, `node_temperatures`, `temperature`,
 `ledger`. Handing them an SVG instead would be the worse half of both worlds. If you want the
@@ -133,8 +133,8 @@ that should not have to accommodate a Python extension.
 cd bindings/python
 pip install "maturin>=1.7,<2.0"
 maturin build --release          # an abi3 wheel: one build serves 3.10 upward
-pip install target/wheels/dualis-*.whl
-python tests/test_dualis.py
+pip install target/wheels/pantometry-*.whl
+python tests/test_pantometry.py
 ```
 
 `maturin develop` works too, in a virtualenv. CI builds the wheel, installs it and runs those

@@ -1,6 +1,6 @@
 ---
 name: domain-builder
-description: Scaffold a new physics domain as its own crate on the dualis-core kernel, following the recipe the six existing domains established. Use when adding a physics this workspace does not model. Produces the crate, its Domain impl, its closed-form tests and its wiring, and stops to report if the kernel would have to change.
+description: Scaffold a new physics domain as its own crate on the pantometry-core kernel, following the recipe the six existing domains established. Use when adding a physics this workspace does not model. Produces the crate, its Domain impl, its closed-form tests and its wiring, and stops to report if the kernel would have to change.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
@@ -10,9 +10,9 @@ the first time.
 
 ## Read these first
 
-- `crates/dualis-acoustic/src/lib.rs` — the smallest complete domain, and the clearest model.
-- `crates/dualis-core/src/sim.rs` — the `Domain` trait and what each method is for.
-- `crates/dualis-core/src/conserved.rs` — `Ledger`, `audit`, `Violation`.
+- `crates/pantometry-acoustic/src/lib.rs` — the smallest complete domain, and the clearest model.
+- `crates/pantometry-core/src/sim.rs` — the `Domain` trait and what each method is for.
+- `crates/pantometry-core/src/conserved.rs` — `Ledger`, `audit`, `Violation`.
 - `CONTRIBUTING.md` — the conventions. They are not optional and they are not obvious.
 
 ## The recipe
@@ -23,7 +23,7 @@ reflection coefficients; molecular dynamics has equipartition and the virial the
 with nothing to check against is decoration, and this workspace says so in its README about
 Navier-Stokes.
 
-**2. `crates/dualis-<name>/Cargo.toml`**, copying an existing one. `description`, `keywords`,
+**2. `crates/pantometry-<name>/Cargo.toml`**, copying an existing one. `description`, `keywords`,
 `categories`, `readme = "../../README.md"`, and the workspace inheritance for version, edition,
 licence, authors and repository. Copy `LICENSE-MIT` and `LICENSE-APACHE` into the crate
 directory — cargo does not do this for you and does not warn.
@@ -68,7 +68,7 @@ useful paragraph for a reader.
   a pressure field is zero by symmetry and would be a column of noise. A domain that draws
   nothing at all — a source, a network, a lumped model — has these as its entire output.
 
-**These last three are what `dualis-scene` and `dualis-view` see, and all three are opt-in.**
+**These last three are what `pantometry-scene` and `pantometry-view` see, and all three are opt-in.**
 A domain that skips them compiles, runs, conserves, and is silently absent from every report and
 every table. That is the whole reason to take them: those two crates name no domain, so the only
 thing that puts a new physics into a picture is the physics answering when asked.
@@ -82,7 +82,7 @@ cutoff past half the box.
 at least one conservation check with a *scale*, and if anything converges, check the **rate**
 and not only the value — that is what found the acoustic boundary defect.
 
-**8. Wire the facade.** `crates/dualis/Cargo.toml`, the `pub use` in its `lib.rs`, and the
+**8. Wire the facade.** `crates/pantometry/Cargo.toml`, the `pub use` in its `lib.rs`, and the
 prelude if the types are ones a caller reaches for.
 
 **9. Update the prose**, which is more places than it looks and has shipped stale repeatedly:
@@ -92,7 +92,7 @@ honestly whether the new domain is 1D, 2D or 3D), `CONTRIBUTING.md` and `CLAUDE.
 list what the kernel knows nothing about, the publish loop in `RELEASING.md`, and the repository
 description. Run `prose-auditor` afterwards rather than trusting the list.
 
-**10. A scene, if `dualis-world` can express it.** Twenty-eight ship, all run by CI through the real
+**10. A scene, if `pantometry-world` can express it.** Twenty-eight ship, all run by CI through the real
 binary, and each asserts one number that is a property of the physics rather than of the file. A
 domain with a scene is a domain somebody has used from outside.
 
@@ -114,7 +114,7 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
-cargo +1.78 build --locked --workspace --exclude dualis-world
+cargo +1.78 build --locked --workspace --exclude pantometry-world
 cargo deny check
 ```
 

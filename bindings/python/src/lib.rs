@@ -1,8 +1,8 @@
-//! Python bindings for dualis.
+//! Python bindings for pantometry.
 //!
 //! # What crosses and what does not
 //!
-//! dualis's central idea is that dimensions live in the type system, so `Length + Time` does not
+//! pantometry's central idea is that dimensions live in the type system, so `Length + Time` does not
 //! compile. **Python cannot have that**, and pretending otherwise would be the wrong thing to
 //! build: a runtime `Quantity` wrapper would cost an allocation and a check per operation to
 //! catch, at run time, a class of error the Rust side catches at compile time and the Python
@@ -36,15 +36,15 @@ use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use dualis::prelude::{quantity, Energy};
-use dualis::prelude::{
+use pantometry::prelude::{quantity, Energy};
+use pantometry::prelude::{
     Area, Bar1D, Conductance, Domain, Environment, Exchange, Kind, Ledger, Length, LumpedMass,
     Power, Schedule, Simulation as RustSimulation, Substance, Temperature, ThermalNetwork, Time,
     Violation as RustViolation, Volume, HEAT,
 };
 
 create_exception!(
-    dualis,
+    pantometry,
     Violation,
     PyException,
     "A conserved quantity did not balance, or a domain refused a step it could not take.\n\n\
@@ -285,7 +285,7 @@ impl PySimulation {
             // `substance_named`, not a match written out here. This was a five-arm match against a
             // catalogue of nine, so `borosilicate`, `ice`, `stainless_304` and `water` could not be named
             // from Python at all -- the third copy of the catalogue's spelling in this workspace, and the
-            // third to go stale. `dualis-world` had the same defect and it cost eleven releases.
+            // third to go stale. `pantometry-world` had the same defect and it cost eleven releases.
             let substance = substance_named(&material, &at)?;
             let volume = Volume::from_si(need_f64(n, "volume_m3", &at)?);
             let thickness = Length::from_si(need_f64(n, "thickness_m", &at)?);
@@ -528,11 +528,11 @@ impl PySimulation {
     fn __repr__(&self) -> String {
         match &self.sim {
             Some(s) => format!(
-                "<dualis.Simulation t={:.6}s domains={:?}>",
+                "<pantometry.Simulation t={:.6}s domains={:?}>",
                 s.time().to_si(),
                 self.names
             ),
-            None => "<dualis.Simulation poisoned>".to_string(),
+            None => "<pantometry.Simulation poisoned>".to_string(),
         }
     }
 }
@@ -669,8 +669,8 @@ fn one_joule() -> f64 {
 }
 
 #[pymodule]
-#[pyo3(name = "dualis")]
-fn dualis_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyo3(name = "pantometry")]
+fn pantometry_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__doc__", include_str!("../README.md"))?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("Violation", m.py().get_type::<Violation>())?;

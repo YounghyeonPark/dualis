@@ -12,5 +12,5 @@ crate-type = ["cdylib"]
 [dependencies]
 editor-core = { workspace = true }
 viewer-core = { workspace = true }
-dualis = { workspace = true }
+pantometry = { workspace = true }
 serde_json = { workspace = true }

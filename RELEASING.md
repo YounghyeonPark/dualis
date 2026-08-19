@@ -1,4 +1,4 @@
-# Releasing dualis
+# Releasing pantometry
 
 Read this before a release and not otherwise. It was inside `CLAUDE.md`, which is loaded every
 session, and a procedure you follow once per release does not need to be in front of you for the
@@ -24,22 +24,22 @@ All of them, or the release is broken in a way only one CI job can see:
 | | occurrences |
 | --- | --- |
 | `Cargo.toml` | 18 — the workspace version and all seventeen path pins |
-| `bindings/python/Cargo.toml` | 2 — the crate's own version **and** the exact `dualis` pin |
+| `bindings/python/Cargo.toml` | 2 — the crate's own version **and** the exact `pantometry` pin |
 | `bindings/python/pyproject.toml` | 1 — the wheel's version |
-| `AGENTS.md` | 1 — `dualis = "0.x"`, which `documented_version.rs` checks |
-| `crates/dualis/src/lib.rs` | 1 — the same series, in the facade's own docs |
+| `AGENTS.md` | 1 — `pantometry = "0.x"`, which `documented_version.rs` checks |
+| `crates/pantometry/src/lib.rs` | 1 — the same series, in the facade's own docs |
 | `.claude/agents/invariant-guard.md` | 1 — which version is published against which is in the tree |
 | `CITATION.cff` | 1 — `version`. Also update `date-released`, which is not a version string and so is not caught by the grep below. The grep returns **2**: the other hit is a comment recording which version's Zenodo deposition failed, and bumping that would erase the history it is there for |
 | `.zenodo.json` | 1 — `version`. **The row this table was missing**, and it gained it the way the last one did: the 0.15.0 release bumped the seven above and `citation_is_valid` refused, because it asserts the deposition's version *is* the crate's. A table that has now been wrong three times is a table to count against rather than to read |
 
 Count them rather than trusting this table, because it has already been wrong in both directions. It
 lost a row when the docs were split — `CLAUDE.md` carried the `pip install ... .whl` line and the
-python gate moved to `bindings/python/README.md`, which installs `dualis-*.whl` by glob and needs no
+python gate moved to `bindings/python/README.md`, which installs `pantometry-*.whl` by glob and needs no
 bump at all — and gained one the same day when `CITATION.cff` arrived. Check each row against the file:
 
 ```sh
 grep -c '0\.14' Cargo.toml bindings/python/Cargo.toml bindings/python/pyproject.toml \
-    AGENTS.md crates/dualis/src/lib.rs .claude/agents/invariant-guard.md CITATION.cff .zenodo.json
+    AGENTS.md crates/pantometry/src/lib.rs .claude/agents/invariant-guard.md CITATION.cff .zenodo.json
 ```
 
 Then `cargo update --workspace --offline` in the root **and** in `bindings/python`, because
@@ -47,7 +47,7 @@ Then `cargo update --workspace --offline` in the root **and** in `bindings/pytho
 in that job passes `--locked`, so cargo rewrites it silently on every build and the committed copy
 drifts.
 
-**The exact `dualis` pin in `bindings/python/Cargo.toml` is the trap.** Bumping the root workspace
+**The exact `pantometry` pin in `bindings/python/Cargo.toml` is the trap.** Bumping the root workspace
 and not that leaves it resolving a version that no longer exists. That failed the 0.9.0 release, and
 only the `python bindings` job could have caught it — nothing in the main gate reads that directory.
 
@@ -62,7 +62,7 @@ Count them rather than remembering them:
 ```sh
 ls crates | wc -l                                    # crates
 find crates -path '*examples*' -name '*.rs' -not -path '*common*' | wc -l   # examples: 15
-ls crates/dualis-world/scenes/*.json | wc -l         # scenes
+ls crates/pantometry-world/scenes/*.json | wc -l         # scenes
 cargo test --locked --workspace --release 2>&1 | grep -E "test result:" \
   | awk -F'[; ]' '{p+=$4} END {print p}'             # tests
 ```
@@ -73,9 +73,9 @@ Each crate must be live on the index before the next one resolves it.
 
 ```sh
 set -euo pipefail
-for c in dualis-units dualis-core dualis-acoustic dualis-mechanics dualis-molecular \
-         dualis-optics dualis-thermal dualis-electrical dualis-elastic dualis-em \
-         dualis-fluid dualis-porous dualis-quantum dualis-shape dualis-scene dualis-view dualis; do
+for c in pantometry-units pantometry-core pantometry-acoustic pantometry-mechanics pantometry-molecular \
+         pantometry-optics pantometry-thermal pantometry-electrical pantometry-elastic pantometry-em \
+         pantometry-fluid pantometry-porous pantometry-quantum pantometry-shape pantometry-scene pantometry-view pantometry; do
   cargo publish -p "$c" --locked      # once per crate. Twice publishes the first and stops on it
 done
 git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes the wheel
@@ -85,12 +85,12 @@ A **new** crate hits crates.io's new-crate rate limit — a burst of five, then 
 minutes. Existing crates do not, so a release that adds no crate goes through in one pass.
 
 Verify by resolving from outside rather than by reading the output: `cargo new` a throwaway,
-`cargo add dualis@X.Y.Z`, and call something the release added.
+`cargo add pantometry@X.Y.Z`, and call something the release added.
 
 ## The wheel
 
 **Never `maturin publish` from a workstation.** A local build produces a wheel for *one* platform,
-and uploading only that makes `pip install dualis` fail everywhere else — a failure shaped like the
+and uploading only that makes `pip install pantometry` fail everywhere else — a failure shaped like the
 project not supporting Linux rather than like a release mistake.
 
 `.github/workflows/release-python.yml` builds Linux x86_64 and aarch64, macOS x86_64 and aarch64,
@@ -99,15 +99,15 @@ the cross-compiled ones rather than skipping them silently. It fires on a `v*` t
 dispatch with the `publish` box ticked.
 
 It uses **PyPI trusted publishing**, so there is no token in the repository. Configured on PyPI as
-owner `YounghyeonPark`, repository `dualis`, workflow `release-python.yml`, environment `pypi`.
+owner `YounghyeonPark`, repository `pantometry`, workflow `release-python.yml`, environment `pypi`.
 
 The publish job's `if` needs `always()` and the two results named. A skipped job propagates
 **transitively**, and `wheels`/`sdist` opting out with their own `always()` does not opt out for
 anything downstream of them — which cost two runs that built all six artefacts and then skipped the
 upload with a condition that was correct.
 
-The sdist is why `bindings/python/Cargo.toml` pins `dualis` with **both** a path and a version. An
-sdist is a tarball rooted at that directory, so `../../crates/dualis` points outside it; maturin
+The sdist is why `bindings/python/Cargo.toml` pins `pantometry` with **both** a path and a version. An
+sdist is a tarball rooted at that directory, so `../../crates/pantometry` points outside it; maturin
 vendors the whole crate tree in, and the version is what makes the manifest resolvable. Verified by
 building the sdist, installing it into a clean venv with `--no-binary :all:`, and running the test
 file against what came out.
@@ -121,7 +121,7 @@ A release pipeline you have not run is a guess.
 | dispatch, `publish=false` | build only | six artefacts, both gates skipped |
 | dispatch, `publish=true` | 0.3.0 to PyPI | five wheels and an sdist, installed from PyPI and tested |
 | tag, version mismatch | `v9.9.9` | refused at `check-version`; nothing built, nothing uploaded |
-| tag, version match | `v0.4.0` to PyPI | all four paths now run. `check-version` passed for the first time; five wheels, an sdist, and `pip install dualis==0.4.0` verified from a clean venv |
+| tag, version match | `v0.4.0` to PyPI | all four paths now run. `check-version` passed for the first time; five wheels, an sdist, and `pip install pantometry==0.4.0` verified from a clean venv |
 
 ## The DOI, which is not turned on yet
 
@@ -130,7 +130,7 @@ permanent identifier that resolves after the repository moves or disappears, whi
 list actually wants. It is one switch and nobody has thrown it:
 
 1. Sign in to [zenodo.org](https://zenodo.org) with the GitHub account.
-2. Under *GitHub*, find `YounghyeonPark/dualis` and turn the toggle **on**.
+2. Under *GitHub*, find `YounghyeonPark/pantometry` and turn the toggle **on**.
 3. Then publish a release **through GitHub's Releases page**, not by pushing a bare tag. Zenodo
    listens for the release webhook and a pushed tag alone does not fire it — the twelve tags already
    on the repository will therefore get no DOI, and the first release published after the toggle is
@@ -198,7 +198,7 @@ said so only as a red *Failed* on its own web page — nothing in the release, t
 One line: `license: MIT OR Apache-2.0`. That is a valid SPDX **expression** and `Cargo.toml` is right
 to use it; CFF's schema takes an identifier or a **list** of them and an expression matches neither.
 
-`crates/dualis-world/tests/citation_is_valid.rs` now checks that and the other fields a deposition is
+`crates/pantometry-world/tests/citation_is_valid.rs` now checks that and the other fields a deposition is
 built from, so the next one fails in the gate instead of on a web page. Before a release, also check
 the page itself: **zenodo.org → GitHub → the repository** lists every release Zenodo has seen and what
 it did with each.
@@ -223,8 +223,8 @@ So RELEASING.md's original instruction stands and is the only one that does: **l
 One signal *is* visible from the GitHub side and is worth reading, though it is not proof:
 
 ```sh
-HOOK=$(gh api repos/YounghyeonPark/dualis/hooks -q '.[] | select(.config.url | contains("zenodo")) | .id')
-gh api "repos/YounghyeonPark/dualis/hooks/$HOOK/deliveries?per_page=5"   -q '.[] | "\(.delivered_at)  \(.action)  \(.status) \(.status_code)"'
+HOOK=$(gh api repos/YounghyeonPark/pantometry/hooks -q '.[] | select(.config.url | contains("zenodo")) | .id')
+gh api "repos/YounghyeonPark/pantometry/hooks/$HOOK/deliveries?per_page=5"   -q '.[] | "\(.delivered_at)  \(.action)  \(.status) \(.status_code)"'
 ```
 
 Three events fire per release — `created`, `published`, `released` — and Zenodo dedupes, so 409s are
@@ -268,7 +268,7 @@ with no DOI and the first citable version waits for 0.14.0.
 Ask each job for its own `conclusion`, not the run for its roll-up:
 
 ```sh
-gh api "repos/YounghyeonPark/dualis/actions/runs/<id>/jobs?per_page=50" \
+gh api "repos/YounghyeonPark/pantometry/actions/runs/<id>/jobs?per_page=50" \
   -q '.jobs[] | "\(.name)\t\(.status)\t\(.conclusion // "-")"'
 ```
 

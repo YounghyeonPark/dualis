@@ -64,12 +64,12 @@ Prefer running `--release` for anything with more than a few thousand steps.
 
 Read these before deriving something from scratch; many are already written down and checked:
 
-- `crates/dualis-optics/src/diffraction.rs` — Airy, encircled energy, MTF, Rayleigh, Strehl
-- `crates/dualis-acoustic/src/room.rs` — rigid-wall mode frequencies
-- `crates/dualis-molecular/src/potential.rs` — Lennard-Jones minimum, tail corrections
-- `crates/dualis-molecular/src/rdf.rs` — fcc neighbour shells, exact combinatorics
-- `crates/dualis/tests/beam_heats_where_it_lands.rs` — a quadrature reference solution
-- `crates/dualis-core/src/integrator.rs` — measured integrator orders
+- `crates/pantometry-optics/src/diffraction.rs` — Airy, encircled energy, MTF, Rayleigh, Strehl
+- `crates/pantometry-acoustic/src/room.rs` — rigid-wall mode frequencies
+- `crates/pantometry-molecular/src/potential.rs` — Lennard-Jones minimum, tail corrections
+- `crates/pantometry-molecular/src/rdf.rs` — fcc neighbour shells, exact combinatorics
+- `crates/pantometry/tests/beam_heats_where_it_lands.rs` — a quadrature reference solution
+- `crates/pantometry-core/src/integrator.rs` — measured integrator orders
 
 ## Things that have actually gone wrong here
 

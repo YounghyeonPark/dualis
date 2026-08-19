@@ -10,10 +10,10 @@
 //! software rasteriser, which would be checking a different implementation than anyone runs. What
 //! is **not** acceptable is skipping quietly, so every skip prints why.
 
-use dualis_core::units::{Energy, Length, Temperature, Time};
-use dualis_core::{Domain, Exchange, Substance};
-use dualis_gpu::GpuSolid;
-use dualis_thermal::Solid3D;
+use pantometry_core::units::{Energy, Length, Temperature, Time};
+use pantometry_core::{Domain, Exchange, Substance};
+use pantometry_gpu::GpuSolid;
+use pantometry_thermal::Solid3D;
 
 const N: usize = 16;
 const DX: f64 = 1e-3;

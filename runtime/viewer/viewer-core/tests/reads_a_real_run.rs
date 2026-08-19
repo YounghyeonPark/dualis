@@ -1,7 +1,7 @@
-//! The viewer reads what a run actually wrote, with no `dualis` dependency at all.
+//! The viewer reads what a run actually wrote, with no `pantometry` dependency at all.
 //!
 //! That last clause is the claim under test. The fixtures in `tests/runs/` are genuine output —
-//! `dualis-world` on two shipped scenes and the `optical_bench` example — trimmed to a couple of
+//! `pantometry-world` on two shipped scenes and the `optical_bench` example — trimmed to a couple of
 //! frames each so a hundred kilobytes of generated JSON does not enter the tree. Nothing here
 //! links the library, so if a shape could not be drawn from the file alone the fix would have to
 //! be in the wire format, which is where it belongs.

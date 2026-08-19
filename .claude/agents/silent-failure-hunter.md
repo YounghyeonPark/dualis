@@ -30,7 +30,7 @@ unavailable as "skip".** Grep for `filter_map`, `flatten`, `unwrap_or_default`, 
 let Some` with no `else`, and ask what the user sees when the `None` arm is taken.
 
 There are **four** of these opt-ins now — `as_any`, `as_field`, `as_bodies`, `readings` — and
-`dualis-scene` is built entirely out of asking them. That is deliberate: it is what lets the
+`pantometry-scene` is built entirely out of asking them. That is deliberate: it is what lets the
 layer name no domain. It also means the blast radius of forgetting one grew from "a caller
 cannot downcast" to "this physics does not appear in any picture, table or export".
 

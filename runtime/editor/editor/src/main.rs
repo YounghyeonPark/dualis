@@ -1,4 +1,4 @@
-//! Edit a dualis scene beside a 3D view of it — and leave it open while a script does the
+//! Edit a pantometry scene beside a 3D view of it — and leave it open while a script does the
 //! editing.
 //!
 //! ```text
@@ -7,11 +7,11 @@
 //! ```
 //!
 //! The left pane is the scene's JSON, checked as you type with the same two steps
-//! `dualis-world --check` runs; a parse error is shown with its `line:column`. The viewport
+//! `pantometry-world --check` runs; a parse error is shown with its `line:column`. The viewport
 //! draws every placed extent as a wireframe — live, from the text, before anything runs — and
 //! **Run** streams the run in as it computes: each frame appears when it is captured, the
 //! slider grows, and **stop** ends a long run between frames. **Verify** runs the battery
-//! from `dualis-world verify` and shows the same report the CLI prints.
+//! from `pantometry-world verify` and shows the same report the CLI prints.
 //!
 //! # The live loop
 //!
@@ -48,7 +48,7 @@ use std::time::{Duration, Instant, SystemTime};
 fn main() -> eframe::Result {
     let path = std::env::args().nth(1);
     eframe::run_native(
-        "dualis editor",
+        "pantometry editor",
         eframe::NativeOptions::default(),
         Box::new(|_cc| Ok(Box::new(App::new(path)))),
     )
@@ -754,7 +754,7 @@ fn union(a: Option<[f64; 6]>, b: [f64; 6]) -> [f64; 6] {
     }
 }
 
-/// The scene the editor opens on with no file: the same built-in room `dualis-world` runs
+/// The scene the editor opens on with no file: the same built-in room `pantometry-world` runs
 /// with no arguments, so the two front ends agree about where "hello" is.
 fn default_scene() -> String {
     String::from(

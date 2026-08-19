@@ -4,7 +4,7 @@
 //!
 //! What lives here:
 //!
-//! - **Checking** — the same two steps `dualis-world --check` runs, parse then build, with the
+//! - **Checking** — the same two steps `pantometry-world --check` runs, parse then build, with the
 //!   parse error carried as `line:column` because that is what an editor puts a squiggle
 //!   under.
 //! - **Placement geometry** — every placed extent as eight posed corners, ready to wireframe,
@@ -12,7 +12,7 @@
 //!   even though no scene can state a pose yet, so the day the format grows one this crate
 //!   does not need to learn about it.
 //! - **Running and verifying** — thin passes over [`World::run`] and
-//!   [`dualis_world::verify::verify`], returning the run's JSON (which `viewer-core` reads)
+//!   [`pantometry_world::verify::verify`], returning the run's JSON (which `viewer-core` reads)
 //!   and the battery's rendered report.
 //!
 //! # The two halves, and which one this is
@@ -20,7 +20,7 @@
 //! ARCHITECTURE.md's platform rules split an editor into an authoring half, which is the
 //! composition root and may name domains, and an inspection half, which must dispatch on the
 //! shape of the data so that an eleventh physics costs no editor edit. This crate is the
-//! authoring half's machinery: it consumes `Scene` and `DomainSpec` through `dualis-world`'s
+//! authoring half's machinery: it consumes `Scene` and `DomainSpec` through `pantometry-world`'s
 //! public API — `DomainSpec::placement()` is where domain knowledge already legitimately
 //! lives — and hands the shell *shapes*: boxes, points, paths, readings. The shell's painting
 //! code never sees a domain name except to label things, which is what keeps the viewport
@@ -28,20 +28,20 @@
 
 #![deny(missing_docs)]
 
-use dualis::units::LengthVec;
-use dualis_world::{Parts, Scene, World};
+use pantometry::units::LengthVec;
+use pantometry_world::{Parts, Scene, World};
 
 /// Where a scene's `parts` come from, re-exported so a shell talks to this crate and not past it.
 ///
 /// The native editor has a filesystem and uses [`OnDisk`]; the browser has uploads and uses
 /// [`Uploaded`]. Both are the same scene format and the same builder — see [`Parts`].
-pub use dualis_world::{OnDisk, Uploaded};
+pub use pantometry_world::{OnDisk, Uploaded};
 
 /// The material names a scene can use without declaring them, re-exported for a shell's menus.
 ///
 /// Asked for rather than copied: a list of substances typed into a dropdown is a list that drifts,
 /// and the failure is a menu offering something the builder then refuses.
-pub use dualis_world::MATERIALS;
+pub use pantometry_world::MATERIALS;
 
 /// One placed extent, as the eight corners of its box in world coordinates, in metres.
 ///
@@ -99,7 +99,7 @@ pub struct Checked {
 
 /// Parse and build the text, and lay out its geometry.
 ///
-/// The same two steps `dualis-world --check` runs, in the same order, so the editor and the
+/// The same two steps `pantometry-world --check` runs, in the same order, so the editor and the
 /// CLI cannot disagree about what a valid scene is. Geometry is laid out from the *parsed*
 /// scene even when the build fails, because "the beam's face count disagrees with the bar's"
 /// is exactly when a person wants to be looking at the boxes.
@@ -183,17 +183,17 @@ pub fn check(text: &str, files: &dyn Parts) -> Checked {
 
 /// Measure a ladder of grids for the uploaded parts, and say which row to use.
 ///
-/// `dualis_world::fit` with the shell's own framing: the names come from `files` rather than from a
+/// `pantometry_world::fit` with the shell's own framing: the names come from `files` rather than from a
 /// scene, because this is the step *before* there is a scene — somebody has dropped CAD on the
 /// window and does not yet know what `cells` and `cell_mm` to write.
 pub fn fit(files: &Uploaded, budget_cells: usize, material: &str) -> Result<String, String> {
     let mut parts = Vec::new();
     for name in files.names() {
         let bytes = files.bytes(name)?;
-        let mesh = dualis::shape::Mesh::from_stl(&bytes).map_err(|e| format!("{name}: {e}"))?;
+        let mesh = pantometry::shape::Mesh::from_stl(&bytes).map_err(|e| format!("{name}: {e}"))?;
         parts.push((name.to_string(), mesh));
     }
-    let fit = dualis_world::fit::propose(&parts, budget_cells)?;
+    let fit = pantometry_world::fit::propose(&parts, budget_cells)?;
     let picked = fit.recommended(0.5);
     Ok(serde_json::json!({
         "table": fit.render(),
@@ -204,7 +204,7 @@ pub fn fit(files: &Uploaded, budget_cells: usize, material: &str) -> Result<Stri
     .to_string())
 }
 
-/// Run the scene and return the run as JSON — the same bytes `dualis-world scene.json out.json`
+/// Run the scene and return the run as JSON — the same bytes `pantometry-world scene.json out.json`
 /// writes, which is the format `viewer-core` reads. A violation is the error, worded by the
 /// kernel.
 pub fn run(text: &str, files: &dyn Parts) -> Result<String, String> {
@@ -218,7 +218,7 @@ pub fn run(text: &str, files: &dyn Parts) -> Result<String, String> {
             world.time().to_si()
         )
     })?;
-    Ok(dualis::view::to_json(&title, &frames))
+    Ok(pantometry::view::to_json(&title, &frames))
 }
 
 /// How a streamed run ended, when it did not fail.
@@ -261,11 +261,11 @@ pub fn run_streaming(
         serde_json::from_str(text).map_err(|e| format!("{}:{}: {e}", e.line(), e.column()))?;
     let title = scene.title.clone();
     let mut world = World::build_with(scene.clone(), files)?;
-    let dt = dualis::units::Time::from_si(scene.duration_s / scene.frames as f64);
+    let dt = pantometry::units::Time::from_si(scene.duration_s / scene.frames as f64);
     let placed = world.placements();
 
-    let mut frames = vec![dualis::scene::capture(world.simulation(), &placed)];
-    emit(dualis::view::to_json(&title, &frames));
+    let mut frames = vec![pantometry::scene::capture(world.simulation(), &placed)];
+    emit(pantometry::view::to_json(&title, &frames));
     for _ in 0..scene.frames {
         if stop.load(Ordering::Relaxed) {
             return Ok(RunEnd::Stopped);
@@ -276,11 +276,11 @@ pub fn run_streaming(
                 world.time().to_si()
             )
         })?;
-        frames.push(dualis::scene::capture(world.simulation(), &placed));
-        emit(dualis::view::to_json(&title, &frames));
+        frames.push(pantometry::scene::capture(world.simulation(), &placed));
+        emit(pantometry::view::to_json(&title, &frames));
     }
-    dualis::scene::settle_framing(&mut frames);
-    emit(dualis::view::to_json(&title, &frames));
+    pantometry::scene::settle_framing(&mut frames);
+    emit(pantometry::view::to_json(&title, &frames));
     Ok(RunEnd::Finished)
 }
 
@@ -289,7 +289,7 @@ pub fn run_streaming(
 pub fn verify(text: &str, deep: bool, files: &dyn Parts) -> Result<(String, usize), String> {
     let scene: Scene =
         serde_json::from_str(text).map_err(|e| format!("{}:{}: {e}", e.line(), e.column()))?;
-    let battery = dualis_world::verify::verify_with(&scene, deep, files)?;
+    let battery = pantometry_world::verify::verify_with(&scene, deep, files)?;
     Ok((battery.render(), battery.findings.len()))
 }
 
@@ -367,7 +367,7 @@ mod tests {
         }
     }
 
-    /// The run's JSON is the wire format: `viewer-core` — which never links `dualis` — reads
+    /// The run's JSON is the wire format: `viewer-core` — which never links `pantometry` — reads
     /// it back whole. This is the editor standing on the same contract the viewer proved.
     #[test]
     fn a_run_round_trips_through_the_wire_format() {
@@ -463,7 +463,7 @@ pub const MAX_SPLATS: usize = 8000;
 /// # Two colourings, and the physics decides which
 ///
 /// A temperature field is drawn in the colour a body at that temperature **actually is** —
-/// Planck's law through the CIE matching functions, from [`dualis::view::colour`] — whenever
+/// Planck's law through the CIE matching functions, from [`pantometry::view::colour`] — whenever
 /// anything in it is hot enough to emit visible light. That is not a palette: a melting block
 /// glows the orange a melting block glows, and nothing here picked it.
 ///
@@ -504,7 +504,7 @@ pub fn field_splats(
         _ => None,
     };
     let hottest = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let peak_glow = to_kelvin(hottest).map_or(0.0, dualis::view::glow_fraction);
+    let peak_glow = to_kelvin(hottest).map_or(0.0, pantometry::view::glow_fraction);
     let physical = peak_glow > 1e-6;
 
     let total = nx * ny * nz;
@@ -543,11 +543,11 @@ pub fn field_splats(
                 };
                 let rgba = if physical {
                     let kelvin = to_kelvin(v).unwrap_or(0.0);
-                    let [r, g, b] = dualis::view::blackbody_srgb(kelvin);
+                    let [r, g, b] = pantometry::view::blackbody_srgb(kelvin);
                     // Brightness is the glow relative to this field's own hottest cell, so a
                     // cool corner of a glowing block is dark rather than merely bluer — which
                     // is what a photograph of it looks like.
-                    let rel = (dualis::view::glow_fraction(kelvin) / peak_glow).clamp(0.0, 1.0);
+                    let rel = (pantometry::view::glow_fraction(kelvin) / peak_glow).clamp(0.0, 1.0);
                     [r, g, b, ((rel.sqrt() * 235.0) as u8).max(6)]
                 } else {
                     let (r, g, b) = ramp(s);

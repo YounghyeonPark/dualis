@@ -166,37 +166,37 @@ dependencies = [
 ]
 
 [[package]]
-name = "dualis-core"
+name = "pantometry-core"
 version = "0.13.0"
 dependencies = [
- "dualis-units",
+ "pantometry-units",
  "glam",
  "serde",
 ]
 
 [[package]]
-name = "dualis-gpu"
+name = "pantometry-gpu"
 version = "0.1.0"
 dependencies = [
- "dualis-core",
- "dualis-thermal",
- "dualis-units",
+ "pantometry-core",
+ "pantometry-thermal",
+ "pantometry-units",
  "pollster",
  "wgpu",
 ]
 
 [[package]]
-name = "dualis-thermal"
+name = "pantometry-thermal"
 version = "0.13.0"
 dependencies = [
- "dualis-core",
- "dualis-units",
+ "pantometry-core",
+ "pantometry-units",
  "glam",
  "serde",
 ]
 
 [[package]]
-name = "dualis-units"
+name = "pantometry-units"
 version = "0.13.0"
 dependencies = [
  "glam",

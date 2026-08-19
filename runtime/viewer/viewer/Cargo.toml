@@ -1,6 +1,6 @@
 [package]
 name = "viewer"
-description = "A native window for a dualis run: rotate, zoom, scrub."
+description = "A native window for a pantometry run: rotate, zoom, scrub."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

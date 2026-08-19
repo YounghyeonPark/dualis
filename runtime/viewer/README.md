@@ -1,4 +1,4 @@
-# A native viewer for a dualis run
+# A native viewer for a pantometry run
 
 ```sh
 cd runtime/viewer
@@ -9,8 +9,8 @@ cargo run --release -- ../../out.json --snapshot out.ppm --frame 30  # a frame w
 
 Drag to rotate, scroll to zoom, space to play, left and right to scrub.
 
-The input is what any run writes: `dualis-world <scene> out.json`, or anything that calls
-`dualis_view::to_json`. Two of the shipped scenes and the `optical_bench` example are committed
+The input is what any run writes: `pantometry-world <scene> out.json`, or anything that calls
+`pantometry_view::to_json`. Two of the shipped scenes and the `optical_bench` example are committed
 under `viewer-core/tests/runs/` as fixtures, trimmed to a couple of frames each.
 
 ## Why it is a separate workspace
@@ -28,7 +28,7 @@ with `--locked`, and the same crates compile to `wasm32` and to Rust 1.78. A GPU
 carried by any of that, and nothing in `crates/` depends on this. The arrow points one way: this
 reads what a run wrote.
 
-## Why it does not depend on `dualis`
+## Why it does not depend on `pantometry`
 
 Deliberately, and it is the load-bearing decision here. If a viewer can be written against the
 **file** and nothing else, the wire format is complete. If it had needed to link the library for
@@ -105,5 +105,5 @@ exits rather than opening a blank window.
 
 No RTX, no materials, no shadows, no editing, no USD. Those are a different product, and the
 recommendation on record is to **export into** the tools that already do them rather than rebuild
-them — `dualis-scene`'s frames are a few hundred lines away from glTF, which reaches Blender,
+them — `pantometry-scene`'s frames are a few hundred lines away from glTF, which reaches Blender,
 three.js and every USD viewer.

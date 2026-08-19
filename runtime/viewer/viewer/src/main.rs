@@ -1,4 +1,4 @@
-//! A native window for a dualis run.
+//! A native window for a pantometry run.
 //!
 //! ```text
 //! cargo run --release -- run.json
@@ -25,7 +25,7 @@
 //! picture, so the arithmetic lives where a test can reach it and this file only draws what it is
 //! handed.
 //!
-//! # It does not depend on `dualis`
+//! # It does not depend on `pantometry`
 //!
 //! Deliberately. It reads the JSON a run wrote and nothing else, so "the wire format carries
 //! enough to draw a run" is demonstrated rather than asserted. If this needed to link the library
@@ -74,8 +74,8 @@ fn main() {
         Some(p) => p,
         None => {
             eprintln!("usage: viewer <run.json>");
-            eprintln!("  produced by `dualis-world <scene> out.json`, or by any run that calls");
-            eprintln!("  dualis_view::to_json");
+            eprintln!("  produced by `pantometry-world <scene> out.json`, or by any run that calls");
+            eprintln!("  pantometry_view::to_json");
             std::process::exit(2);
         }
     };
@@ -271,7 +271,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attrs = Window::default_attributes()
-            .with_title(format!("dualis — {}", self.run.title))
+            .with_title(format!("pantometry — {}", self.run.title))
             .with_inner_size(winit::dpi::LogicalSize::new(1100.0, 720.0));
         let window = Arc::new(event_loop.create_window(attrs).expect("a window"));
 
@@ -287,7 +287,7 @@ impl ApplicationHandler for App {
         .expect("a GPU adapter");
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                label: Some("dualis viewer"),
+                label: Some("pantometry viewer"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 memory_hints: wgpu::MemoryHints::default(),

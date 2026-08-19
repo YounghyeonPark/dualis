@@ -1,0 +1,20 @@
+[package]
+name = "pantometry-optics"
+description = "Spectral radiometry, surface optics, dispersion and ray geometry for simulated worlds"
+keywords = ["optics", "raytracing", "spectrum", "fresnel", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+pantometry-core = { workspace = true }
+pantometry-units = { workspace = true }
+glam = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

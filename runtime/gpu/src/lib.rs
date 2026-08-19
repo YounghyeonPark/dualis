@@ -1,4 +1,4 @@
-//! An accelerator for dualis's explicit stencils, with the CPU domain as the reference.
+//! An accelerator for pantometry's explicit stencils, with the CPU domain as the reference.
 //!
 //! # The one rule
 //!
@@ -53,17 +53,17 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-use dualis_core::conserved::quantity;
-use dualis_core::units::{Length, Temperature, Time};
-use dualis_core::{Domain, Exchange, Ledger, Reading, Substance, Violation};
-use dualis_thermal::STABLE_FOURIER_3D;
+use pantometry_core::conserved::quantity;
+use pantometry_core::units::{Length, Temperature, Time};
+use pantometry_core::{Domain, Exchange, Ledger, Reading, Substance, Violation};
+use pantometry_thermal::STABLE_FOURIER_3D;
 
 /// The heat channel, the same name the thermal crate publishes on.
 pub const HEAT: &str = quantity::ENERGY;
 
 /// A block of conducting material whose stencil runs on the GPU.
 ///
-/// Mirrors `dualis_thermal::Solid3D`: cubic cells, a seven-point stencil, insulated faces. What
+/// Mirrors `pantometry_thermal::Solid3D`: cubic cells, a seven-point stencil, insulated faces. What
 /// differs is the arithmetic — `f32` here against `f64` there — and that difference is measured
 /// rather than assumed.
 pub struct GpuSolid {
@@ -138,7 +138,7 @@ impl GpuSolid {
             .to_si();
         let cell_volume = dx.to_si().powi(3);
         let capacity = substance
-            .heat_capacity(dualis_core::units::Volume::from_si(cell_volume))
+            .heat_capacity(pantometry_core::units::Volume::from_si(cell_volume))
             .ok_or(Unavailable::NotConducting)?
             .to_si();
 
@@ -191,7 +191,7 @@ impl GpuSolid {
     }
 
     /// Put joules into one cell, as heat that arrived there.
-    pub fn deposit(&mut self, i: usize, j: usize, k: usize, joules: dualis_core::units::Energy) {
+    pub fn deposit(&mut self, i: usize, j: usize, k: usize, joules: pantometry_core::units::Energy) {
         let (nx, ny, nz) = self.counts;
         if i >= nx || j >= ny || k >= nz {
             return;
@@ -246,16 +246,16 @@ impl GpuSolid {
     ///
     /// The buffer already holds deviations, which is exactly what a stored heat is measured from —
     /// the same fact that makes the `f32` arithmetic work at all.
-    pub fn stored_heat(&mut self) -> dualis_core::units::Energy {
+    pub fn stored_heat(&mut self) -> pantometry_core::units::Energy {
         self.sync();
-        dualis_core::units::Energy::from_si(
+        pantometry_core::units::Energy::from_si(
             self.capacity * self.mirror.iter().map(|v| *v as f64).sum::<f64>(),
         )
     }
 
     /// Heat taken from the bus over the run.
-    pub fn absorbed_energy(&self) -> dualis_core::units::Energy {
-        dualis_core::units::Energy::from_si(self.absorbed)
+    pub fn absorbed_energy(&self) -> pantometry_core::units::Energy {
+        pantometry_core::units::Energy::from_si(self.absorbed)
     }
 }
 
@@ -353,7 +353,7 @@ impl Context {
         .ok_or(Unavailable::NoAdapter)?;
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                label: Some("dualis stencil"),
+                label: Some("pantometry stencil"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 memory_hints: wgpu::MemoryHints::default(),

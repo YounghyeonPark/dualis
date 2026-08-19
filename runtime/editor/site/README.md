@@ -51,7 +51,7 @@ disagreed with by reading the table: the coarsest grid on which every part is pr
 undecidable, and the worst boundary fraction is under a half. The fragment it prints goes straight
 into a `block` domain.
 
-The same thing from a terminal is `dualis-world fit part.stl [more.stl …] --cells N`.
+The same thing from a terminal is `pantometry-world fit part.stl [more.stl …] --cells N`.
 
 ### what each part is, and assembling them
 

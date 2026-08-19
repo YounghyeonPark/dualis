@@ -1,0 +1,15 @@
+[package]
+name = "pantometry-quantum"
+description = "Quantum mechanics as a simulation domain: the Schrödinger equation in a well, with probability conserved as an identity"
+keywords = ["quantum", "schrodinger", "wavefunction", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+pantometry-core = { workspace = true }
+pantometry-units = { workspace = true }

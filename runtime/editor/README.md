@@ -7,11 +7,11 @@ cargo run --release -- scene.json   # opens on a file
 ```
 
 The left pane is the scene's JSON, checked **as you type** with the same two steps
-`dualis-world --check` runs — parse, then build — with parse errors carried as `line:column`,
+`pantometry-world --check` runs — parse, then build — with parse errors carried as `line:column`,
 which is what that error format was designed for. The viewport draws every placed extent as a
 wireframe, live from the text before anything runs. **Run** streams the run in as it computes
 — each frame appears when it is captured, the slider grows, **stop** ends a long run between
-frames — and **Verify** runs the battery from `dualis-world verify` and shows the report the
+frames — and **Verify** runs the battery from `pantometry-world verify` and shows the report the
 CLI prints, with the findings count in the window title. Drag to rotate, scroll to zoom.
 
 ## The live loop
@@ -38,7 +38,7 @@ and its tests pin that the final streamed payload is byte-identical to the batch
 
 A temperature field is drawn in the colour a body at that temperature **actually is** — Planck's
 spectral exitance through the CIE 1931 colour matching functions to sRGB, from
-`dualis::view::colour`. A block at 1473 K is that orange and no other, and nothing here picked
+`pantometry::view::colour`. A block at 1473 K is that orange and no other, and nothing here picked
 it; in Blender the same block's colour is a value somebody types.
 
 Which is also the honest limit. Below about 900 K a body emits no visible light at all —
@@ -80,7 +80,7 @@ The measured table, one row longer:
 `deny.toml`, `--locked`, `wasm32` and Rust 1.78 are the library's promises and none of them
 can carry a window toolkit. Nothing in `crates/` depends on this; the arrow points one way.
 
-**Unlike the viewer, this workspace links `dualis`** — deliberately, and the difference is the
+**Unlike the viewer, this workspace links `pantometry`** — deliberately, and the difference is the
 point. The viewer proves the wire format is complete by never linking the library. The editor
 exists to build, run and verify scenes, which cannot be done from a file alone; it is the
 first consumer of the platform verbs from a GUI. Where the two overlap, they share: the
@@ -96,7 +96,7 @@ costs no editor edit.
 - `editor-core` is the authoring half's machinery, GUI-free and tested headlessly: checking
   (parse + build), placement geometry (posed corners of every extent, through
   `Pose::point_to_world` even though no scene can state a pose yet), and thin passes over run
-  and verify. It knows domains only through `dualis-world`'s public API, where that knowledge
+  and verify. It knows domains only through `pantometry-world`'s public API, where that knowledge
   already legitimately lives.
 - `editor` is the shell: a text box, a canvas and an event loop. Everything it paints, it
   paints from a shape — a box, points, paths, a reading — with the domain name used only as a

@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>dualis — a scene, in a browser</title>
+<title>pantometry — a scene, in a browser</title>
 <style>
   :root { color-scheme: dark; --bg:#14171c; --pane:#1b1f26; --line:#2b313b; --ink:#d6dae2;
           --dim:#8b95a3; --bad:#e0665f; --note:#e6b43c; }
@@ -99,7 +99,7 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 
 function put(str) {
   const bytes = enc.encode(str);
-  const ptr = wasm.dualis_alloc(bytes.length);
+  const ptr = wasm.pantometry_alloc(bytes.length);
   new Uint8Array(mem.buffer, ptr, bytes.length).set(bytes);
   return [ptr, bytes.length];
 }
@@ -108,7 +108,7 @@ function take(ptr) {
   // Four little-endian bytes of length, then that many bytes of UTF-8.
   const len = new DataView(mem.buffer).getUint32(ptr, true);
   const body = dec.decode(new Uint8Array(mem.buffer, ptr + 4, len));
-  wasm.dualis_free(ptr, len + 4);
+  wasm.pantometry_free(ptr, len + 4);
   return JSON.parse(body);
 }
 
@@ -116,14 +116,14 @@ function call(fn, str) {
   if (str === undefined) return take(fn());
   const [ptr, len] = put(str);
   const out = take(fn(ptr, len));
-  wasm.dualis_free(ptr, len);
+  wasm.pantometry_free(ptr, len);
   return out;
 }
 
 // A part is a name and its bytes, and the bytes are not text — an STL is binary and encoding it
 // as UTF-8 would corrupt every float in it. Two buffers, both freed here.
 function putBytes(u8) {
-  const ptr = wasm.dualis_alloc(u8.length);
+  const ptr = wasm.pantometry_alloc(u8.length);
   new Uint8Array(mem.buffer, ptr, u8.length).set(u8);
   return [ptr, u8.length];
 }
@@ -131,9 +131,9 @@ function putBytes(u8) {
 function sendPart(name, u8) {
   const [np, nl] = put(name);
   const [dp, dl] = putBytes(u8);
-  const out = take(wasm.dualis_part(np, nl, dp, dl));
-  wasm.dualis_free(np, nl);
-  wasm.dualis_free(dp, dl);
+  const out = take(wasm.pantometry_part(np, nl, dp, dl));
+  wasm.pantometry_free(np, nl);
+  wasm.pantometry_free(dp, dl);
   return out;
 }
 
@@ -160,7 +160,7 @@ function draw() {
   ctx.fillStyle = '#101318';
   ctx.fillRect(0, 0, w, h);
 
-  const out = call(wasm.dualis_draw, JSON.stringify({
+  const out = call(wasm.pantometry_draw, JSON.stringify({
     ...cam, aspect: w / Math.max(1, h), frame: +$('frame').value, fit: needsFit,
   }));
   needsFit = false;
@@ -236,7 +236,7 @@ canvas.addEventListener('wheel', e => {
 // --- the scene text ----------------------------------------------------------------------------
 let checkTimer = null;
 function recheck() {
-  const out = call(wasm.dualis_check, $('text').value);
+  const out = call(wasm.pantometry_check, $('text').value);
   $('summary').textContent = out.summary || '';
   const notes = out.notes || [];
   $('notes').textContent = notes.join('\n');
@@ -258,7 +258,7 @@ $('run').onclick = () => {
   // Yielding first so the status paints: the run is synchronous inside wasm, as it is in the
   // CLI, and a page that never repaints looks hung rather than busy.
   setTimeout(() => {
-    const out = take(wasm.dualis_run());
+    const out = take(wasm.pantometry_run());
     if (out.error) { status(out.error, true); frames = 0; $('frame').disabled = true; draw(); return; }
     frames = out.frames;
     $('frame').max = Math.max(0, frames - 1);
@@ -273,7 +273,7 @@ $('run').onclick = () => {
 $('verify').onclick = () => {
   status('verifying…');
   setTimeout(() => {
-    const res = take(wasm.dualis_verify($('deep').checked ? 1 : 0));
+    const res = take(wasm.pantometry_verify($('deep').checked ? 1 : 0));
     const r = res.error ? { report: res.error, findings: 1 } : res;
     $('report').textContent = r.report;
     $('report').classList.add('open');
@@ -345,8 +345,8 @@ function showTagging(names) {
 
 function forgetPart(name) {
   const [p, l] = put(name);
-  const out = take(wasm.dualis_forget_part(p, l));
-  wasm.dualis_free(p, l);
+  const out = take(wasm.pantometry_forget_part(p, l));
+  wasm.pantometry_free(p, l);
   delete tags[name];
   return out;
 }
@@ -358,8 +358,8 @@ function forgetPart(name) {
 $('assemble').onclick = () => {
   status('measuring a grid for these parts…');
   const [mp, ml] = put('aluminium');
-  const out = take(wasm.dualis_fit(2000000, mp, ml));
-  wasm.dualis_free(mp, ml);
+  const out = take(wasm.pantometry_fit(2000000, mp, ml));
+  wasm.pantometry_free(mp, ml);
   if (out.error) { status(out.error, true); return; }
   if (!out.fragment) {
     status('no grid holds every part under half boundary — press fit grid and read the table', true);
@@ -403,8 +403,8 @@ function showParts(out) {
 $('fitgrid').onclick = () => {
   status('rasterising every candidate grid…');
   const [mp, ml] = put('aluminium');
-  const out = take(wasm.dualis_fit(2000000, mp, ml));
-  wasm.dualis_free(mp, ml);
+  const out = take(wasm.pantometry_fit(2000000, mp, ml));
+  wasm.pantometry_free(mp, ml);
   if (out.error) { status(out.error, true); return; }
   const box = $('fitout');
   box.textContent = out.table + (out.fragment
@@ -471,7 +471,7 @@ $('save').onclick = () => {
     mem = wasm.memory;
     // The material menu comes from the library, not from a list typed here: a copy drifts, and
     // the failure is a dropdown offering something the builder then refuses.
-    catalogue = take(wasm.dualis_materials()).materials;
+    catalogue = take(wasm.pantometry_materials()).materials;
   } catch (e) {
     status(`could not load editor_wasm.wasm: ${e}. Serve this directory over http — a file:// \
 page cannot fetch wasm.`, true);

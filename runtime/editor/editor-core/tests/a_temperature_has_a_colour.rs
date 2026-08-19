@@ -18,10 +18,10 @@
 fn a_cool_field_has_no_colour_of_its_own() {
     // The fraction of radiated power that lands in the visible band, which is what the shell
     // tests to choose its colouring.
-    assert!(dualis::view::glow_fraction(293.15) < 1e-20);
-    assert!(dualis::view::glow_fraction(500.0) < 1e-6);
+    assert!(pantometry::view::glow_fraction(293.15) < 1e-20);
+    assert!(pantometry::view::glow_fraction(500.0) < 1e-6);
     // And the shell's threshold sits above those: a warm block is drawn in false colour.
-    assert!(dualis::view::glow_fraction(700.0) < 1e-6);
+    assert!(pantometry::view::glow_fraction(700.0) < 1e-6);
 }
 
 /// **A melting or glowing field gets the colour it actually has.** Above about 900 K the visible
@@ -30,11 +30,11 @@ fn a_cool_field_has_no_colour_of_its_own() {
 /// than by anybody choosing three colours.
 #[test]
 fn a_glowing_field_is_drawn_the_colour_it_is() {
-    assert!(dualis::view::glow_fraction(1000.0) > 1e-6);
+    assert!(pantometry::view::glow_fraction(1000.0) > 1e-6);
 
-    let dull_red = dualis::view::blackbody_srgb(1000.0);
-    let orange = dualis::view::blackbody_srgb(1800.0);
-    let white = dualis::view::blackbody_srgb(6000.0);
+    let dull_red = pantometry::view::blackbody_srgb(1000.0);
+    let orange = pantometry::view::blackbody_srgb(1800.0);
+    let white = pantometry::view::blackbody_srgb(6000.0);
 
     // Red at the bottom: the red channel saturated, no blue at all — the colour is outside
     // sRGB's gamut on that side, which is why a photograph of hot iron looks like this.
@@ -46,8 +46,8 @@ fn a_glowing_field_is_drawn_the_colour_it_is() {
     // property of the monitor, not of the fire; the physics is in the chromaticity, and that
     // is where the claim belongs.
     assert!(orange[1] > dull_red[1]);
-    let (x_dull, _) = dualis::view::planckian_chromaticity(1000.0);
-    let (x_orange, _) = dualis::view::planckian_chromaticity(1800.0);
+    let (x_dull, _) = pantometry::view::planckian_chromaticity(1000.0);
+    let (x_orange, _) = pantometry::view::planckian_chromaticity(1800.0);
     assert!(
         x_orange < x_dull,
         "1800 K should sit bluer along the locus than 1000 K"
@@ -67,7 +67,7 @@ fn a_glowing_field_is_drawn_the_colour_it_is() {
 /// ordering does not.
 #[test]
 fn iron_at_its_melting_point_is_the_colour_iron_is() {
-    let c = dualis::view::blackbody_srgb(1811.0);
+    let c = pantometry::view::blackbody_srgb(1811.0);
     assert!(
         c[0] > c[1] && c[1] > c[2],
         "molten iron should run red > green > blue, got {c:?}"
@@ -115,8 +115,8 @@ fn a_run_carries_temperatures_the_viewport_can_colour() {
     );
 
     // And at that temperature the field glows, so the viewport draws Planck's colour.
-    assert!(dualis::view::glow_fraction(hottest) > 1e-6);
-    let c = dualis::view::blackbody_srgb(hottest);
+    assert!(pantometry::view::glow_fraction(hottest) > 1e-6);
+    let c = pantometry::view::blackbody_srgb(hottest);
     assert!(
         c[0] > c[1] && c[1] > c[2],
         "a 1473 K block is orange: {c:?}"

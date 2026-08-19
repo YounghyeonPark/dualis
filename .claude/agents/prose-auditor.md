@@ -20,14 +20,14 @@ cargo test --workspace 2>&1 | grep "test result: ok" | awk -F'[ ;]' '{s+=$4} END
 cargo test --doc --workspace 2>&1 | grep "test result" | awk -F'[ ;]' '{s+=$4} END {print s}'
 cargo clippy --workspace --lib -- -W missing_docs 2>&1 | grep -c "^warning: missing"
 cargo metadata --format-version 1 | python -c "import json,sys; d=json.load(sys.stdin); print(len([p for p in d['packages'] if p.get('source')]), 'external deps')"
-find crates -path '*examples*' -name '*.rs' -not -path '*common*' | wc -l   # NOT just crates/dualis
+find crates -path '*examples*' -name '*.rs' -not -path '*common*' | wc -l   # NOT just crates/pantometry
 ls crates/*/Cargo.toml | wc -l                                             # crates, published + not
-ls crates/dualis-world/scenes/*.json | wc -l
+ls crates/pantometry-world/scenes/*.json | wc -l
 gh repo view --json description,repositoryTopics
 ```
 
-The examples one is worth the longer command: `ls crates/dualis/examples/*.rs` misses
-`readme_check`, which lives in `dualis-optics`, and counts the `common/` module if the glob is
+The examples one is worth the longer command: `ls crates/pantometry/examples/*.rs` misses
+`readme_check`, which lives in `pantometry-optics`, and counts the `common/` module if the glob is
 loosened. A count that is wrong in both directions at once looks stable and is not.
 
 For a physics number quoted in prose, run the example or test that produces it and compare. The
@@ -76,7 +76,7 @@ examples print their values precisely so this is cheap.
 6. **Claims of absence.** "There is no X" and "X is deliberately not here" age worst, because
    adding X rarely prompts anyone to go looking for the sentence that denied it. The README's
    "no renderer *in the library*" survived the release that published one.
-7. **Counts that already have a test.** `documented_version.rs` checks every `dualis = "x.y"` in
+7. **Counts that already have a test.** `documented_version.rs` checks every `pantometry = "x.y"` in
    `AGENTS.md` and `README.md`, and `friction_counts.rs` parses `FRICTION.md`'s summary against
    its own headings. Do not re-audit those by hand — run them, and if you find a count that ought
    to be checked and is not, say so: a test is worth more than a correction.

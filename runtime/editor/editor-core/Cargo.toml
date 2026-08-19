@@ -7,8 +7,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
-dualis-world = { workspace = true }
-dualis = { workspace = true }
+pantometry-world = { workspace = true }
+pantometry = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]

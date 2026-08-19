@@ -1,0 +1,18 @@
+[package]
+name = "pantometry-units"
+description = "Dimensional analysis for physical simulation: SI quantities that refuse to be added wrongly"
+keywords = ["units", "dimensional-analysis", "physics", "si", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

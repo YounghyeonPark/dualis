@@ -1,0 +1,16 @@
+[package]
+name = "pantometry-em"
+description = "Electromagnetic fields in three dimensions: Maxwell's equations on a Yee grid, with divergence preserved to machine precision"
+keywords = ["electromagnetism", "maxwell", "fdtd", "physics", "simulation"]
+categories = ["science", "simulation"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+pantometry-core = { workspace = true }
+pantometry-units = { workspace = true }

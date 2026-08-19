@@ -1,22 +1,22 @@
-# dualis, for an agent
+# pantometry, for an agent
 
-Everything needed to write a working dualis program, on one page. If you are here to
-*modify* dualis rather than use it, read [CLAUDE.md](CLAUDE.md) instead.
+Everything needed to write a working pantometry program, on one page. If you are here to
+*modify* pantometry rather than use it, read [CLAUDE.md](CLAUDE.md) instead.
 
-**dualis is a Rust library**, with Python bindings. It is not a CLI and there is nothing on
-`PATH`, so `which dualis` will fail and that is not a broken installation.
+**pantometry is a Rust library**, with Python bindings. It is not a CLI and there is nothing on
+`PATH`, so `which pantometry` will fail and that is not a broken installation.
 
-From Python, `import dualis` works — see [`bindings/python`](bindings/python), built from this
-repository and published as `dualis` on PyPI. It can *run and audit* the library's physics; it cannot *extend*
+From Python, `import pantometry` works — see [`bindings/python`](bindings/python), built from this
+repository and published as `pantometry` on PyPI. It can *run and audit* the library's physics; it cannot *extend*
 it, because writing a `Domain` in Python is unsupported and the reasons are written down there.
 Everything below describes the Rust API.
 
 ```toml
 [dependencies]
-dualis = "0.15"
+pantometry = "0.16"
 ```
 
-API docs: <https://docs.rs/dualis>. Source: <https://github.com/YounghyeonPark/dualis>.
+API docs: <https://docs.rs/pantometry>. Source: <https://github.com/YounghyeonPark/pantometry>.
 
 ---
 
@@ -26,7 +26,7 @@ When you write physics in numpy or a general-purpose engine and get it wrong, th
 happily and produces plausible output. There is no signal. You find out when a human notices
 the answer is silly.
 
-dualis audits conservation on every step and returns a **`Violation` that names what went
+pantometry audits conservation on every step and returns a **`Violation` that names what went
 missing and where**:
 
 ```
@@ -56,7 +56,7 @@ a factor of a thousand may appear — a unit-bearing constructor — and `to_si(
 back to a bare `f64`.
 
 ```rust
-use dualis::prelude::*;
+use pantometry::prelude::*;
 
 let area: Area = Length::mm(10.0) * Length::mm(10.0);
 let absorbed: Power = Irradiance::mw_per_cm2(50.0) * area * 0.02;
@@ -112,7 +112,7 @@ Anything left unclaimed when the step ends is a `Violation`.
 
 ## A complete program
 
-[`examples/agents_quickstart.rs`](crates/dualis/examples/agents_quickstart.rs) is a runnable
+[`examples/agents_quickstart.rs`](crates/pantometry/examples/agents_quickstart.rs) is a runnable
 version of everything above — a publisher, a consumer, the books closing, and then the same
 pair with a deliberate 10% leak so you can see the `Violation` it produces. CI runs it, so it
 cannot drift.
@@ -128,23 +128,23 @@ of them commentary.
 
 ## What is in the box
 
-`dualis` is a facade; every name below is re-exported through `dualis::prelude::*`.
+`pantometry` is a facade; every name below is re-exported through `pantometry::prelude::*`.
 
 | crate | what it holds |
 | --- | --- |
-| `dualis-units` | `Length`, `Time`, `Mass`, `Energy`, `Power`, … and the vector forms. Dimensions in the type |
-| `dualis-core` | The kernel: `Domain`, `Exchange`, `Simulation`, `Schedule`, `Ledger`, `Tolerances` (one per conserved quantity), `Violation`, `Interface`, `Flux`, `Rng`, `Ensemble`, `Pose`, `Bodies` and `Reading` for what a domain offers a viewer, integrators, fields |
+| `pantometry-units` | `Length`, `Time`, `Mass`, `Energy`, `Power`, … and the vector forms. Dimensions in the type |
+| `pantometry-core` | The kernel: `Domain`, `Exchange`, `Simulation`, `Schedule`, `Ledger`, `Tolerances` (one per conserved quantity), `Violation`, `Interface`, `Flux`, `Rng`, `Ensemble`, `Pose`, `Bodies` and `Reading` for what a domain offers a viewer, integrators, fields |
 
 A domain that overrides `books_balance` to `true` claims its ledger changes by exactly what it takes from the bus minus what it publishes, and is then checked **on its own scale** every step rather than inside the sum of every ledger. Take the claim if it is true — a small domain's leak is otherwise invisible beside a large one. Decline it if the domain models a boundary the bus does not carry, as `LumpedMass` does with convective loss.
-| `dualis-optics` | Radiometry, Fresnel and coatings, dispersion, rays, Airy diffraction, MTF, Zernike, PSFs, detector noise |
-| `dualis-thermal` | `LumpedMass`, `Bar1D` conduction, `Solid3D` conduction in three dimensions on a cubic grid, `ThermalNetwork` of n bodies joined by conductances, radiative and convective loss |
-| `dualis-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
-| `dualis-acoustic` | The wave equation on a staggered grid: `Tube` (1D), `Room` (2D), `Hall` (3D, with the vertical and oblique modes a floor plan cannot have), impedance boundaries |
-| `dualis-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
-| `dualis-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path. `Conductor`: `∇·(σ∇φ)=0` solved on a grid, so a resistance is a property of a *shape* — `ρL/A` exactly for a bar, and whatever a notch gives for a notch |
-| `dualis-quantum` | `Well`: a 1D wavefunction between hard walls, marched with the same staggered-leapfrog family the acoustic domain uses. `in_eigenstate(n)`, `with_gaussian(centre, sigma, k0)`, `with_harmonic(omega)`; probability sits on the ledger as an identity of the update |
-| `dualis-scene` | One layer up. `Placement`, `Extent`, `capture` — where a domain sits and what one instant of a run looks like, as `Frame`, `Panel`, `PanelData`. Names no domain |
-| `dualis-view` | Two layers up. `svg` filmstrip, `html` report that opens in a browser with nothing installed, `readings_csv`, `to_json`, and `gltf` for Blender/three.js/USD. The view is chosen by the shape of the data |
+| `pantometry-optics` | Radiometry, Fresnel and coatings, dispersion, rays, Airy diffraction, MTF, Zernike, PSFs, detector noise |
+| `pantometry-thermal` | `LumpedMass`, `Bar1D` conduction, `Solid3D` conduction in three dimensions on a cubic grid, `ThermalNetwork` of n bodies joined by conductances, radiative and convective loss |
+| `pantometry-mechanics` | `NBody`, `TreeNBody` (Barnes-Hut), `ContactSystem` with friction, `RigidBody` |
+| `pantometry-acoustic` | The wave equation on a staggered grid: `Tube` (1D), `Room` (2D), `Hall` (3D, with the vertical and oblique modes a floor plan cannot have), impedance boundaries |
+| `pantometry-molecular` | `Fluid` with Lennard-Jones, `PeriodicBox`, cell lists, Langevin thermostat, `RadialDistribution` |
+| `pantometry-electrical` | `Winding`: `I²R` onto the heat channel, copper rising 0.393%/K, and `runaway_current` — the exact threshold `√(g/(R₂₀α))` where the feedback overtakes the heat path. `Conductor`: `∇·(σ∇φ)=0` solved on a grid, so a resistance is a property of a *shape* — `ρL/A` exactly for a bar, and whatever a notch gives for a notch |
+| `pantometry-quantum` | `Well`: a 1D wavefunction between hard walls, marched with the same staggered-leapfrog family the acoustic domain uses. `in_eigenstate(n)`, `with_gaussian(centre, sigma, k0)`, `with_harmonic(omega)`; probability sits on the ledger as an identity of the update |
+| `pantometry-scene` | One layer up. `Placement`, `Extent`, `capture` — where a domain sits and what one instant of a run looks like, as `Frame`, `Panel`, `PanelData`. Names no domain |
+| `pantometry-view` | Two layers up. `svg` filmstrip, `html` report that opens in a browser with nothing installed, `readings_csv`, `to_json`, and `gltf` for Blender/three.js/USD. The view is chosen by the shape of the data |
 
 `Schedule` picks how they interact: `OneWay`, `Staggered` (declaration order is execution
 order), `Iterative { max_iter, tol }` for strong coupling, `Multirate` for domains with very
@@ -209,7 +209,7 @@ They are listed here so it does not have to be loudly.
   platforms, optimisation levels, WebAssembly and thread counts. Use `Rng::for_index(seed, i)`,
   which gives the same value for the same index no matter what order you ask in. `Date::now`,
   `rand::thread_rng`, and reductions over unordered collections all break this.
-- **Domains do not depend on each other.** If your new physics needs to `use dualis_thermal`,
+- **Domains do not depend on each other.** If your new physics needs to `use pantometry_thermal`,
   the design is wrong — publish on a channel instead. The kernel depends on no domain either.
 - **Every public item is documented.** `#![deny(missing_docs)]` is set in all eighteen crates.
 - **MSRV is 1.78**, checked by CI.
@@ -256,7 +256,7 @@ also pass it, then go and check *that*.
   and the rules that make "add a physics" cost one crate.
 - **[README.md](README.md)** — the long version, including what is deliberately *not* here.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — the conventions, and the gate CI runs.
-- **[CLAUDE.md](CLAUDE.md)** — working on dualis rather than with it.
+- **[CLAUDE.md](CLAUDE.md)** — working on pantometry rather than with it.
 - **[RELEASING.md](RELEASING.md)** — the seventeen crates, the wheel, the seven places a version
   lives, and the DOI switch nobody has thrown yet. Read once per release and not otherwise, which is
   why it is not in `CLAUDE.md`.

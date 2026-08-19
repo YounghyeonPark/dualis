@@ -51,7 +51,7 @@ Six came from sources the agent's own instructions did not anticipate. Five from
 application into layers**: building against an API finds what is awkward, and pulling a layer out
 of one finds what was never stated. The sixth from **building the next domain**, which is the
 cheapest of the four to run — a layer that names no domain still carries assumptions about every
-domain it has met, and `dualis-scene` assumed fields were flat until one with a volume arrived.
+domain it has met, and `pantometry-scene` assumed fields were flat until one with a volume arrived.
 
 Run the first three together on anything substantial; they fan out well in parallel. Run
 `consumer-advocate` on its own, because it needs to write code and the others do not.
@@ -60,7 +60,7 @@ Run the first three together on anything substantial; they fan out well in paral
 
 `CONTRIBUTING.md` states the conventions for humans; these agents encode the same ones with the
 specific failure modes attached. If the two ever disagree, `CONTRIBUTING.md` is the source and
-the agent needs updating. `crates/dualis-world/FRICTION.md` is the standing record of what the
+the agent needs updating. `crates/pantometry-world/FRICTION.md` is the standing record of what the
 API is like from outside, and `consumer-advocate` reads it first so it does not report what is
 already known.
 

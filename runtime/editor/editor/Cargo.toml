@@ -1,6 +1,6 @@
 [package]
 name = "editor"
-description = "Edit a dualis scene beside a 3D view of it: check as you type, run, verify."
+description = "Edit a pantometry scene beside a 3D view of it: check as you type, run, verify."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,9 +8,9 @@ publish = false
 
 [dependencies]
 editor-core = { workspace = true }
-# Linked for `dualis::view::colour`: the shell draws a temperature in the colour Planck says
-# it is, which is a computed value rather than a palette. The workspace links `dualis` by
+# Linked for `pantometry::view::colour`: the shell draws a temperature in the colour Planck says
+# it is, which is a computed value rather than a palette. The workspace links `pantometry` by
 # design -- see this crate's README on why the editor may where the viewer may not.
-dualis = { workspace = true }
+pantometry = { workspace = true }
 viewer-core = { workspace = true }
 eframe = "0.31"

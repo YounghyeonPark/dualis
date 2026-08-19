@@ -1,4 +1,4 @@
-# Working on dualis
+# Working on pantometry
 
 This file is loaded every session, so it holds only what is needed *every* session. Everything read
 once — a release, a change to the bindings, a look at the viewer — lives beside its subject, and the
@@ -20,7 +20,7 @@ this gate reported a pass it had not earned — three shell guards had not.
 cost. The seventh is not a shell problem: `gh run list --limit 1` after a push returns the *previous*
 commit's run, and with `cancel-in-progress` on this workflow that run has probably just been
 **cancelled** — neither a pass nor a failure. Select a run by `headSha`. The eighth is not either, and
-points the other way: after this checkout moved from `C:\dev\dualis-core`, the gate ran test binaries
+points the other way: after this checkout moved from `C:\dev\pantometry-core`, the gate ran test binaries
 with the old path still baked in through `env!("CARGO_MANIFEST_DIR")` — a loud failure only because
 the old directory was gone; had it still existed, six tests would have **passed** against the wrong
 tree. `cargo clean` after moving a checkout.
@@ -50,7 +50,7 @@ for e in beam_hot_spot airy_pattern detector_snr room_modes melting lens_spots \
 done
 # MSRV, library only: `--exclude` needs `--workspace` beside it, and the app is not
 # held to 1.78 because nothing depends on it.
-cargo +1.78 build --locked --workspace --exclude dualis-world
+cargo +1.78 build --locked --workspace --exclude pantometry-world
 
 echo "the gate passed"     # and if this line does not appear, it did not
 ```
@@ -107,7 +107,7 @@ back.
 ## The subagent team
 
 `.claude/agents/` holds seven reviewers, each built from a defect this repository actually shipped
-rather than from a generic role. They are for developing dualis and are useless to a consumer.
+rather than from a generic role. They are for developing pantometry and are useless to a consumer.
 
 | agent | asks |
 | --- | --- |
@@ -133,10 +133,10 @@ earned and was not.
 | --- | --- |
 | [RELEASING.md](RELEASING.md) | any release. Cadence, the seven places a version lives, the crate order, the wheel, and what the pipeline has actually been run through |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | changing a test or a tolerance. The authority on the gate and on the five conventions in full |
-| [crates/dualis-world/FRICTION.md](crates/dualis-world/FRICTION.md) | changing the public API. Thirty-four findings from using the SDK as a stranger, five of them the same underlying decision |
+| [crates/pantometry-world/FRICTION.md](crates/pantometry-world/FRICTION.md) | changing the public API. Thirty-four findings from using the SDK as a stranger, five of them the same underlying decision |
 | [bindings/python/README.md](bindings/python/README.md) | touching the bindings. Its own cargo workspace, its own gate, and the two boundary decisions not to relitigate |
-| [runtime/viewer/README.md](runtime/viewer/README.md) | touching the viewer. Why it is a separate workspace and why it does not link `dualis` |
-| [runtime/editor/README.md](runtime/editor/README.md) | touching the editor. Why it is a third workspace, why it *does* link `dualis`, and the two halves the platform rules keep apart |
+| [runtime/viewer/README.md](runtime/viewer/README.md) | touching the viewer. Why it is a separate workspace and why it does not link `pantometry` |
+| [runtime/editor/README.md](runtime/editor/README.md) | touching the editor. Why it is a third workspace, why it *does* link `pantometry`, and the two halves the platform rules keep apart |
 | [.claude/agents/README.md](.claude/agents/README.md) | adding a reviewer |
 
 Three of those exist because a dependency tree does not belong in the library's lockfile. Measured:
@@ -145,13 +145,13 @@ the library resolves **12** external crates, `bindings/python` **15**, the viewe
 builds with `--locked`, and the same crates go to `wasm32` and Rust 1.78 — none of which can carry
 a GPU stack, a libpython link, or a window toolkit.
 
-`crates/dualis-world` is the fourth: an application, `publish = false`, whose purpose is to use the
+`crates/pantometry-world` is the fourth: an application, `publish = false`, whose purpose is to use the
 SDK the way a stranger would and report back. Anything you find yourself adding to it that a
 *consumer* would want is in the wrong crate.
 
 ## What is deliberately not here
 
 No GPU in the library, no implicit solvers, no mesh generation, no unstructured grids, no FEM beyond
-the trilinear element `dualis-elastic` uses. Adding physics means a new crate on the kernel, not a new
+the trilinear element `pantometry-elastic` uses. Adding physics means a new crate on the kernel, not a new
 branch inside an existing one. If a change would make the kernel know about a domain, stop and
 reconsider — see `domain-builder`, which is instructed to stop and report in exactly that case.

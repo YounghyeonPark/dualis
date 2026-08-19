@@ -1,8 +1,8 @@
-# dualis
+# pantometry
 
-[![CI](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml/badge.svg)](https://github.com/YounghyeonPark/dualis/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/dualis.svg)](https://crates.io/crates/dualis)
-[![docs.rs](https://docs.rs/dualis/badge.svg)](https://docs.rs/dualis)
+[![CI](https://github.com/YounghyeonPark/pantometry/actions/workflows/ci.yml/badge.svg)](https://github.com/YounghyeonPark/pantometry/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/pantometry.svg)](https://crates.io/crates/pantometry)
+[![docs.rs](https://docs.rs/pantometry/badge.svg)](https://docs.rs/pantometry)
 
 Physics for simulated worlds — a kernel that knows nothing about any particular
 physics, and eleven domains built on it that do: **light, heat, motion, sound, electricity,
@@ -16,8 +16,8 @@ result is reproducible bit for bit — across platforms, across optimisation lev
 WebAssembly, and under sixteen threads as readily as one.
 
 ```sh
-cargo add dualis                             # one dependency, all seventeen published crates
-pip install dualis                           # or from Python, see bindings/python
+cargo add pantometry                             # one dependency, all seventeen published crates
+pip install pantometry                           # or from Python, see bindings/python
 ```
 
 Or, in a clone of this repository:
@@ -39,15 +39,15 @@ and which rules cannot be broken without losing that property.
 > **Reading this as an AI agent, or in a hurry?** [AGENTS.md](AGENTS.md) is the whole API on
 > one page, and `cargo run --example agents_quickstart` is a runnable version of it —
 > including a deliberate 10% energy leak, so you can see what the audit says when a model is
-> wrong. Working *on* dualis rather than with it: [CLAUDE.md](CLAUDE.md).
+> wrong. Working *on* pantometry rather than with it: [CLAUDE.md](CLAUDE.md).
 
 Every claim in this workspace is checked against a closed form or against an independent
 computation rather than against an application that might be wrong in the same direction.
 Where no closed form exists, the README says so.
 
-There is now one consumer, `dualis-world`, and its first job was not to be a good application
+There is now one consumer, `pantometry-world`, and its first job was not to be a good application
 but to use the SDK the way a stranger would.
-[`crates/dualis-world/FRICTION.md`](crates/dualis-world/FRICTION.md) is what it came back with:
+[`crates/pantometry-world/FRICTION.md`](crates/pantometry-world/FRICTION.md) is what it came back with:
 **thirty-four findings, twenty-eight fixed and six argued down in writing.** The first twelve came from
 writing the application. The next four came from running the subagents that were built out of
 what the first twelve taught — and one of those is a first-order accuracy defect in the
@@ -81,52 +81,52 @@ its own scheme. There are tests for those rates now.
 
 | Crate | |
 | --- | --- |
-| `dualis-units` | Dimensional analysis. SI quantities and vectors whose dimension lives in the type, so `Length + Time` does not compile |
-| `dualis-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, parallel ensembles for Monte Carlo, closed-form rigid motion |
-| `dualis-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
-| `dualis-thermal` | Heat: lumped masses, conduction in one dimension and in three, networks of bodies joined by conductances, radiative and convective loss |
-| `dualis-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
-| `dualis-acoustic` | Sound: the wave equation on a staggered grid in one, two and three dimensions, impedance boundaries |
-| `dualis-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
-| `dualis-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature, and a **field** formulation where `I²R` is solved out of a shape rather than stated |
-| `dualis-fluid` | Incompressible Navier–Stokes by projection on a staggered grid. Poiseuille and Couette come out exact against the *discrete* profile, whose gap to the continuum is a closed form and not a tolerance; Taylor–Green checks the nonlinear term against `e^{−2νk²t}`; and momentum in a periodic box drifts by `1e-15` |
-| `dualis-em` | Maxwell's equations on a Yee grid, where `∇·B = 0` is an **identity of the update** rather than a tolerance: inject a divergence and 500 steps later it is unchanged to nine digits. Cavity resonances at second order, the leapfrog's energy swing against its own closed form, an absorbing boundary that leaves 0.149% of a pulse behind where a conductor leaves all of it, and a waveguide whose dispersion relation comes out of one march |
-| `dualis-elastic` | What a shape does under load: `∇·σ = 0` solved on trilinear elements, so a stiffness is a property of a geometry. Four moduli come out exactly — `E`, the constrained `M`, the bulk `K` and the shear `G` — and Clapeyron's `2U = Σf·u` says the discretisation is self-consistent |
-| `dualis-porous` | Flow through a packed bed: Darcy's law solved as a field, the heat the liquid carries, and the dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed and an aquifer |
-| `dualis-quantum` | A wavefunction in a well: the time-dependent Schrödinger equation, marched with the same staggered leapfrog family the acoustic domain uses — real part on integer steps, imaginary on halves — so **probability is conserved as an identity of the update**, the way `∇·B` is on the Yee grid. Eigenvalues against the discrete operator's own closed form, Gaussian spreading and Ehrenfest's theorem at second order |
-| `dualis-shape` | Designed geometry as input: an STL read and measured, and rasterised into the cells a domain fills — with a report of what the cells could **not** hold, because a rib finer than the grid does not fail, it disappears. Depends on `dualis-units` and nothing else |
-| `dualis-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
-| `dualis-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV, JSON, and **glTF** so Blender, three.js and USD tools can open a result. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
-| `dualis` | A facade over the other sixteen, and where the cross-domain integration tests live — including the three that hold two domains against each other: a Yee grid against Fresnel's algebra, a field's decay in a conductor against a lumped resistance that has no frequency in it, and a diffraction pattern against the scalar theory it converges on |
-| `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `dualis`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
+| `pantometry-units` | Dimensional analysis. SI quantities and vectors whose dimension lives in the type, so `Length + Time` does not compile |
+| `pantometry-core` | The kernel: conservation audits, fixed-step integrators, fields, shared boundaries, multi-domain scheduling, deterministic sampling, parallel ensembles for Monte Carlo, closed-form rigid motion |
+| `pantometry-optics` | Light: spectral radiometry, surface optics, dispersion, ray geometry, diffraction |
+| `pantometry-thermal` | Heat: lumped masses, conduction in one dimension and in three, networks of bodies joined by conductances, radiative and convective loss |
+| `pantometry-mechanics` | Motion under force: N-body, Barnes-Hut, penalty contact, rigid rotation |
+| `pantometry-acoustic` | Sound: the wave equation on a staggered grid in one, two and three dimensions, impedance boundaries |
+| `pantometry-molecular` | Matter atom by atom: Lennard-Jones fluids in periodic boxes, cell lists, a Langevin bath, radial distributions |
+| `pantometry-electrical` | Electricity: resistive dissipation into the heat channel, conductors whose resistance moves with temperature, and a **field** formulation where `I²R` is solved out of a shape rather than stated |
+| `pantometry-fluid` | Incompressible Navier–Stokes by projection on a staggered grid. Poiseuille and Couette come out exact against the *discrete* profile, whose gap to the continuum is a closed form and not a tolerance; Taylor–Green checks the nonlinear term against `e^{−2νk²t}`; and momentum in a periodic box drifts by `1e-15` |
+| `pantometry-em` | Maxwell's equations on a Yee grid, where `∇·B = 0` is an **identity of the update** rather than a tolerance: inject a divergence and 500 steps later it is unchanged to nine digits. Cavity resonances at second order, the leapfrog's energy swing against its own closed form, an absorbing boundary that leaves 0.149% of a pulse behind where a conductor leaves all of it, and a waveguide whose dispersion relation comes out of one march |
+| `pantometry-elastic` | What a shape does under load: `∇·σ = 0` solved on trilinear elements, so a stiffness is a property of a geometry. Four moduli come out exactly — `E`, the constrained `M`, the bulk `K` and the shear `G` — and Clapeyron's `2U = Σf·u` says the discretisation is self-consistent |
+| `pantometry-porous` | Flow through a packed bed: Darcy's law solved as a field, the heat the liquid carries, and the dissolution that rides on both. An espresso puck, and also a filter, a catalyst bed and an aquifer |
+| `pantometry-quantum` | A wavefunction in a well: the time-dependent Schrödinger equation, marched with the same staggered leapfrog family the acoustic domain uses — real part on integer steps, imaginary on halves — so **probability is conserved as an identity of the update**, the way `∇·B` is on the Yee grid. Eigenvalues against the discrete operator's own closed form, Gaussian spreading and Ehrenfest's theorem at second order |
+| `pantometry-shape` | Designed geometry as input: an STL read and measured, and rasterised into the cells a domain fills — with a report of what the cells could **not** hold, because a rib finer than the grid does not fail, it disappears. Depends on `pantometry-units` and nothing else |
+| `pantometry-scene` | Where things are and what a run looks like: placement, capture, and the shapes a view can draw. Names no domain |
+| `pantometry-view` | Drawing that: a filmstrip, a self-contained HTML report, CSV, JSON, and **glTF** so Blender, three.js and USD tools can open a result. The view is chosen by the shape of the data, never by the name of a domain. No dependencies |
+| `pantometry` | A facade over the other sixteen, and where the cross-domain integration tests live — including the three that hold two domains against each other: a Yee grid against Fresnel's algebra, a field's decay in a conductor against a lumped resistance that has no frequency in it, and a diffraction pattern against the scalar theory it converges on |
+| `bindings/python` | Python bindings, in their own cargo workspace and on PyPI as `pantometry`. SI floats at the boundary and the conservation audit as a catchable exception — the dimensional types are compile-time and cannot cross |
 | `runtime/gpu` | `Solid3D`'s stencil as a compute shader — 191× on a 64³ grid, and single precision against the domain's double, so the CPU is the reference and the difference is measured. Its own workspace |
-| `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `dualis`, so the wire format being sufficient is demonstrated rather than claimed |
-| `dualis-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with twenty-eight scenes across all eleven domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
+| `runtime/viewer` | A native window for a run: rotate, zoom, scrub. Its own workspace, because a GPU stack is 86 external crates against the library's 12 — and it depends on the run **file**, not on `pantometry`, so the wire format being sufficient is demonstrated rather than claimed |
+| `pantometry-world` | The first consumer, and not published. Worlds described as data: built, coupled over the bus, run and drawn, with twenty-eight scenes across all eleven domains that CI runs. It exists to use the SDK from outside and write down where that is awkward |
 
 The last three are the workspace's answer to the same question from three sides: what a
-simulation *is* (`dualis-scene`), what a picture of one *is* (`dualis-view`), and what it feels
-like to use both from outside (`dualis-world`). The first two are libraries because a consumer
+simulation *is* (`pantometry-scene`), what a picture of one *is* (`pantometry-view`), and what it feels
+like to use both from outside (`pantometry-world`). The first two are libraries because a consumer
 who can state a simulation should not have to write a plotting stack to see it.
 
 ```text
-dualis-units       no dependencies but glam and serde
-dualis-core        depends on units                     ── the kernel
-dualis-optics      depends on core     ─┐
-dualis-thermal     depends on core      │
-dualis-mechanics   depends on core      ├─  one crate per physics, and
-dualis-acoustic    depends on core      │   none of them knows another
-dualis-molecular   depends on core      │
-dualis-electrical  depends on core      │
-dualis-elastic     depends on core      │
-dualis-em          depends on core      │
-dualis-fluid       depends on core      │
-dualis-porous      depends on core      │
-dualis-quantum     depends on core     ─┘
-dualis-shape       depends on units only                ── designed geometry in
-dualis-scene       depends on core                      ── where things are
-dualis-view        depends on scene                     ── how to draw that
-dualis             depends on all of them
-dualis-world       depends on the facade, and nothing depends on it
+pantometry-units       no dependencies but glam and serde
+pantometry-core        depends on units                     ── the kernel
+pantometry-optics      depends on core     ─┐
+pantometry-thermal     depends on core      │
+pantometry-mechanics   depends on core      ├─  one crate per physics, and
+pantometry-acoustic    depends on core      │   none of them knows another
+pantometry-molecular   depends on core      │
+pantometry-electrical  depends on core      │
+pantometry-elastic     depends on core      │
+pantometry-em          depends on core      │
+pantometry-fluid       depends on core      │
+pantometry-porous      depends on core      │
+pantometry-quantum     depends on core     ─┘
+pantometry-shape       depends on units only                ── designed geometry in
+pantometry-scene       depends on core                      ── where things are
+pantometry-view        depends on scene                     ── how to draw that
+pantometry             depends on all of them
+pantometry-world       depends on the facade, and nothing depends on it
 ```
 
 **The kernel must never depend on a domain.** If a new physics needs the kernel
@@ -134,10 +134,10 @@ changed, the kernel was wrong — that rule is what makes "add sound, add fluids
 matter of writing a crate rather than editing this one.
 
 **And the layers above must not know one either**, which is the same rule from the other side.
-`dualis-scene` asks each domain what it *offers* — a field, a set of bodies, some readings — and
-`dualis-view` dispatches on the shape of what came back. Neither names a domain, and neither
-merely claims that: `dualis-scene`'s test defines a physics inside the test file and captures it
-whole, and `dualis-view`'s tests are driven by frames written out by hand, because a test that
+`pantometry-scene` asks each domain what it *offers* — a field, a set of bodies, some readings — and
+`pantometry-view` dispatches on the shape of what came back. Neither names a domain, and neither
+merely claims that: `pantometry-scene`'s test defines a physics inside the test file and captures it
+whole, and `pantometry-view`'s tests are driven by frames written out by hand, because a test that
 ran a real scene could not tell *a heatmap because the data is a 2D grid* apart from *a heatmap
 because that domain was a room*.
 
@@ -289,8 +289,8 @@ harmonic oscillator against the closed-form energy.
 ## A taste
 
 ```rust
-use dualis_optics::{Material, Spectrum, SurfaceFinish, fresnel_reflectance};
-use dualis_units::Length;
+use pantometry_optics::{Material, Spectrum, SurfaceFinish, fresnel_reflectance};
+use pantometry_units::Length;
 
 // Reflectance is not a setting. It follows from the refractive indices.
 let bk7 = Material::from_catalog("N-BK7").unwrap();
@@ -310,14 +310,14 @@ assert!(tungsten.at(Length::nm(450.0)) < 0.45 * tungsten.at(Length::nm(650.0)));
 The dimensions carry the coupling between domains too, and check it:
 
 ```rust
-use dualis_units::{Area, HeatCapacity, Irradiance, Length, Mass, Power, SpecificHeat, Temperature};
+use pantometry_units::{Area, HeatCapacity, Irradiance, Length, Mass, Power, SpecificHeat, Temperature};
 
 let absorbed: Power = Irradiance::mw_per_cm2(50.0)
     * (Length::mm(10.0) * Length::mm(10.0))   // an Area
     * 0.02;                                   // what SurfaceOptics::absorptance returns
 
 let capacity: HeatCapacity = Mass::g(2.0) * SpecificHeat::j_per_kg_k(858.0);
-let rise: Temperature = (absorbed * dualis_units::Time::s(1.0)) / capacity;
+let rise: Temperature = (absorbed * pantometry_units::Time::s(1.0)) / capacity;
 // 0.58 mK, and every step of that chain landed on the dimension that names it.
 ```
 
@@ -362,10 +362,10 @@ Plotting has no dependency. SVG is text, so it is a `format!` and a file write �
 encoder, no fonts, and it opens by double-click. `examples/common/svg.rs` is about three
 hundred and fifty lines and is the right size for this job; when it stops being, the answer is
 a crate rather than a bigger version of it. That turned out to be a prediction rather than a
-plan: `dualis-world` had to write its own renderer, because this one lives under `examples/`
+plan: `pantometry-world` had to write its own renderer, because this one lives under `examples/`
 where no other crate can reach it — `FRICTION.md` finding 4.
 
-`dualis-view` is that crate now, and it does **not** close finding 4, which is worth being
+`pantometry-view` is that crate now, and it does **not** close finding 4, which is worth being
 precise about. It draws a `Frame` — a captured instant of a running simulation. An example plots
 an encircled-energy curve or an MTF against spatial frequency, which is an arbitrary pair of
 axes and not a frame of anything. The two want different interfaces, so the duplication is still
@@ -380,7 +380,7 @@ and the pair has said more about the interface than either could alone. See the 
 
 An actual visualiser has since said something neither could: `ScalarField` is the right
 *shape* and is unreachable through the thing you have. A renderer holds `&dyn Domain` and
-there is no way to ask it for a `&dyn ScalarField`, so `dualis-world` downcasts to concrete
+there is no way to ask it for a `&dyn ScalarField`, so `pantometry-world` downcasts to concrete
 types instead and knows every domain by name — which is exactly what the interface existed to
 avoid. `FRICTION.md` finding 3.
 
@@ -464,7 +464,7 @@ velocity at `t = −h/2`, so the first velocity update travelled a whole step wh
 condition entitled it to half. `O(h)`, permanent, and `h` follows `dx` — first order again,
 from a scheme whose interior and whose walls were now both second order.
 
-Found the same way, by the rate. Not by anything in the library: it took `dualis-world`, the
+Found the same way, by the rate. Not by anything in the library: it took `pantometry-world`, the
 first consumer, checking a released mode against `|cos(2πft)|`. The worst departure over 20 ms
 went from 0.0528 to 0.00238 at 31 cells once the first update took half a step.
 
@@ -490,7 +490,7 @@ now measured against the released state as its datum, with the difference report
 ## The domain whose answers are distributions
 
 Every domain but one is checked against a value: a Fresnel coefficient, a mode frequency, a
-temperature rise. `dualis-molecular` mostly cannot be. A hundred atoms in a box are chaotic by
+temperature rise. `pantometry-molecular` mostly cannot be. A hundred atoms in a box are chaotic by
 construction — perturb one coordinate in its last bit and the trajectories separate completely
 inside a few hundred steps — so "close enough" is not available as a notion, and the physics
 lives in what the trajectory averages to.
@@ -618,11 +618,11 @@ would either fail on correct code or hide a real leak.
 ## What is not here
 
 No scene *graph* — no parent-child transform hierarchy, no culling, no traversal order. What
-there is, is flat: `dualis-scene` gives each domain a `Pose` in world coordinates and captures
+there is, is flat: `pantometry-scene` gives each domain a `Pose` in world coordinates and captures
 what they hold. A hierarchy is what you want when placements are relative and animated, and
 nothing here has needed one.
 
-The renderer is deliberately modest. `dualis-view` draws a filmstrip, a heatmap, a profile, a
+The renderer is deliberately modest. `pantometry-view` draws a filmstrip, a heatmap, a profile, a
 point scene — depth-sorted back to front, which is painter's algorithm on a 2D canvas, with no
 depth buffer and no shading — and a **raycast** of a 3D field, composited front to back and
 rotatable, beside a montage of every slice. The render shows shape and cannot be read for values;
@@ -631,7 +631,7 @@ rotate and scrolled to zoom, and that is the whole camera model. It is enough to
 simulation did what you expected, and it is not a visualisation package. The JSON export exists
 for when it is not enough.
 
-The JSON scene *format* is still `dualis-world`'s and not the library's, which is why that crate
+The JSON scene *format* is still `pantometry-world`'s and not the library's, which is why that crate
 is unpublished. A file format is a compatibility promise, and this one is not ready to make one:
 it renamed a field once already and nothing failed, because serde discards unknown keys by
 default — which is how `deny_unknown_fields` came to be on every type in it.
@@ -729,17 +729,17 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 cargo test --locked --workspace
 cargo test --locked --workspace --release
-cargo build --locked --workspace --exclude dualis-world --target wasm32-unknown-unknown
-cargo test  --locked --workspace --exclude dualis-world --target wasm32-wasip1   # wasmtime
-cargo +1.78 build --locked --workspace --exclude dualis-world
+cargo build --locked --workspace --exclude pantometry-world --target wasm32-unknown-unknown
+cargo test  --locked --workspace --exclude pantometry-world --target wasm32-wasip1   # wasmtime
+cargo +1.78 build --locked --workspace --exclude pantometry-world
 cargo deny check
 ```
 
 The three `--exclude`s are deliberate: WebAssembly, determinism and the 1.78 floor are
-promises the *library* makes to the people who depend on it, and `dualis-world` is an
+promises the *library* makes to the people who depend on it, and `pantometry-world` is an
 unpublished application with no dependents. CI additionally *runs* every example and every
 scene rather than only compiling them — see [Examples](#examples) and
-`crates/dualis-world/scenes/`.
+`crates/pantometry-world/scenes/`.
 
 Two of those exist to enforce claims rather than to catch typos. The test suite runs
 on Linux, macOS and Windows because `rng::tests::the_stream_is_pinned` asserts a
@@ -761,7 +761,7 @@ died with `failed to parse lock file` before compiling anything, because `Cargo.
 is format version 4 and cargo could not read that until 1.78. The newest language
 feature in the workspace is `let ... else` from 1.65, so the source would go lower.
 
-Which floor applies depends on who is asking. A consumer depending on `dualis-optics`
+Which floor applies depends on who is asking. A consumer depending on `pantometry-optics`
 never receives this lockfile, so their constraint is the source and its dependencies.
 CI passes `--locked` deliberately, so its constraint is the lockfile format. The
 declared `rust-version` follows CI, because it is the stronger of the two and a
@@ -773,12 +773,12 @@ If this software contributes to work you publish, please cite it. `CITATION.cff`
 and GitHub renders it as a **Cite this repository** button; the same content as BibTeX:
 
 ```bibtex
-@software{park_dualis,
+@software{park_pantometry,
   author  = {Park, Younghyeon},
-  title   = {dualis: physics for simulated worlds, checked against closed forms},
+  title   = {pantometry: physics for simulated worlds, checked against closed forms},
   version = {0.14.0},
   year    = {2026},
-  url     = {https://github.com/YounghyeonPark/dualis},
+  url     = {https://github.com/YounghyeonPark/pantometry},
   note    = {ORCID: 0000-0002-4733-5049},
   license = {MIT OR Apache-2.0}
 }
@@ -826,10 +826,10 @@ without any additional terms or conditions.
 Every dependency is permissive too, and that is checked rather than remembered: `deny.toml`
 holds an allow-list and CI fails on anything outside it. Twelve external crates at the time of
 writing, of which three reach a *published* artifact — `glam`, `serde` and `serde_core`, all under
-the same `MIT OR Apache-2.0`. `dualis-world` also links `serde_json` and its three
+the same `MIT OR Apache-2.0`. `pantometry-world` also links `serde_json` and its three
 transitive crates, but it is not published. The rest are compile-time or test-only.
 
-Two crates were added in 0.9.0 and the count did not move. `dualis-view` has **no** dependency
-at all beyond `dualis-scene`: SVG and HTML are text, so a renderer is a `format!` and a file
+Two crates were added in 0.9.0 and the count did not move. `pantometry-view` has **no** dependency
+at all beyond `pantometry-scene`: SVG and HTML are text, so a renderer is a `format!` and a file
 write, and the alternative would have put a plotting stack into the tree of every consumer who
 wanted a picture.

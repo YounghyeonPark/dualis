@@ -1,4 +1,4 @@
-# The shape of dualis
+# The shape of pantometry
 
 The goal is to reproduce physical law in three dimensions, and to do it in a structure that can
 accept physics nobody has written yet without the parts already written having to change.
@@ -19,25 +19,25 @@ promise dates.
     ┌─────────────────────────────────────────────────────────────┐
     │  ANALYSIS      what a person or an agent asks of a run       │
     │                cameras · 3D · 2D · graphs · measurements     │
-    │                                              `dualis-view`   │
+    │                                              `pantometry-view`   │
     └───────────────────────────▲─────────────────────────────────┘
                                 │  reads
     ┌───────────────────────────┴─────────────────────────────────┐
     │  SCENE         where things are, and how they meet           │
     │                placement · interfaces · one clock            │
-    │                                             `dualis-scene`   │
+    │                                             `pantometry-scene`   │
     └───────────────────────────▲─────────────────────────────────┘
                                 │  reads
     ┌───────────────────────────┴─────────────────────────────────┐
     │  PHYSICS       what evolves, and what it conserves           │
     │                the kernel, and one crate per physics         │
-    │                            `dualis-core` + ten domain crates │
+    │                            `pantometry-core` + ten domain crates │
     └───────────────────────────▲─────────────────────────────────┘
                                 │  fills
     ┌───────────────────────────┴─────────────────────────────────┐
     │  INPUT         what a person designed, made into cells       │
     │                a mesh · a rasterisation · what it lost       │
-    │                                             `dualis-shape`   │
+    │                                             `pantometry-shape`   │
     └─────────────────────────────────────────────────────────────┘
 
 As of 0.9.0 the upper three are crates on crates.io. Before that the top two lived inside an
@@ -53,14 +53,14 @@ through it, and the moment that is possible the crate split stops meaning anythi
 A domain owns state and advances it. It declares what it conserves, and it meets other domains
 only on the `Exchange`, which carries **amounts** and not state.
 
-The kernel — `dualis-core` — knows conservation, integration, scheduling, sampling and boundaries.
+The kernel — `pantometry-core` — knows conservation, integration, scheduling, sampling and boundaries.
 It knows no physics. That is the rule that makes the goal reachable at all: light, heat, motion,
 sound, matter and electricity have each arrived as a crate, and none of them required the kernel
 to learn anything about them.
 
 ### Layer 2 — scene
 
-Where things are, and how they meet. `dualis-scene`.
+Where things are, and how they meet. `pantometry-scene`.
 
 It owns three things:
 
@@ -78,7 +78,7 @@ inside the test file and captures it whole.
 
 ### Layer 3 — analysis
 
-What a person asks of a run. `dualis-view`: a filmstrip as SVG, a self-contained HTML report,
+What a person asks of a run. `pantometry-view`: a filmstrip as SVG, a self-contained HTML report,
 a CSV of every domain's scalars, and the frames as JSON.
 
 The rule here is proven and should be extended rather than replaced: **views dispatch on the
@@ -96,13 +96,13 @@ per-frame normalisation is what you get if you do not think about it.
 
 ### Layer 0 — input
 
-`dualis-shape`, and it is under the physics rather than beside it. Every domain
+`pantometry-shape`, and it is under the physics rather than beside it. Every domain
 here takes a **structured grid**; every file a person designs is a **surface**. This is the bridge,
 and it is the answer to a question the other three layers cannot be asked: *where does the geometry
 come from?* Until now, from a closure written by hand, which is a fine answer for a test and no
 answer at all for someone who has a part.
 
-It depends on `dualis-units` and nothing else in the workspace, and **no domain depends on it**. It
+It depends on `pantometry-units` and nothing else in the workspace, and **no domain depends on it**. It
 produces a predicate, `|i, j, k| voxels.contains(i, j, k)`; a domain's `fill` consumes one. That is
 the entire coupling, and it is why adding geometry cost the domains nothing — `Solid3D::fill`,
 `Block::fill` and `Waves::fill` already had exactly that signature for other reasons.
@@ -132,17 +132,17 @@ The physics layer is eleven crates deep and dimensionally uneven. This is the ho
 
 | crate | space it lives in | for the goal |
 | --- | --- | --- |
-| `dualis-mechanics` | **3D** — bodies, contacts, rigid rotation | done |
-| `dualis-molecular` | **3D** — atoms in a periodic box | done |
-| `dualis-optics` | **3D rays**; no volumetric field | rays done, fields missing |
-| `dualis-acoustic` | **3D** `Hall`; **2D** `Room`; **1D** `Tube` | done |
-| `dualis-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
-| `dualis-electrical` | **3D** `Conductor`; `Winding` is a lumped `I²R` | done |
-| `dualis-porous` | **3D** — Darcy flow, advected heat and dissolution in a packed bed | done |
-| `dualis-elastic` | **3D** — linear elasticity on trilinear elements, statics and waves | done |
-| `dualis-em` | **3D** — Maxwell on a Yee grid, conducting walls | done |
-| `dualis-fluid` | **3D** — incompressible Navier–Stokes by projection | done |
-| `dualis-quantum` | **1D** `Well` — a wavefunction between walls | arrived one-dimensional, as every wave here did; higher dimensions are cells and cost, not new physics |
+| `pantometry-mechanics` | **3D** — bodies, contacts, rigid rotation | done |
+| `pantometry-molecular` | **3D** — atoms in a periodic box | done |
+| `pantometry-optics` | **3D rays**; no volumetric field | rays done, fields missing |
+| `pantometry-acoustic` | **3D** `Hall`; **2D** `Room`; **1D** `Tube` | done |
+| `pantometry-thermal` | **3D** `Solid3D`; **1D** `Bar1D`; `ThermalNetwork` is a graph with no space | conduction done |
+| `pantometry-electrical` | **3D** `Conductor`; `Winding` is a lumped `I²R` | done |
+| `pantometry-porous` | **3D** — Darcy flow, advected heat and dissolution in a packed bed | done |
+| `pantometry-elastic` | **3D** — linear elasticity on trilinear elements, statics and waves | done |
+| `pantometry-em` | **3D** — Maxwell on a Yee grid, conducting walls | done |
+| `pantometry-fluid` | **3D** — incompressible Navier–Stokes by projection | done |
+| `pantometry-quantum` | **1D** `Well` — a wavefunction between walls | arrived one-dimensional, as every wave here did; higher dimensions are cells and cost, not new physics |
 
 Two observations follow, and they point in opposite directions.
 
@@ -196,7 +196,7 @@ Placement has two uses, and they must not share a type:
   assigns it; a domain reads only its own coordinates.
 - **Presentational placement** — a position given to something that has none, purely so a viewer
   can draw it. A thermal network node on a diagram. This is `Placement::marker`, and it is
-  **built**, in `dualis-scene`: above the kernel, above every domain, where no physics can reach
+  **built**, in `pantometry-scene`: above the kernel, above every domain, where no physics can reach
   it.
 
 Keeping them apart is structural rather than a naming convention. They are separated by *which
@@ -220,7 +220,7 @@ These are not style. Each one is what makes some part of the goal reachable.
    without this breaking, which is the evidence that the split is real.
 3. **The arrows point one way.** Analysis → scene → physics. A domain that can see the scene can
    see another domain through it. This is enforced by cargo rather than by discipline now that
-   each layer is a crate: `dualis-scene` does not appear in any domain's manifest, so a domain
+   each layer is a crate: `pantometry-scene` does not appear in any domain's manifest, so a domain
    reaching upward does not compile.
 4. **Conservation is audited, not assumed.** The audit is what makes an unfamiliar coupling
    trustworthy, which matters more as the number of domains grows, not less.
@@ -243,16 +243,16 @@ different quantities, the second separates domains carrying the same one.
    no scale, no shear — so two things can be positioned relative to each other. The
    *presentational* half is still missing on purpose and waits for the scene crate, where the
    physics cannot reach it.
-2. ~~**Scene and analysis as libraries.**~~ Done. Both were inside `dualis-world`, which is
+2. ~~**Scene and analysis as libraries.**~~ Done. Both were inside `pantometry-world`, which is
    `publish = false`, so a consumer who could state a simulation and run it could reach neither
    the shape of the answer nor any view of it.
 
-   `dualis-scene` is layer 2: `Placement`, `Extent`, `Frame`, `Panel`, `capture`,
-   `settle_framing`. `dualis-view` is layer 3: a filmstrip, a self-contained HTML report, CSV and
+   `pantometry-scene` is layer 2: `Placement`, `Extent`, `Frame`, `Panel`, `capture`,
+   `settle_framing`. `pantometry-view` is layer 3: a filmstrip, a self-contained HTML report, CSV and
    JSON, with the view chosen by the shape of the data.
 
-   **Neither names a domain, and both prove it by construction.** `dualis-scene`'s test defines a
-   physics inside the test file and captures it whole; `dualis-view`'s tests are driven by frames
+   **Neither names a domain, and both prove it by construction.** `pantometry-scene`'s test defines a
+   physics inside the test file and captures it whole; `pantometry-view`'s tests are driven by frames
    written out by hand, which is the only way to tell "a heatmap because the data is a 2D grid"
    apart from "a heatmap because that domain was a room".
 
@@ -262,7 +262,7 @@ different quantities, the second separates domains carrying the same one.
    everything, and each is a thing the *kernel* was missing rather than an invention of the
    layers above it.
 
-   What is left in `dualis-world` is what an application actually is: a file format, the domain
+   What is left in `pantometry-world` is what an application actually is: a file format, the domain
    types that format names, and one place saying how far each field extends.
 3. ~~**3D field domains.**~~ Done. `Solid3D` is conduction through a block — a seven-point
    stencil, insulated faces, `dx²/6α`, checked against the exact eigenvalue of its own discrete
@@ -270,8 +270,8 @@ different quantities, the second separates domains carrying the same one.
    `dx/(c√3)`, checked against the rigid-wall mode frequencies and a second-order convergence
    rate measured across three doublings.
 
-   Nine of the eleven domains are three-dimensional now. What is left is `dualis-optics`, whose rays
-   are already 3D and whose *fields* are not — and gap 4 below, which closed `dualis-electrical`,
+   Nine of the eleven domains are three-dimensional now. What is left is `pantometry-optics`, whose rays
+   are already 3D and whose *fields* are not — and gap 4 below, which closed `pantometry-electrical`,
    is why this sentence used to say eight.
 
    Building the first one **found a gap in the layer above it**, which is what a first
@@ -280,7 +280,7 @@ different quantities, the second separates domains carrying the same one.
    the scene format. `Extent::samples` was a pair and the sampler built its
    position as `(u, v, 0)`, so a solid would have been captured as its `z = 0` face — silently,
    because a slice of a block is a perfectly plausible picture of a block. Nothing in
-   `dualis-scene` could have noticed on its own; every field it had ever been handed was flat.
+   `pantometry-scene` could have noticed on its own; every field it had ever been handed was flat.
    `samples` is a triple now, `PanelData::Field` carries `nz`, and the type system made all three
    view sites decide what to do about it.
 4. ~~**A field formulation of electricity.**~~ Done. `Conductor` solves `∇·(σ∇φ) = 0` by
@@ -318,15 +318,15 @@ different quantities, the second separates domains carrying the same one.
    that accused it would be the wrong check.
 6. **A renderer with depth.** Partly answered, and the answer turned out not to be a depth
    buffer. Content came first, as this list said it should: three domains produce volumes now, and
-   what a volume wants is not occlusion but **integration along a ray**. `dualis-view` raycasts a
+   what a volume wants is not occlusion but **integration along a ray**. `pantometry-view` raycasts a
    3D field — trilinear sampling, front-to-back compositing, rotatable — beside the slice montage,
    because a render shows shape and cannot be read for values while a montage is the reverse.
 
    Depth buffering is still absent and still not obviously needed. Bodies are points, which
    painter's algorithm sorts correctly, and a field is composited rather than occluded. It becomes
    worth doing when something here has *surfaces* — a mesh, an isosurface — and nothing does.
-   `dualis-shape` now reads meshes but does not hand one to the view, so this is unchanged.
-7. **Geometry from a designed file.** Done as far as one object goes: `dualis-shape` reads an STL,
+   `pantometry-shape` now reads meshes but does not hand one to the view, so this is unchanged.
+7. **Geometry from a designed file.** Done as far as one object goes: `pantometry-shape` reads an STL,
    measures it, and rasterises it into the predicate a domain's `fill` already took. Nothing in the
    physics changed.
 
@@ -381,7 +381,7 @@ different quantities, the second separates domains carrying the same one.
      *on* a layer is written and there is no other way to mean it". Inventing one here would have
      been a second answer to a question this format had already answered.
    - ~~**Nothing chooses the cell size.**~~ Done, and without the guess this entry was worried
-     about. `dualis_world::fit` **rasterises every candidate** and prints what each one cost —
+     about. `pantometry_world::fit` **rasterises every candidate** and prints what each one cost —
      filled cells, volume error, boundary fraction, thin runs, features below the cell, undecidable
      rows — so the numbers are measurements and the only judgement left is which row to recommend.
      That rule is one sentence: the coarsest grid on which every part is present, nothing was
@@ -406,13 +406,13 @@ different quantities, the second separates domains carrying the same one.
 
 Beyond these, the physics itself is open-ended, and two of the three that list named are done.
 
-**Elasticity** is `dualis-elastic`: the third elliptic domain and the first whose unknown is a
-vector. **Electromagnetism** is `dualis-em`: Maxwell on a Yee grid, which is the second hyperbolic
+**Elasticity** is `pantometry-elastic`: the third elliptic domain and the first whose unknown is a
+vector. **Electromagnetism** is `pantometry-em`: Maxwell on a Yee grid, which is the second hyperbolic
 domain and the first to carry a constraint — `∇·B = 0` — that the update preserves as an *identity*
 rather than to a tolerance. Neither needed the kernel or either layer to change at all, which is
 the claim rule 4 makes and the ninth time it has held.
 
-**Fluid dynamics** is `dualis-fluid`, and it was the hardest of the three to make checkable for
+**Fluid dynamics** is `pantometry-fluid`, and it was the hardest of the three to make checkable for
 the reason predicted: few exact solutions, schemes that trade stability against diffusion, and "it
 looks like a fluid" as the easiest wrong answer in computational physics to accept. It is built
 around the three that exist — Poiseuille, Couette and Taylor–Green — each chosen to be blind to a
@@ -428,7 +428,7 @@ What was open was not a list of missing physics but a list of missing *depth* in
 that list is closed too. All three entries were the second half of a crate that already existed, and
 none of them cost a new one.
 
-**Small-strain** was the last, and the answer turned out not to be finite strain. `dualis-elastic` was
+**Small-strain** was the last, and the answer turned out not to be finite strain. `pantometry-elastic` was
 static — `∇·σ = 0`, with a `density` field its own documentation called unused — so the missing half
 was **inertia**, not large deformation. `Waves` is `ρü = ∇·σ` on the same trilinear element, marched
 with central differences and a lumped mass, and it is checked against two exact speeds where the
@@ -564,8 +564,8 @@ physics. There are three of those now:
   wavelength to 0.0057 at twelve, a factor of 48. The value is knowing *where* a closed form is
   valid, which is worth as much as the closed form.
 
-**`dualis-optics` having rays and no fields is the one already answered**, and not by adding fields
-to it. `dualis-em` *is* the field formulation, and `crates/dualis/tests/fields_and_rays.rs` is where
+**`pantometry-optics` having rays and no fields is the one already answered**, and not by adding fields
+to it. `pantometry-em` *is* the field formulation, and `crates/pantometry/tests/fields_and_rays.rs` is where
 the two have to agree: a Yee grid and Fresnel's algebra, sharing no code and not even depending on
 each other, land on the same reflectance to 0.5% at eighty cells per wavelength, converging at
 second order. That is the shape the rest of this list wants — not a domain absorbing another's job,
@@ -604,7 +604,7 @@ python bindings 15, and a wgpu stack **86**. `runtime/viewer` is the first of th
 
 And on the rest, the recommendation is not to build them. Omniverse and Isaac Sim exist and are
 enormous; what this workspace has that they do not is physics that is audited, deterministic and
-checked against closed forms. So the move is to be *reachable from* them — `dualis_view::gltf`
+checked against closed forms. So the move is to be *reachable from* them — `pantometry_view::gltf`
 does that in a few hundred lines and no dependency, and reaches Blender, three.js and every USD
 pipeline. A USD writer is the next rung, and only worth it if the readers really are Omniverse.
 
@@ -612,13 +612,13 @@ pipeline. A USD writer is the next rung, and only worth it if the readers really
 
 | | |
 | --- | --- |
-| a viewer | `runtime/viewer` — a wgpu window that reads the run **file** and does not link `dualis` |
-| export | `dualis_view::gltf` — no dependency, reaches Blender, three.js and USD tools |
+| a viewer | `runtime/viewer` — a wgpu window that reads the run **file** and does not link `pantometry` |
+| export | `pantometry_view::gltf` — no dependency, reaches Blender, three.js and USD tools |
 | GPU physics | `runtime/gpu` — 191× at 64³, single precision, CPU as the reference |
 | an editor | a skeleton, at `runtime/editor`: the scene's JSON checked as you type beside a wireframe of every placed extent, run and verify as buttons, `viewer-core`'s camera. The platform section below is what it grows into, under whose rules |
 
 **The editor was last for a reason that is now gone.** An editor writes files, and the scene
-format is `dualis-world`'s, which is `publish = false` precisely because a file format is a
+format is `pantometry-world`'s, which is `publish = false` precisely because a file format is a
 compatibility promise this one was not ready to make — it had already changed under its own users
 once, silently, when `mode` became `release`.
 
@@ -635,7 +635,7 @@ typing, and CI runs it over every scene so it is not the one entry point nothing
 
 What is left for an editor is a GUI, and that is a product decision rather than an architectural
 one. The format is ready to be edited — and `runtime/editor` is the first GUI over it: a third
-workspace, linking `dualis` where the viewer deliberately does not, reusing `viewer-core`'s
+workspace, linking `pantometry` where the viewer deliberately does not, reusing `viewer-core`'s
 camera rather than writing that arithmetic a third time, and split into a GUI-free
 `editor-core` (checked, placed, run, verified — tested headlessly) and a shell that paints only
 shapes. The platform section below is the set of rules it was built under.
@@ -648,7 +648,7 @@ The section above says what not to build and where to be reachable instead, and 
 complete for everything an external tool can express. **Most of what this workspace holds, no
 external tool can express.** There is no USD schema for a `Violation` — nor for a `Ledger`, an
 impedance boundary, a multirate schedule, a radial distribution function, a mode shape, a
-spectrum, a Biot number or a `Loss` report. Subtract geometry and appearance from what dualis
+spectrum, a Biot number or a `Loss` report. Subtract geometry and appearance from what pantometry
 models and nearly everything left has no authoring or inspection surface anywhere. Interop cannot
 reach that; only a native platform can — authoring the scene format, running it, inspecting the
 result, and verifying it.
@@ -673,14 +673,14 @@ the platform's specification rather than a feature backlog:
   different fact from a pass.
 
 Every one of these needs *reruns* — a second resolution, a halved window — so a tool that only
-reads a run file cannot do it. The platform links `dualis` where the viewer deliberately does
+reads a run file cannot do it. The platform links `pantometry` where the viewer deliberately does
 not, and that is the structural reason the panel is native: an incumbent without the audit and
 the determinism underneath cannot build it. Determinism adds one thing free of charge: a run
 digest, so "this result reproduces bit for bit on any machine" is a checkable fact on a report
 rather than a claim. And where a run stands beside a measured system — the digital-twin case —
 the measurement takes the closed form's seat, and the same battery is the comparison.
 
-Of the platform's verbs, all three exist inside `dualis-world`: `--check` parses and builds
+Of the platform's verbs, all three exist inside `pantometry-world`: `--check` parses and builds
 without running, reporting `file:line:column`; a scene runs to a file; and `verify` runs the
 battery above — built before any GUI, because a CLI that earns trust is the platform with the
 smallest possible surface. Its maiden run did what the battery is for: the default scene's peak
@@ -690,7 +690,7 @@ contaminant the battery's own documentation names, found in the first file point
 
 ### The role boundary: the format graduates, the stranger remains
 
-`dualis-world` holds three roles today, and they pull apart. It is the stranger — the consumer
+`pantometry-world` holds three roles today, and they pull apart. It is the stranger — the consumer
 whose naivety produces `FRICTION.md`, which requires it to stay unpublished. It owns the scene
 format. And it is the runtime that builds, runs and draws what the format states. The moment a
 platform exists, the second and third are product, and a product cannot be played by an actor
@@ -700,19 +700,19 @@ The resolution is the move already made at 0.9.0, when scene and view left this 
 **the format and its builder graduate into a published crate, and the platform and the CLI both
 consume it.** One schema, two front ends, no forks. That crate is the one place above the domains
 allowed to name them — it is the composition root, which is already true today inside
-`dualis-world` rather than a permission being invented.
+`pantometry-world` rather than a permission being invented.
 
 ### Three rules, so the platform does not undo the library
 
 1. **Its own workspace.** Measured three times now: the library resolves 12 external crates, the
    python bindings 15, the viewer's wgpu stack 86 — and a GUI stack is heavier than a viewer's.
    The library's lockfile, licence gate, WebAssembly and MSRV promises cannot carry it. Unlike
-   the viewer it links `dualis`, because it has to run things; the rendering half is
+   the viewer it links `pantometry`, because it has to run things; the rendering half is
    `viewer-core`, reused rather than rewritten.
 
 2. **The inspection half must not enumerate domains.** A panel hard-coded per domain means the
    eleventh physics costs a platform edit, and the property this document exists to protect is
-   lost one layer up — the bottleneck has moved, not gone. The mechanism is the one `dualis-view`
+   lost one layer up — the bottleneck has moved, not gone. The mechanism is the one `pantometry-view`
    already proves: dispatch on the shape of the data. A new domain offering an existing shape is
    drawn for free; a genuinely new shape costs one panel *kind*. The authoring half is different —
    it is the composition root and names domains — and the difference stays structural for the
@@ -740,7 +740,7 @@ allowed to name them — it is the composition root, which is already true today
    demo, which is a thing that looks like the product and answers a slightly different question.
    The general form is worth keeping: **an interface that names a location has assumed a machine.**
 
-   [`Parts`]: crates/dualis-world/src/lib.rs
+   [`Parts`]: crates/pantometry-world/src/lib.rs
 
 ---
 

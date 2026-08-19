@@ -3,178 +3,6 @@
 version = 4
 
 [[package]]
-name = "dualis"
-version = "0.15.0"
-dependencies = [
- "dualis-acoustic",
- "dualis-core",
- "dualis-elastic",
- "dualis-electrical",
- "dualis-em",
- "dualis-fluid",
- "dualis-mechanics",
- "dualis-molecular",
- "dualis-optics",
- "dualis-porous",
- "dualis-quantum",
- "dualis-scene",
- "dualis-shape",
- "dualis-thermal",
- "dualis-units",
- "dualis-view",
-]
-
-[[package]]
-name = "dualis-acoustic"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-core"
-version = "0.15.0"
-dependencies = [
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-elastic"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-electrical"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-em"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-fluid"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-mechanics"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-molecular"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-optics"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-porous"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-py"
-version = "0.15.0"
-dependencies = [
- "dualis",
- "pyo3",
-]
-
-[[package]]
-name = "dualis-quantum"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
-]
-
-[[package]]
-name = "dualis-scene"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-shape"
-version = "0.15.0"
-dependencies = [
- "dualis-units",
- "glam",
-]
-
-[[package]]
-name = "dualis-thermal"
-version = "0.15.0"
-dependencies = [
- "dualis-core",
- "dualis-units",
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-units"
-version = "0.15.0"
-dependencies = [
- "glam",
- "serde",
-]
-
-[[package]]
-name = "dualis-view"
-version = "0.15.0"
-dependencies = [
- "dualis-scene",
-]
-
-[[package]]
 name = "glam"
 version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,6 +28,178 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "pantometry"
+version = "0.16.0"
+dependencies = [
+ "pantometry-acoustic",
+ "pantometry-core",
+ "pantometry-elastic",
+ "pantometry-electrical",
+ "pantometry-em",
+ "pantometry-fluid",
+ "pantometry-mechanics",
+ "pantometry-molecular",
+ "pantometry-optics",
+ "pantometry-porous",
+ "pantometry-quantum",
+ "pantometry-scene",
+ "pantometry-shape",
+ "pantometry-thermal",
+ "pantometry-units",
+ "pantometry-view",
+]
+
+[[package]]
+name = "pantometry-acoustic"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-core"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-elastic"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-electrical"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-em"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-fluid"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-mechanics"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-molecular"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-optics"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-porous"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-py"
+version = "0.16.0"
+dependencies = [
+ "pantometry",
+ "pyo3",
+]
+
+[[package]]
+name = "pantometry-quantum"
+version = "0.16.0"
+dependencies = [
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-scene"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-shape"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-units",
+]
+
+[[package]]
+name = "pantometry-thermal"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "pantometry-core",
+ "pantometry-units",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-units"
+version = "0.16.0"
+dependencies = [
+ "glam",
+ "serde",
+]
+
+[[package]]
+name = "pantometry-view"
+version = "0.16.0"
+dependencies = [
+ "pantometry-scene",
+]
 
 [[package]]
 name = "portable-atomic"
