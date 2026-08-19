@@ -13,7 +13,7 @@ messages carry the full account.
 `CLAUDE.md`'s gate is a `set -euo pipefail` script now, and carries a table of the five disguises in
 which it has reported a pass it had not earned. Four of them are closed by that one line.
 
-## [Unreleased]
+## [0.15.0] — 2026-08-19
 
 ### Added
 
@@ -114,8 +114,131 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   `33.68644` against a true `33.6864`, so the assertion caught the test rather than the code. The endpoints
   come from `Mix` now, since what is under test there is the boundary condition and not the bound.
 
-### Fixed
+- **Every one of the eleven domains can now be asked a question from a file.** `structure`
+  (`dualis-elastic`), `channel` (`dualis-fluid`), `cavity` (`dualis-em`) and `well`
+  (`dualis-quantum`) join the scene format, and each ships a scene written around a closed form the
+  domain's own documentation names.
 
+  Measured rather than noticed: those four crates were referenced **zero** times in `dualis-world`.
+  They existed as libraries with their own tests and could not be touched from a scene file, the CLI
+  or the browser — which is to say the platform could not ask them anything, while `scenes/README.md`
+  had been saying "seven of the library's eleven domains" the whole time.
+
+  Each scene is against the *discrete* answer where one exists, because the difference is a closed
+  form and not an error term. A channel's Poiseuille mean is `(gh²/12ν)(1 + 2/n²)`, the `2/n²` coming
+  from a no-slip wall imposed by reflecting the first cell — a parabola is not its own linear
+  interpolation. A well's third level is `(2ℏ²/m dx²)sin²(nπ/2(N+1))`, below the continuum by
+  `θ²/3` — 1.8320e-4 measured against 1.8322e-4 predicted. A cavity's mode comes out **under** the
+  continuum frequency because a wave on a Yee grid travels slow, and the bound is that dispersion,
+  `(kΔ)²/24`, rather than a tolerance.
+
+- **A temperature field can drive a stress.** `structure` takes `follows`, naming a `block` whose
+  temperature becomes its **stress-free strain**, `α(T − T_ref)` element by element.
+
+  The abstraction is an **eigenstrain** and not a temperature: `Block::stress_free_strain` takes a
+  dimensionless strain, so swelling, curing shrinkage and a phase change are the same statement and
+  `dualis-elastic` never has to depend on whatever computed it. Four closed forms check it, each
+  blind to a different mistake, and all four exact at any mesh because a uniform eigenstrain makes a
+  linear displacement field.
+
+  `reference_c` is required rather than defaulted, and that is the whole design in one field: a power
+  module is assembled at its solder's reflow temperature and *sits* at room temperature, so it is
+  already strained before it is switched on. Scene 25 measures it — the module is most stressed
+  **cold**, 0.2314 J of strain energy relaxing to 0.0274 J as it warms back towards where it was
+  built.
+
+- **Heat that has a place.** `dissipation` on a block: boxes of cells and their watts. Every other
+  source in this format hands watts to the bus, and the bus carries an amount and no location — which
+  is right for what the bus is and wrong for a die, a winding, a brake disc or a laser absorber.
+
+  The watts are the box's **total, not a figure per cell**, so the answer does not move when the grid
+  does: measured, a power module's junction moves by 2e-5 °C when every grid doubles. Scene 24 checks
+  it against the resistance stack, 181.19 °C against 181.21.
+
+- **A grid can have nothing in it, and a clearance radiates across it.** `Solid3D::empty` and
+  `"material": "void"`: cells with no capacity, no conduction, no share of the bus, no vote in an
+  average and **no temperature**. Two solid cells facing each other across the void exchange the
+  parallel-plate series.
+
+  `GapPatch` and `gap_patches` group a clearance into the sheets a view factor is a statement about,
+  and `GapPatch::view_factor` gives the exact parallel-rectangle form. What it reports is **how much
+  of the answer is a boundary condition**: the block charges the infinite-plate exchange, exact for
+  the mirrored sides it has, and a gap open to space would see 0.415 of that for a 32 mm part 16 mm
+  under a lid.
+
+- **A block can lose heat.** `cooling` on a face, with an ambient, a film coefficient and an area, so
+  a three-dimensional thermal scene can reach a steady state rather than warming for as long as it
+  runs.
+
+- **An assembly from CAD.** `parts` fills a block from STL files, one material each, with everything
+  outside them void — which is what an assembly in air is. `Voxels::onto` puts two parts on one grid.
+
+- **Where a part's bytes come from is no longer a path.** A `Parts` trait, with `OnDisk` and
+  `Uploaded`: `World::build` reads from a disk, `World::build_with` from whatever it is given. The
+  same STL voxelises to the same block **cell by cell** from either source, which is what makes a
+  scene that runs in a browser the same scene as one that runs in a terminal.
+
+- **Something chooses the cell size, by measuring.** `dualis_world::fit` rasterises an assembly at
+  every candidate cell and reports what each cost — filled cells, volume error, boundary fraction,
+  thin runs, features below the cell, undecidable rows. The ladder is a statement about the assembly
+  rather than about millimetres: the thinnest dimension of any part gets 1, 2, 4, 8 … cells.
+
+  Predicting would have been wrong in a documented way. `Loss::volume_error` is a lattice-point count
+  after the bulges and the cuts cancel, and a sphere at 2.5, 2.0 and 1.5 mm gives `+4.9%, +5.8%,
+  −2.3%` — so the rule steers by boundary fraction, which does fall monotonically.
+
+- **The platform's third verb.** `dualis-world verify` measures what a passing audit does not:
+  determinism to the byte, conservation margins, stability margins, and what moves when the coupling
+  window halves or every grid refines.
+
+- **An editor, and it runs in a browser.** `runtime/editor` is a fourth workspace: the scene's JSON
+  checked as you type beside a wireframe, runs streaming in frame by frame, and the same thing as a
+  wasm module with no backend — the whole library already compiled for one. CAD is dropped on the
+  window, each file gets a material from the library's own catalogue, and **assemble** writes the
+  scene.
+
+- **An eleventh domain.** `dualis-quantum`: a wavefunction in a well, marched with Visscher's
+  staggered scheme, with probability an identity of the update rather than an accuracy claim.
+
+- **A temperature has a colour, and it is computed.** Planck's law through the CIE 1931 observer to
+  sRGB, so a glowing body is the colour it would be rather than a ramp somebody picked.
+
+- **A scene can say where things are.** `poses` places a domain in the world, and `environment` makes
+  the stage a statement rather than an assumption — gravity had lived in a constructor and no file
+  could say otherwise.
+
+### Changed
+
+- **The kernel's exchange guard counts amounts rather than takes.** It refused two consumers of a
+  channel by counting `take` calls, which an empty channel also triggers.
+
+- **Three domains now count what was given to them from outside**, and each ledger adds its parts
+  separately rather than their sum. `Solid3D::supplied`, `Block::received`, `Channel::driven`: a
+  domain holding a conserved quantity that something outside the simulation added to is not a closed
+  system, and `Ledger::add` raises an entry's *scale* to the largest thing added to it — so
+  pre-summing a near-zero net leaves the first joule of rounding a hundred-percent error.
+
+- **`Cavity::ledger` reports what leapfrog conserves**, `½ε|Eⁿ|² + ½μHⁿ⁻¹ᐟ²·Hⁿ⁺¹ᐟ²`, not the field
+  energy. The naive sum swings by `2 sin(ωΔt/2)` about it — 7.4% for a 1.77 GHz mode — and pointing a
+  1e-6 audit at it stops every correct run.
+
+- **Seven domains gained `Domain::as_any_mut`.** It is opt-in with a silent default, so a coupling
+  that wrote into one of them did nothing and reported nothing. `World::build` now probes a coupling
+  and refuses rather than letting a future domain fail the same way.
+
+- **`ScalarField` tells the truth about void.** `at`, `gradient`, `laplacian` and `rate` read the raw
+  cell array, and an emptied cell still holds whatever it held when it was emptied — so a clearance
+  left this workspace as a piece of the block sitting at its start temperature forever. Measured: a
+  glTF carried 252 points for a grid with 120 solid cells.
+
+- **The view layer draws only what is there.** A non-finite sample is no point in a glTF, no square in
+  an SVG, and `null` in JSON — which is a token the format has, unlike `NaN`.
+
+- **CSV keeps significant figures.** Both values and timestamps are `{:.9e}`. A fixed format is only
+  readable at the scale it was chosen for, and a cavity holding 3.2e-10 J had written its entire
+  energy history as a column of zeros.
+
+### Fixed
 
 - **A ray through a face's diagonal was counted twice, and parity approved it.** Found while writing the
   integration test above, and silent in the worst way. `Voxels::of` fills between sorted *pairs* of
@@ -136,7 +259,6 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   millimetre — but `-0.0` and `0.0` are the *same point*, at no distance from each other, and their bit
   patterns differ. It fires on anything symmetric about an axis, where one side's coordinate is a product
   that happened to carry a minus sign. Negative zero is now folded onto zero, which is not a tolerance.
-
 
 - **A bar and a lump can be made of something other than aluminium from Python.** `add_bar` and
   `add_lump` take a `material`, defaulting to aluminium so existing callers are unchanged, and
@@ -172,6 +294,22 @@ which it has reported a pass it had not earned. Four of them are closed by that 
   with comment lines excluded outright, which is the check that should have been in the pattern from the
   start.
 
+- **A cooled boundary was first order twice over.** The film was applied as a pass after the
+  conduction sweep, which is Lie splitting, and its error carries a coefficient growing as `1/dx`
+  against a step falling as `dx²`. Measured before the fix: ratios 1.27, 1.71, 1.87 per grid doubling
+  rather than four.
+
+- **A localised source made the steady state depend on the timestep.** It was applied before the
+  sweep took its `old` snapshot, so the stencil conducted a share of the generated joules away inside
+  the same step — a share equal to `G·dt/C`, about a half at the stability limit.
+
+- **A cavity's mode was seeded at the wrong step.** `release_mode` staggers `H` by half of whatever
+  `dt` it is given, and the builder gave it the Courant limit while the scheduler runs at
+  `window / ceil(window / limit)`.
+
+- **Two CAD parts could not touch**, because each rasterisation got a grid of its own.
+
+- **A missing file reported what happened and not what it happened to.**
 
 ## [0.14.0] — 2026-08-13
 

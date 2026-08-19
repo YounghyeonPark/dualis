@@ -2,7 +2,7 @@
 
 `dualis-world` exists to use the SDK from outside and write down where that is awkward. A
 library with no consumers is a library whose ergonomics nobody has measured, and none of the
-641 tests inside the workspace can answer this question about themselves — they are written by
+795 tests inside the workspace can answer this question about themselves — they are written by
 someone who already knows the shape.
 
 Everything below was hit while building the smallest thing that loads a scene, runs it, couples

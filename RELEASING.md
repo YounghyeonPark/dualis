@@ -17,7 +17,7 @@ batch those and let them ride along with the next real one.
 `main` being ahead of the registries is the normal state, and the changelog's `[Unreleased]` section
 is where the batch accumulates.
 
-## The seven places a version lives
+## The eight places a version lives
 
 All of them, or the release is broken in a way only one CI job can see:
 
@@ -30,6 +30,7 @@ All of them, or the release is broken in a way only one CI job can see:
 | `crates/dualis/src/lib.rs` | 1 — the same series, in the facade's own docs |
 | `.claude/agents/invariant-guard.md` | 1 — which version is published against which is in the tree |
 | `CITATION.cff` | 1 — `version`. Also update `date-released`, which is not a version string and so is not caught by the grep below. The grep returns **2**: the other hit is a comment recording which version's Zenodo deposition failed, and bumping that would erase the history it is there for |
+| `.zenodo.json` | 1 — `version`. **The row this table was missing**, and it gained it the way the last one did: the 0.15.0 release bumped the seven above and `citation_is_valid` refused, because it asserts the deposition's version *is* the crate's. A table that has now been wrong three times is a table to count against rather than to read |
 
 Count them rather than trusting this table, because it has already been wrong in both directions. It
 lost a row when the docs were split — `CLAUDE.md` carried the `pip install ... .whl` line and the
@@ -37,8 +38,8 @@ python gate moved to `bindings/python/README.md`, which installs `dualis-*.whl` 
 bump at all — and gained one the same day when `CITATION.cff` arrived. Check each row against the file:
 
 ```sh
-grep -c '0\.13' Cargo.toml bindings/python/Cargo.toml bindings/python/pyproject.toml \
-    AGENTS.md crates/dualis/src/lib.rs .claude/agents/invariant-guard.md CITATION.cff
+grep -c '0\.14' Cargo.toml bindings/python/Cargo.toml bindings/python/pyproject.toml \
+    AGENTS.md crates/dualis/src/lib.rs .claude/agents/invariant-guard.md CITATION.cff .zenodo.json
 ```
 
 Then `cargo update --workspace --offline` in the root **and** in `bindings/python`, because

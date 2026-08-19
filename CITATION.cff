@@ -38,8 +38,8 @@ authors:
 # because a citation record that names one of two licences should say that is what it is doing.
 license: Apache-2.0
 repository-code: "https://github.com/YounghyeonPark/dualis"
-version: 0.14.0
-date-released: "2026-08-13"
+version: 0.15.0
+date-released: "2026-08-19"
 keywords:
   - physics simulation
   - verification
