@@ -2101,6 +2101,84 @@ fn every_scene_that_ships_runs_and_says_something_true() {
                     "{name}: 60 s is short of steady, so it sits just under scene 24's                      181.190771 C: {peak:.6} C"
                 );
             }
+            "26-poiseuille-in-a-cooling-channel.json" => {
+                // The first scene to reach `dualis-fluid`, and the crate's own docs say why one
+                // has to be written carefully: "it looks like a fluid" is the easiest wrong answer
+                // in computational physics to accept, because a scheme with the wrong viscosity
+                // still makes plausible vortices. So this is written around an exact solution.
+                //
+                // **And against the *discrete* parabola, not the continuum one.** A no-slip wall
+                // imposed by reflecting the first cell makes the linear interpolation vanish at
+                // the wall, and a parabola is not its own linear interpolation — so the settled
+                // mean is `(gh²/12ν)(1 + 2/n²)`, exactly, and the `2/n²` is a closed form rather
+                // than an error term. `dualis-fluid`'s own test derives it; this scene checks that
+                // the *format* delivers the same problem the library was given.
+                let (g, nu, cells) = (0.02, 1.004e-6, 16.0);
+                let gap = cells * 0.125e-3;
+                let continuum = dualis::fluid::poiseuille_mean_speed(g, gap, nu);
+                let discrete = continuum * (1.0 + 2.0 / (cells * cells));
+
+                let mean = frames
+                    .last()
+                    .expect("frames")
+                    .readings
+                    .iter()
+                    .find(|r| r.label == "mean speed")
+                    .expect("a channel reports its mean speed")
+                    .value;
+
+                // The tolerance is the **startup transient**, and it is predicted rather than
+                // chosen. A channel from rest approaches its profile as `exp(−π²νt/h²)`, whose
+                // time constant here is `h²/(π²ν)` = 0.405 s; the scene runs 4 s, which is 9.9 of
+                // them, so what is left is `e^-9.9` = 5.0e-5 of the answer. Measured 4.8e-5.
+                let constant = gap * gap / (std::f64::consts::PI.powi(2) * nu);
+                let left = (-4.0f64 / constant).exp();
+                println!(
+                    "  {name}: mean {mean:.9} against a discrete {discrete:.9} m/s, off \
+                     {:.2e}, with {left:.1e} of the startup left",
+                    (mean / discrete - 1.0).abs()
+                );
+                assert!(
+                    (mean / discrete - 1.0).abs() < 3.0 * left,
+                    "{name}: {mean:.9} against the discrete parabola's {discrete:.9} m/s"
+                );
+
+                // **And it is nearer the discrete answer than the continuum one**, which is the
+                // half that says the `2/n²` is real. They differ by 0.78% here and the run agrees
+                // with one of them to 5e-5.
+                assert!(
+                    (mean - discrete).abs() < (mean - continuum).abs() / 100.0,
+                    "{name}: the discrete parabola is the one this scheme solves: {mean:.9}                      against {discrete:.9} and {continuum:.9}"
+                );
+
+                // **The flow is incompressible and the advection is resolved**, or the profile
+                // above would be a coincidence of a scheme that had stopped meaning anything.
+                let last = frames.last().expect("frames");
+                let of = |label: &str| {
+                    last.readings
+                        .iter()
+                        .find(|r| r.label == label)
+                        .unwrap_or_else(|| panic!("{name}: no {label}"))
+                        .value
+                };
+                assert!(
+                    of("divergence").abs() < 1e-9,
+                    "{name}: divergence {:e} is not zero",
+                    of("divergence")
+                );
+                assert!(
+                    of("cell Reynolds") < dualis::fluid::CELL_REYNOLDS_LIMIT,
+                    "{name}: cell Reynolds {:.3} is over the limit",
+                    of("cell Reynolds")
+                );
+                // The pump is doing work and the run says how much — a driven channel whose books
+                // showed nothing arriving would be one the audit had been talked out of.
+                assert!(
+                    of("work driven in") > 0.0,
+                    "{name}: the drive must have put energy in: {:e} J",
+                    of("work driven in")
+                );
+            }
             other => panic!("{other} ships but nothing checks it; add a claim for it"),
         }
     }

@@ -1,0 +1,18 @@
+{
+  "title": "pressure-driven water in a 2 mm channel, against Poiseuille",
+  "schedule": "multirate",
+  "duration_s": 4.0,
+  "frames": 16,
+  "conservation_tolerance": 1e-6,
+  "domains": [
+    {
+      "kind": "channel",
+      "name": "coolant",
+      "cells": [4, 16, 4],
+      "cell_mm": 0.125,
+      "fluid": "water",
+      "walls": { "lower_m_per_s": 0.0, "upper_m_per_s": 0.0 },
+      "drive_m_per_s2": [0.02, 0.0, 0.0]
+    }
+  ]
+}

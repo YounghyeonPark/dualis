@@ -51,6 +51,20 @@ pub struct Channel {
     walls: Walls,
     /// Body force per unit mass, m/s².
     force: DVec3,
+    /// Work the body force has done on the fluid, in joules.
+    ///
+    /// **A driven channel is not a closed system.** `drive` is a pressure gradient written as what
+    /// it does, and the pump behind it is outside this domain — so the kinetic energy it puts in
+    /// arrived from nowhere the bus can see, and the audit is right to notice. Counted here so the
+    /// books close, the way `Solid3D` counts what it generates and `Conductor` what it gives away.
+    ///
+    /// Viscosity takes it straight back out again as heat, which this domain does not model and
+    /// does not pretend to: at steady state the drive's power and the dissipation are equal, the
+    /// kinetic energy stops moving, and this counter keeps climbing at exactly the rate the fluid
+    /// is warming somewhere that is not here.
+    driven: f64,
+    /// The saved counterpart of [`Channel::driven`].
+    saved_driven: f64,
     /// `u` on x faces: `nx · ny · nz`, periodic in x.
     u: Vec<f64>,
     /// `v` on y faces: `nx · (ny+1) · nz`.
@@ -73,6 +87,30 @@ struct Saved {
     p: Vec<f64>,
 }
 
+impl dualis_core::ScalarField for Channel {
+    /// Metres per second — a **speed**, not a velocity. See [`Channel::as_field`].
+    fn unit(&self) -> &'static str {
+        "m/s"
+    }
+
+    /// The speed at `p`, from the cell it falls in.
+    ///
+    /// Nearest cell rather than trilinear, and the reason is the grid: velocity lives on the faces
+    /// and [`velocity_at`](Channel::velocity_at) already averages the pair across each cell to get
+    /// a centred vector. Interpolating that average again would smooth a field that has already
+    /// been smoothed once, and a viewer would be looking at a blur of a blur.
+    fn at(&self, p: LengthVec, _t: Time) -> f64 {
+        let (nx, ny, nz) = self.counts;
+        let q = p.to_si() / self.dx;
+        if q.is_nan() {
+            return f64::NAN;
+        }
+        let pick = |v: f64, n: usize| (v.floor().max(0.0) as usize).min(n.saturating_sub(1));
+        self.velocity_at(pick(q.x, nx), pick(q.y, ny), pick(q.z, nz))
+            .length()
+    }
+}
+
 impl Channel {
     /// A box of `counts` cubic cells of side `cell`, at rest.
     pub fn new(
@@ -91,6 +129,8 @@ impl Channel {
             fluid,
             walls,
             force: DVec3::ZERO,
+            driven: 0.0,
+            saved_driven: 0.0,
             u: vec![0.0; nx * ny * nz],
             v: vec![0.0; nx * (ny + 1) * nz],
             w: vec![0.0; nx * ny * nz],
@@ -736,6 +776,11 @@ impl Domain for Channel {
             });
         }
 
+        // The work the drive did, counted in the same statement that does it. Measured as the
+        // change in kinetic energy across a step with no other source: viscosity takes energy out
+        // and the drive puts it in, and at steady state the two are equal — so this keeps climbing
+        // while the kinetic energy stops, which is the true statement about a pumped channel.
+        let before = self.kinetic_energy().to_si();
         self.advance(h);
         if !self.project(h) {
             return Err(Violation::at(
@@ -744,16 +789,28 @@ impl Domain for Channel {
                 self.residual,
             ));
         }
+        if self.force != DVec3::ZERO {
+            self.driven += self.kinetic_energy().to_si() - before;
+        }
         Ok(())
     }
 
     /// The kinetic energy the box is holding.
+    /// The kinetic energy it holds, less the work the drive has put in.
+    ///
+    /// Two contributions rather than their difference: `Ledger::add` raises an entry's *scale* to
+    /// the largest thing added to it and the audit judges a change against that, so pre-summing a
+    /// near-zero net would leave no scale at all. A channel starting from rest holds exactly zero,
+    /// and the first `2.9e-12` J the drive did was judged a hundred-percent change and stopped a
+    /// correct run on its first step.
     fn ledger(&self) -> Ledger {
-        Ledger::new().with(quantity::ENERGY, self.kinetic_energy().to_si())
+        Ledger::new()
+            .with(quantity::ENERGY, self.kinetic_energy().to_si())
+            .with(quantity::ENERGY, -self.driven)
     }
 
     fn readings(&self) -> Vec<Reading> {
-        vec![
+        let mut out = vec![
             Reading::new(&self.name, "mean speed", self.mean_speed().to_si(), "m/s"),
             Reading::new(&self.name, "peak speed", self.peak_speed(), "m/s"),
             Reading::new(
@@ -764,7 +821,30 @@ impl Domain for Channel {
             ),
             Reading::new(&self.name, "divergence", self.divergence(), "m/s"),
             Reading::new(&self.name, "cell Reynolds", self.cell_reynolds(), ""),
-        ]
+        ];
+        // **Only for a channel that is driven**, the way a block reports `melted` only if it can
+        // melt. At steady state the kinetic energy stops moving and this keeps climbing, which is
+        // the pump's power made visible — and without it a reader would see a flow holding still
+        // and no sign that anything was paying for it.
+        if self.force != DVec3::ZERO {
+            out.push(Reading::new(&self.name, "work driven in", self.driven, "J"));
+        }
+        out
+    }
+
+    /// **Speed**, so a flow can be looked at.
+    ///
+    /// The honest caveat is in the unit and in this sentence rather than in a refusal to draw one:
+    /// velocity is a *vector* and this is its magnitude, so a picture of it shows where the fluid
+    /// is moving fast and not which way it is going. The components are in the JSON, and
+    /// `layer_speed` is what a profile should be read from.
+    ///
+    /// Drawn at all because a domain nobody can see is a domain nobody trusts, and this crate's own
+    /// documentation says why that matters here more than anywhere: "it looks like a fluid" is the
+    /// easiest wrong answer in computational physics to accept, and the answer to that is closed
+    /// forms **and** a picture, not one instead of the other.
+    fn as_field(&self) -> Option<&dyn dualis_core::ScalarField> {
+        Some(self)
     }
 
     fn as_any(&self) -> Option<&dyn std::any::Any> {
@@ -787,6 +867,7 @@ impl Domain for Channel {
             w: self.w.clone(),
             p: self.p.clone(),
         }));
+        self.saved_driven = self.driven;
     }
 
     fn restore(&mut self) {
@@ -795,6 +876,7 @@ impl Domain for Channel {
             self.v = s.v;
             self.w = s.w;
             self.p = s.p;
+            self.driven = self.saved_driven;
         }
     }
 }

@@ -726,6 +726,26 @@ impl DomainSpec {
             // coupled statement this per-domain method cannot make. Reported as unswept rather
             // than swept wrongly.
             DomainSpec::Structure { .. } => return Ok(None),
+            // **A channel refines, and its drive does not.** Halving the cell doubles the counts
+            // and leaves the body force alone: `g` is an acceleration and the closed forms are
+            // written in it, so scaling it would change the problem rather than resolve it. The
+            // viscous limit falls as `dx²` with the refinement, which is the cost the sweep is
+            // measuring and not a fault.
+            DomainSpec::Channel {
+                name,
+                cells,
+                cell_mm,
+                fluid,
+                walls,
+                drive_m_per_s2,
+            } => Some(DomainSpec::Channel {
+                name: name.clone(),
+                cells: [cells[0] * 2, cells[1] * 2, cells[2] * 2],
+                cell_mm: cell_mm / 2.0,
+                fluid: fluid.clone(),
+                walls: *walls,
+                drive_m_per_s2: *drive_m_per_s2,
+            }),
             // A room's samples sit on the walls — `width` is `(n − 1)·dx` — so halving the
             // spacing is `2n − 1`, exactly as for a hall below. The height is then quantised
             // to whole cells of the *new* spacing, and for a height not commensurate with the

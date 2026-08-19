@@ -817,6 +817,38 @@ pub enum DomainSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reference_c: Option<f64>,
     },
+    /// Incompressible flow on a staggered grid — `dualis-fluid`'s `Channel`.
+    ///
+    /// The domain this workspace's own documentation calls the hardest to trust, and it says why:
+    /// "it looks like a fluid" is the easiest wrong answer in computational physics to accept,
+    /// because a scheme with the wrong viscosity still makes plausible vortices and one that
+    /// quietly loses momentum still makes a pretty picture. So a scene using it should be written
+    /// around one of the three exact solutions that exist — Poiseuille, Couette or Taylor–Green —
+    /// and scene `26` is.
+    ///
+    /// Nothing to draw: velocity is a vector on a staggered grid and this format's field panel is
+    /// a scalar at cell centres, so a channel reports its scalars and exports no geometry. That is
+    /// the same shape as the other twelve fieldless scenes and is stated rather than discovered.
+    Channel {
+        /// Domain name.
+        name: String,
+        /// Cells along x, y and z. `y` is across the channel, which is where the walls are.
+        cells: [usize; 3],
+        /// The side of one cubic cell.
+        cell_mm: f64,
+        /// What is flowing. See [`FluidSpec`].
+        fluid: FluidSpec,
+        /// The walls, or absent for a periodic box. See [`WallsSpec`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        walls: Option<WallsSpec>,
+        /// A body force per unit mass, m/s² — a pressure gradient written as what it does.
+        ///
+        /// `[g, 0, 0]` down a walled channel is Poiseuille flow, whose steady profile is
+        /// `u(y) = (g/2ν)·y(h−y)` and whose mean is `g·h²/(12ν)`. Absent is no drive, which for a
+        /// channel started from rest is a fluid that stays at rest.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        drive_m_per_s2: Option<[f64; 3]>,
+    },
     /// A copper winding dissipating `I²R`, which is where a motor's heat actually comes from.
     ///
     /// `dualis-electrical`. Every other source in this format states its watts; this one
@@ -1266,6 +1298,7 @@ impl DomainSpec {
             | DomainSpec::Bar { name, .. }
             | DomainSpec::Block { name, .. }
             | DomainSpec::Structure { name, .. }
+            | DomainSpec::Channel { name, .. }
             | DomainSpec::Hall { name, .. }
             | DomainSpec::Conductor { name, .. }
             | DomainSpec::Puck { name, .. }
@@ -1713,6 +1746,77 @@ impl DomainSpec {
                     dualis::units::Pressure::from_si(*amplitude_pa),
                 ),
             ),
+            DomainSpec::Channel {
+                name,
+                cells,
+                cell_mm,
+                fluid,
+                walls,
+                drive_m_per_s2,
+            } => {
+                if cells.contains(&0) {
+                    return Err(format!("{name}: a channel needs at least one cell"));
+                }
+                if cell_mm.is_nan() || *cell_mm <= 0.0 {
+                    return Err(format!("{name}: cell_mm must be positive, got {cell_mm}"));
+                }
+                let stuff = match fluid {
+                    FluidSpec::Named(n) => match n.as_str() {
+                        "water" => dualis::fluid::Fluid::water(),
+                        "air" => dualis::fluid::Fluid::air(),
+                        other => {
+                            return Err(format!(
+                                "{name}: {other:?} is not a fluid this format knows. It knows \
+                                 \"water\" and \"air\", or state `density` and \
+                                 `kinematic_viscosity` outright"
+                            ));
+                        }
+                    },
+                    FluidSpec::Stated {
+                        density,
+                        kinematic_viscosity,
+                    } => {
+                        if !(density.is_finite() && *density > 0.0) {
+                            return Err(format!("{name}: density must be positive, got {density}"));
+                        }
+                        if !(kinematic_viscosity.is_finite() && *kinematic_viscosity > 0.0) {
+                            return Err(format!(
+                                "{name}: kinematic_viscosity must be positive, got \
+                                 {kinematic_viscosity}. It is `mu/rho` in m^2/s, which for water \
+                                 is about 1e-6 — a thousand times smaller than the dynamic \
+                                 viscosity tables quote beside it"
+                            ));
+                        }
+                        dualis::fluid::Fluid {
+                            density: dualis::units::Density::from_si(*density),
+                            kinematic_viscosity: dualis::units::Diffusivity::from_si(
+                                *kinematic_viscosity,
+                            ),
+                        }
+                    }
+                };
+                let boundary = match walls {
+                    Some(w) => dualis::fluid::Walls::Sliding {
+                        low: w.lower_m_per_s,
+                        high: w.upper_m_per_s,
+                    },
+                    None => dualis::fluid::Walls::None,
+                };
+                let mut channel = dualis::fluid::Channel::new(
+                    name.clone(),
+                    (cells[0], cells[1], cells[2]),
+                    Length::mm(*cell_mm),
+                    stuff,
+                    boundary,
+                );
+                if let Some(g) = drive_m_per_s2 {
+                    if g.iter().any(|c| !c.is_finite()) {
+                        return Err(format!("{name}: {g:?} is not a body force"));
+                    }
+                    channel.drive(glam::DVec3::new(g[0], g[1], g[2]));
+                }
+                Box::new(channel)
+            }
             DomainSpec::Structure {
                 name,
                 cells,
@@ -2214,6 +2318,51 @@ pub struct PressedSpec {
     pub face: FaceSpec,
     /// Pressure in megapascals, positive inward.
     pub mpa: f64,
+}
+
+/// What is flowing: a name, or the two numbers that define one.
+///
+/// ```json
+/// "fluid": "water"
+/// "fluid": { "density": 998.0, "kinematic_viscosity": 1.004e-6 }
+/// ```
+///
+/// **Kinematic** viscosity, `μ/ρ`, in m²/s — the one that appears in the equations and in every
+/// closed form. Tables quote the dynamic viscosity as often, and for water the two differ by a
+/// factor of a thousand: the sort of error dimensions cannot catch and a name can, which is why
+/// the key spells it out rather than saying `viscosity`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum FluidSpec {
+    /// One of `water` or `air`, at twenty degrees.
+    Named(String),
+    /// Stated outright.
+    Stated {
+        /// Density, kg/m³.
+        density: f64,
+        /// Kinematic viscosity, m²/s.
+        kinematic_viscosity: f64,
+    },
+}
+
+/// The walls of a channel, and how fast they are sliding.
+///
+/// ```json
+/// "walls": { "lower_m_per_s": 0.0, "upper_m_per_s": 0.0 }
+/// ```
+///
+/// No-slip at `y = 0` and `y = h`. Both zero is a **channel** and Poiseuille flow when it is
+/// driven; one moving and no drive is **Couette**. Absent is a periodic box in every direction,
+/// which is what Taylor–Green lives in and is a different problem rather than a simpler one.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WallsSpec {
+    /// Speed of the `y = 0` wall along x, m/s.
+    #[serde(default)]
+    pub lower_m_per_s: f64,
+    /// Speed of the `y = h` wall along x, m/s.
+    #[serde(default)]
+    pub upper_m_per_s: f64,
 }
 
 /// A box of cells that generates heat, in watts.
@@ -3074,6 +3223,21 @@ impl DomainSpec {
             | DomainSpec::Light { .. }
             | DomainSpec::Winding { .. }
             | DomainSpec::Network { .. } => Placement::default(),
+            // A channel's field is its **speed**, sampled at its own cell centres. The caveat is
+            // in the unit and in `Channel::as_field`'s doc rather than in a refusal to draw: a
+            // magnitude shows where the fluid is moving fast and not which way it is going. Drawn
+            // at all because this crate's own docs say "it looks like a fluid" is the easiest
+            // wrong answer to accept, and the answer to that is closed forms **and** a picture.
+            DomainSpec::Channel { cells, cell_mm, .. } => Placement::field(Extent::volume(
+                LengthVec::from_si(
+                    glam::DVec3::new(cells[0] as f64, cells[1] as f64, cells[2] as f64)
+                        * cell_mm
+                        * 1e-3,
+                ),
+                cells[0],
+                cells[1],
+                cells[2],
+            )),
         }
     }
 }
