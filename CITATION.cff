@@ -38,6 +38,11 @@ authors:
 # because a citation record that names one of two licences should say that is what it is doing.
 license: Apache-2.0
 repository-code: "https://github.com/YounghyeonPark/pantometry"
+# The **concept** DOI, which always resolves to the newest version. The version DOI for a
+# particular release is on its Zenodo record; cite that one when the result depends on which
+# version ran, which for this library it does. Minted for the first time at 0.16.0. The 0.13.0
+# and 0.14.0 depositions both failed, silently, on the licence field.
+doi: 10.5281/zenodo.22024817
 version: 0.16.0
 date-released: "2026-08-20"
 keywords:

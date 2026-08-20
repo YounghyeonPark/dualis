@@ -233,14 +233,35 @@ refused — the same way the new name is verified by resolving and calling it.
 The GitHub integration is per repository, so a rename may need the toggle thrown again under the new
 name. As ever, nothing inside the repository can see whether a deposition succeeded.
 
-## The DOI, which is not turned on yet
+## The DOI, which works now, and how it was verified
 
 `CITATION.cff` makes the repository citable by name and version. A **DOI** makes it citable by a
 permanent identifier that resolves after the repository moves or disappears, which is what a reference
-list actually wants. It is one switch and nobody has thrown it:
+list actually wants.
+
+**Minted for the first time at 0.16.0**, after failing silently at 0.13.0 and 0.14.0:
+
+| | |
+| --- | --- |
+| concept DOI | `10.5281/zenodo.22024817` — always the newest version. Cite this in prose |
+| 0.16.0 | `10.5281/zenodo.22024818` — cite this when the result depends on which version ran, which for this library it does |
+
+Both are in `CITATION.cff` and `README.md`'s BibTeX block. The concept DOI is the `doi:` field,
+because that is the one a reader following a reference wants; the version DOI lives on each Zenodo
+record and in the BibTeX `doi`.
+
+### What the third attempt did differently, and what it proves
+
+Nothing about the *process*. The licence field had been fixed twice — an SPDX expression at 0.13.0,
+then a two-element list at 0.14.0, and Zenodo stores exactly one licence — and
+`citation_is_valid.rs` had been extended to refuse every plausible load hazard at once rather than
+one guess per attempt. This was the first release published after all of that.
+
+The steps, and they are the steps:
 
 1. Sign in to [zenodo.org](https://zenodo.org) with the GitHub account.
-2. Under *GitHub*, find `YounghyeonPark/pantometry` and turn the toggle **on**.
+2. Under *GitHub*, find `YounghyeonPark/pantometry` and turn the toggle **on**. **Per repository**, so
+   a rename may need it thrown again.
 3. Then publish a release **through GitHub's Releases page**, not by pushing a bare tag. Zenodo
    listens for the release webhook and a pushed tag alone does not fire it — the sixteen tags already
    on the repository will therefore get no DOI, and the first release published after the toggle is
@@ -253,7 +274,9 @@ newest. Cite the concept DOI in prose and the version DOI when the result depend
 — which for this library it does, because the numbers in the changelog move.
 
 Once the first one exists, add it to `CITATION.cff` as `doi:` and to the BibTeX block in `README.md`.
-Neither can be written before there is a DOI to write, which is why they are not there now.
+**Both are written now.** They could not be before 0.16.0, because there was no DOI to write — which
+is the paragraph above surviving three failed depositions as an explanation for an absence, and is
+worth keeping beside the fact that the absence is over.
 
 ### Zenodo says one thing and it names no field
 
@@ -326,7 +349,8 @@ Nothing cheaper does:
 
 | route | result |
 | --- | --- |
-| `zenodo.org/api/records?q=…` | **useless.** A *failed* deposition is not a record, so zero hits means "failed" or "still queued" or "the index lags" and there is no way to tell which. Fifteen minutes of polling after 0.14.0 returned nothing |
+| `zenodo.org/api/records?q=…` | **one-sided, and that is enough.** A *failed* deposition is not a record, so zero hits means "failed" or "still queued" or "the index lags" and there is no way to tell which — fifteen minutes of polling after 0.14.0 returned nothing. But a **hit is proof**: at 0.16.0 the first query returned the record, its version DOI, its concept DOI and the stored licence, seconds after the webhook. So poll it, and read a negative as *unknown* rather than as failed |
+| the webhook's own deliveries | **worth reading, and not proof.** `gh api repos/OWNER/REPO/hooks/<id>/deliveries` shows what Zenodo answered. One GitHub release fires three events — `published`, `created`, `released` — and only the first is acted on: at 0.16.0 it returned **202 Accepted** and the other two returned 409, which is Zenodo refusing duplicates and not an error. A 202 is acceptance, not success; the deposition can still fail after it, which is exactly what 0.13.0 and 0.14.0 did |
 | `zenodo.org/badge/latestdoi/<repo id>` | **useless.** 404s for a repository that has a DOI as readily as for one that does not |
 | `curl` against crates.io | 403 — it rejects the default user agent. `cargo search` works |
 
@@ -374,6 +398,10 @@ a token, which is why it has not been run — but it is the next step rather tha
 
 **The order matters for the next release.** Throw the switch *before* tagging, or 0.13.0 is another tag
 with no DOI and the first citable version waits for 0.14.0.
+
+*Written before 0.13.0, and it took until **0.16.0**. The switch was not the only thing wrong: the
+licence field failed twice more after it, each time reporting only "Citation metadata load failed".
+Kept because the advice is right and the estimate of what it would cost was three releases short.*
 
 ## Reading the result
 
