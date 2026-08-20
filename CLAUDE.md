@@ -131,7 +131,7 @@ earned and was not.
 
 | read | before |
 | --- | --- |
-| [RELEASING.md](RELEASING.md) | any release. Cadence, the seven places a version lives, the crate order, the wheel, and what the pipeline has actually been run through |
+| [RELEASING.md](RELEASING.md) | any release. Cadence, the **eight** places a version lives, the crate order, the wheel, what the pipeline has actually been run through — and what it costs to change the project's name, which is not a rename because a published name is permanent |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | changing a test or a tolerance. The authority on the gate and on the five conventions in full |
 | [crates/pantometry-world/FRICTION.md](crates/pantometry-world/FRICTION.md) | changing the public API. Thirty-four findings from using the SDK as a stranger, five of them the same underlying decision |
 | [bindings/python/README.md](bindings/python/README.md) | touching the bindings. Its own cargo workspace, its own gate, and the two boundary decisions not to relitigate |

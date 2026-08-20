@@ -82,7 +82,9 @@ git tag -a vX.Y.Z -F message.txt && git push origin vX.Y.Z   # the tag publishes
 ```
 
 A **new** crate hits crates.io's new-crate rate limit — a burst of five, then roughly one per ten
-minutes. Existing crates do not, so a release that adds no crate goes through in one pass.
+minutes. Existing crates do not, so a release that adds no crate goes through in one pass. A release
+where *every* crate is new takes two hours and needs the retry loop under
+[renaming](#renaming-the-project-which-is-not-a-rename); the loop above stops on the sixth.
 
 Verify by resolving from outside rather than by reading the output: `cargo new` a throwaway,
 `cargo add pantometry@X.Y.Z`, and call something the release added.
@@ -123,6 +125,114 @@ A release pipeline you have not run is a guess.
 | tag, version mismatch | `v9.9.9` | refused at `check-version`; nothing built, nothing uploaded |
 | tag, version match | `v0.4.0` to PyPI | all four paths now run. `check-version` passed for the first time; five wheels, an sdist, and `pip install pantometry==0.4.0` verified from a clean venv |
 
+## Renaming the project, which is not a rename
+
+Done once, at 0.16.0, when `dualis` became `pantometry`. Everything below was measured that day and
+none of it is in the sections above, because those describe a new *version* of the same name and
+every assumption they make about credentials and configuration is an assumption about the name.
+
+**A published name is permanent.** crates.io and PyPI let you yank a version and never release a
+name. So this is not a rename — it is publishing a new project and retiring the old one, and the
+seventeen `dualis-*` crates will sit on crates.io at 0.15.0 forever. Decide accordingly: the cost is
+paid in full at the first publish under a name, and it doubles rather than transfers.
+
+### Choosing the name, which is the part with no undo
+
+Free on both registries is **necessary and nowhere near sufficient**. Seven candidates were free on
+crates.io and PyPI and six of them failed the next check:
+
+| candidate | what it collided with |
+| --- | --- |
+| `clapeyron` | **Clapeyron.jl**, an established fluid-thermodynamics toolkit with an ACS paper — the same field |
+| `equipoise` | a live USPTO mark (Hi-Tech Pharmaceuticals), a steroid brand, and an engineering consultancy |
+| `conserva` | Conserva Resources, Inc., an IT consultancy since 1986 |
+| `virial` | Virial Ltd., a Russian materials company |
+| `adiabat` | Adiabat, LLC and Adiabat Technologies SL |
+| `holonomy` | an AI startup, Holonomy Systems (fusion), Holonomy Health, Holonomy Consulting |
+| `speculum` | a medical-device company, and the common meaning is a surgical instrument |
+
+So the check is three, in this order, and the third is the one that eliminates: **crates.io → PyPI →
+a web search for the name as a company or a brand.** A term specific enough that no company would
+use it is what survives; `pantometry` exists only as the title of two books, from 1571 and 1830.
+
+None of that is a trademark clearance. A search finds obvious collisions and proves nothing about
+the absence of one, and it reaches Korean marks poorly. Check KIPRIS or USPTO before publishing.
+
+### Rename the GitHub repository *first*
+
+`repository` in `Cargo.toml` becomes permanent registry metadata. Rename on GitHub before
+publishing or seventeen crates point at a 404 forever. GitHub redirects the old URL to the new one,
+so nothing that already exists breaks — the old clone URL, the old links and the old API path all
+resolve after the rename.
+
+### Two credentials stop working, and neither says so until it does
+
+**The crates.io token is scoped to crate names.** The token that published seventeen `dualis-*`
+crates an hour earlier answered `403 Forbidden: this token does not have the required permissions`
+on `pantometry-units`. A new name needs a token with **`publish-new`** and either no crate-name
+restriction or one covering the new pattern — and `yank` too, if the same token is to retire the old
+crates. It failed on the first crate and published nothing, which is the good version of this
+failure; a token that covered *some* of the new names would have stopped halfway.
+
+**PyPI trusted publishing names the repository.** The claim is `owner / repository / workflow /
+environment`, so renaming the repository invalidates it: `invalid-publisher: valid token, but no
+corresponding publisher`. And a new project name has no publisher at all, so it needs a **pending
+publisher** registered on PyPI *before* the first upload — Your account → Publishing → Add a new
+pending publisher, with the PyPI project name, the owner, the new repository name,
+`release-python.yml`, and environment `pypi`.
+
+Both failed *after* everything else had gone right. All six wheels and the sdist built, the tag
+matched the file, and only the upload job failed — so read the jobs and not the roll-up, and
+re-run the failed job once the publisher exists rather than re-tagging.
+
+### Seventeen new crates take two hours
+
+crates.io rate-limits **new** crate names: a burst of five, then roughly one per ten minutes.
+Existing crates do not, which is why the ordinary release loop above goes through in one pass and
+this one does not. A plain loop stops on the sixth crate.
+
+Retry on a rate limit and stop on everything else — a rate limit is a wait and every other failure
+is a fault:
+
+```sh
+out=$(cargo publish -p "$c" --locked 2>&1)
+if [ $? -ne 0 ]; then
+  echo "$out" | grep -qi "too many\|rate limit\|try again" || exit 1   # a fault: stop
+  sleep 620 && continue                                                # a wait: retry
+fi
+```
+
+### The tree, and the things outside it
+
+`git ls-files | xargs grep -l` finds every tracked file; there were 263 of them and 1,971
+occurrences. Move the crate directories with `git mv` first so the rename shows as renames in the
+history rather than as eighteen deletions.
+
+Then regenerate **three** lockfiles — the root, `bindings/python`, and `runtime/editor` — because
+`--locked` refuses a lockfile naming crates that no longer exist.
+
+What the grep does not reach is anything outside the tree. The gate script kept
+`--exclude dualis-world`, which fails **only at the last of twenty steps**: twenty-five minutes in,
+after everything else has passed.
+
+### What the changelog should say
+
+Say once, at the top, that entries below the renaming version name crates as they are now and they
+were published under the old name. The alternative is a changelog in two vocabularies, and the
+reader needs the sentence and the fact that the registry holds both.
+
+### Then yank
+
+`cargo yank --version X.Y.Z <crate>` for each of the old ones. A yank stops new dependants and
+leaves existing lockfiles resolving, so nobody using the old name breaks today and nobody starts
+using it tomorrow. Verify from outside — `cargo add <old-name>@X.Y.Z` in a throwaway crate should be
+refused — the same way the new name is verified by resolving and calling it.
+
+### Zenodo
+
+The GitHub integration is per repository, so a rename may need the toggle thrown again under the new
+name. As ever, nothing inside the repository can see whether a deposition succeeded.
+
 ## The DOI, which is not turned on yet
 
 `CITATION.cff` makes the repository citable by name and version. A **DOI** makes it citable by a
@@ -132,9 +242,11 @@ list actually wants. It is one switch and nobody has thrown it:
 1. Sign in to [zenodo.org](https://zenodo.org) with the GitHub account.
 2. Under *GitHub*, find `YounghyeonPark/pantometry` and turn the toggle **on**.
 3. Then publish a release **through GitHub's Releases page**, not by pushing a bare tag. Zenodo
-   listens for the release webhook and a pushed tag alone does not fire it — the twelve tags already
+   listens for the release webhook and a pushed tag alone does not fire it — the sixteen tags already
    on the repository will therefore get no DOI, and the first release published after the toggle is
-   the first one that does.
+   the first one that does. (Twelve when this was written, and nothing counts them: a number in
+   prose beside a `git tag --list` that anybody can run is the shape this repository keeps finding
+   stale.)
 
 Zenodo mints two: a **version DOI** for that release and a **concept DOI** that always resolves to the
 newest. Cite the concept DOI in prose and the version DOI when the result depends on which version ran
